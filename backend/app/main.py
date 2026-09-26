@@ -1,0 +1,77 @@
+from contextlib import asynccontextmanager
+from typing import Annotated
+
+import bcrypt
+from fastapi import Depends, FastAPI, HTTPException, Request, status
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
+from sqlalchemy.exc import IntegrityError
+from sqlmodel import Session, SQLModel, select
+
+from .database import build_engine
+from .models import RegisterRequest, Traveler, TravelerPublic
+
+
+def create_app(database_url: str | None = None) -> FastAPI:
+    engine = build_engine(database_url)
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        # Development bootstrap only; use migrations once the team shares a database.
+        SQLModel.metadata.create_all(engine)
+        try:
+            yield
+        finally:
+            engine.dispose()
+
+    app = FastAPI(title="Taasheera registration API", lifespan=lifespan)
+    app.state.engine = engine
+
+    def get_session():
+        with Session(engine) as session:
+            yield session
+
+    @app.exception_handler(RequestValidationError)
+    async def validation_error_handler(request: Request, exc: RequestValidationError):
+        # FastAPI's default errors can include input values, including passwords.
+        errors = [
+            {key: error[key] for key in ("loc", "msg", "type")}
+            for error in exc.errors()
+        ]
+        return JSONResponse(status_code=422, content={"detail": errors})
+
+    @app.post(
+        "/auth/register",
+        response_model=TravelerPublic,
+        status_code=status.HTTP_201_CREATED,
+    )
+    def register(
+        data: RegisterRequest,
+        session: Annotated[Session, Depends(get_session)],
+    ) -> Traveler:
+        email_query = select(Traveler).where(Traveler.email == data.email)
+        if session.exec(email_query).first() is not None:
+            raise HTTPException(status_code=409, detail="Email is already registered.")
+
+        password_hash = bcrypt.hashpw(
+            data.password.get_secret_value().encode("utf-8"),
+            bcrypt.gensalt(rounds=12),
+        ).decode("ascii")
+        traveler = Traveler(name=data.name, email=data.email, password_hash=password_hash)
+        session.add(traveler)
+        try:
+            session.commit()
+        except IntegrityError:
+            session.rollback()
+            # The unique constraint also catches simultaneous registrations.
+            if session.exec(email_query).first() is not None:
+                raise HTTPException(status_code=409, detail="Email is already registered.") from None
+            raise
+
+        session.refresh(traveler)
+        return traveler
+
+    return app
+
+
+app = create_app()
