@@ -1,0 +1,181 @@
+﻿.sign-in-page {
+  min-height: 100svh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 28px;
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -0.8px;
+}
+
+.brand-mark {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: #21665b;
+  color: white;
+  font-size: 22px;
+}
+
+.sign-in-card {
+  width: 100%;
+  max-width: 440px;
+  padding: 36px;
+  border: 1px solid #dfe7e2;
+  border-radius: 18px;
+  background: white;
+  box-shadow: 0 12px 36px #203b3a08;
+}
+
+.eyebrow {
+  margin: 0 0 10px;
+  color: #21665b;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1.6px;
+}
+
+h1 {
+  margin: 0;
+  font-size: 30px;
+  line-height: 1.2;
+  letter-spacing: -1px;
+}
+
+.intro {
+  margin: 10px 0 24px;
+  color: #60716e;
+}
+
+.availability-note {
+  margin: 0 0 24px;
+  padding: 12px;
+  border-radius: 8px;
+  background: #f0f5f2;
+  color: #49635b;
+  font-size: 13px;
+}
+
+form {
+  display: flex;
+  flex-direction: column;
+}
+
+label {
+  margin-bottom: 6px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+input {
+  width: 100%;
+  min-height: 46px;
+  margin-bottom: 18px;
+  padding: 10px 12px;
+  border: 1px solid #a9bab3;
+  border-radius: 8px;
+  background: white;
+  color: #203b3a;
+}
+
+input::placeholder {
+  color: #6b7975;
+}
+
+.forgot-password {
+  align-self: flex-end;
+  margin: -4px 0 22px;
+  font-size: 13px;
+}
+
+button {
+  width: 100%;
+  min-height: 46px;
+  padding: 10px 16px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.primary-button {
+  background: #21665b;
+  color: white;
+}
+
+.primary-button:hover {
+  background: #194f46;
+}
+
+.divider {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 20px 0;
+  color: #60716e;
+  font-size: 13px;
+}
+
+.divider::before,
+.divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: #dfe7e2;
+}
+
+.google-button {
+  background: white;
+  border-color: #a9bab3;
+  color: #203b3a;
+}
+
+.google-button:hover {
+  background: #f4f7f5;
+}
+
+.create-account {
+  margin: 24px 0 0;
+  text-align: center;
+  font-size: 14px;
+  color: #60716e;
+}
+
+.auth-status {
+  margin: 18px 0 0;
+  font-size: 14px;
+  color: #49635b;
+}
+
+.auth-status:empty {
+  margin: 0;
+}
+
+footer {
+  margin-top: 24px;
+  color: #60716e;
+  text-align: center;
+  font-size: 13px;
+}
+
+@media (max-width: 480px) {
+  .sign-in-page {
+    padding: 24px 16px;
+  }
+
+  .sign-in-card {
+    padding: 28px 22px;
+  }
+}
+

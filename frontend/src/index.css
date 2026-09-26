@@ -1,0 +1,39 @@
+﻿:root {
+  font-family: system-ui, 'Segoe UI', sans-serif;
+  color: #203b3a;
+  background: #f4f7f5;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  color-scheme: light;
+  line-height: 1.5;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+a {
+  color: #21665b;
+  text-underline-offset: 3px;
+}
+
+a:hover {
+  color: #123f38;
+}
+
+:focus-visible {
+  outline: 3px solid #288577;
+  outline-offset: 3px;
+}
+
