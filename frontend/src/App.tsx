@@ -1,21 +1,37 @@
 import { useEffect, useState } from 'react'
 import './App.css'
 import CreateAccount from './CreateAccount'
+import ForgotPassword from './ForgotPassword'
+import SetNewPassword from './SetNewPassword'
+
+function getPage(): keyof typeof pageTitles {
+  switch (window.location.hash) {
+    case '#create-account': return 'create-account'
+    case '#forgot-password': return 'forgot-password'
+    case '#set-new-password': return 'set-new-password'
+    default: return 'sign-in'
+  }
+}
+
+const pageTitles = {
+  'sign-in': 'Sign in',
+  'create-account': 'Create account',
+  'forgot-password': 'Forgot password',
+  'set-new-password': 'Set new password',
+}
 
 function App() {
-  const [isCreatingAccount, setIsCreatingAccount] = useState(
-    () => window.location.hash === '#create-account',
-  )
+  const [page, setPage] = useState(getPage)
 
   useEffect(() => {
-    const updatePage = () => setIsCreatingAccount(window.location.hash === '#create-account')
+    const updatePage = () => setPage(getPage())
     window.addEventListener('hashchange', updatePage)
     return () => window.removeEventListener('hashchange', updatePage)
   }, [])
 
   useEffect(() => {
-    document.title = `${isCreatingAccount ? 'Create account' : 'Sign in'} | Taasheera`
-  }, [isCreatingAccount])
+    document.title = `${pageTitles[page]} | Taasheera`
+  }, [page])
 
   return (
     <main className="sign-in-page">
@@ -24,7 +40,10 @@ function App() {
         Taasheera
       </header>
 
-      {isCreatingAccount ? <CreateAccount /> : <SignIn />}
+      {page === 'sign-in' && <SignIn />}
+      {page === 'create-account' && <CreateAccount />}
+      {page === 'forgot-password' && <ForgotPassword />}
+      {page === 'set-new-password' && <SetNewPassword />}
 
       <footer>Your next chapter starts with a journey.</footer>
     </main>
@@ -73,8 +92,7 @@ function SignIn() {
 
         <a
           className="forgot-password"
-          href="#auth-status"
-          onClick={() => setMessage('Password reset is not available yet. Please check back later.')}
+          href="#forgot-password"
         >
           Forgot your password?
         </a>
