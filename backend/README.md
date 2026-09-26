@@ -1,6 +1,6 @@
 # Taasheera backend — traveler registration
 
-This first backend piece provides only `POST /auth/register`. The frontend is not connected. There is no admin registration, login, JWT, Google sign-in, or password reset.
+This first backend piece provides only `POST /auth/register`. The frontend Create account form calls this endpoint through Vite's local proxy; see [browser testing instructions](../frontend/README.md). There is no admin registration, login, JWT, Google sign-in, or password reset.
 
 ## Windows setup and run
 

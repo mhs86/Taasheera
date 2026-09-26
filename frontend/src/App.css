@@ -118,6 +118,21 @@ button {
   background: #194f46;
 }
 
+button:disabled {
+  opacity: 0.65;
+  cursor: wait;
+}
+
+.password-help {
+  margin: 0 0 18px;
+  color: #60716e;
+  font-size: 13px;
+}
+
+.auth-status.auth-error {
+  color: #a12b28;
+}
+
 .divider {
   display: flex;
   align-items: center;
