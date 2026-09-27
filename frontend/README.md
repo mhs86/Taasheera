@@ -1,6 +1,6 @@
 ﻿# Taasheera frontend
 
-React + TypeScript + Vite. Registration, email/password sign-in, and password reset are connected to the backend. Signed-in travelers see their name from protected `/auth/me` and can log out. Google sign-in is still unavailable.
+React + TypeScript + Vite. Registration, email/password sign-in, Google sign-in, and password reset are connected to the backend. Signed-in travelers see their name from protected `/auth/me` and can log out. Google sign-in requires the public client ID configured below; email/password sign-in works without it.
 
 ## Run locally on Windows
 
@@ -39,6 +39,51 @@ Access tokens stay in JavaScript memory, never localStorage or sessionStorage. R
 7. While signed in, switch the browser offline and click **Log out**. Expect a visible error rather than a false success. Restore connectivity and retry; logout should succeed.
 
 Automated session-module tests cover correct/wrong passwords, protected profile requests, restoration deduplication, missing cookies, profile failures, logout, and retryable failures. They mock HTTP; the backend suite separately exercises real API/session behavior. Browser visual and cookie checks require the manual steps above when no browser connection is available.
+
+## Configure Google sign-in locally
+
+In Google Cloud Console / Google Auth Platform, configure branding, audience and test users (while the app is in Testing). Create an OAuth client of type **Web application**. Configure the authorized JavaScript origin `http://127.0.0.1:5173` for this repository's Vite server, and the actual HTTPS frontend origin for production. Origins must match the browser's scheme, hostname and port, with no path. If using localhost, Google recommends registering both `http://localhost` and `http://localhost:5173`; also change the Vite host and backend origin allowlist consistently. Use the existing 127.0.0.1 setup for the steps below.
+
+The integration uses Google's official rendered button in popup mode with a JavaScript credential callback. It needs no authorized redirect URI, client secret, Google API access token or One Tap. Do not configure `/auth/google` as a Google redirect/form-post URL. See Google's [setup guide](https://developers.google.com/identity/gsi/web/guides/get-google-api-clientid) and [button guide](https://developers.google.com/identity/gsi/web/guides/display-button).
+
+Stop existing development servers. In a backend PowerShell terminal, from the repository root:
+
+```powershell
+cd backend
+$env:JWT_SECRET = (& .\.venv\Scripts\python.exe -c "import secrets; print(secrets.token_urlsafe(48))")
+$env:AUTH_COOKIE_SECURE = "false"
+$env:AUTH_ALLOWED_ORIGINS = "http://127.0.0.1:5173,http://127.0.0.1:8000"
+$env:GOOGLE_CLIENT_ID = "REPLACE_WITH_YOUR_WEB_CLIENT_ID.apps.googleusercontent.com"
+.\.venv\Scripts\python.exe -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+```
+
+In a frontend PowerShell terminal, from the repository root:
+
+```powershell
+cd frontend
+$env:VITE_GOOGLE_CLIENT_ID = "REPLACE_WITH_YOUR_WEB_CLIENT_ID.apps.googleusercontent.com"
+npm.cmd run dev
+```
+
+Replace both placeholders with **the same Web application client ID**. `VITE_GOOGLE_CLIENT_ID` is public and embedded in the browser bundle; never use a client secret here. Restart Vite after changing it, and set it before `npm.cmd run build` for production. Backend environment files are not automatically loaded. No real IDs or credentials need to be committed. Without the frontend setting, the page explains that Google sign-in is unavailable and keeps email sign-in enabled.
+
+The page loads only `https://accounts.google.com/gsi/client`, shares concurrent loads and offers retry after a load error or 15-second timeout. The credential callback sends JSON `{ "id_token": "<credential>" }` to `/auth/google` through the same Vite proxy. On success, the existing in-memory access token, protected `/auth/me`, refresh cookie and logout flow apply. Google credentials are never put in storage, URLs or logs. A `409 google_link_required` asks the traveler to use their existing sign-in method; no linking is attempted.
+
+Google's ID-button API has no documented popup-close error callback. Closing the popup leaves email sign-in available. The page also provides **Cancel Google sign-in**, which cancels the local attempt and ignores late responses from that button; close the Google window separately. No One Tap prompt is requested. Logout also calls Google's `disableAutoSelect` when the SDK is available; it does not log the traveler out of their Google account.
+
+## Test Google sign-in in the browser
+
+These steps need a real configured client ID and allowed Google test account. Automated tests mock the SDK and HTTP, make no Google network calls, and do not verify real popup behavior or provider configuration.
+
+1. Start both servers using the settings above and open http://127.0.0.1:5173/. Expect the official **Sign in with Google** button. Use Tab and Enter to activate it. At a 320px mobile viewport, check the button fits the card and all controls remain reachable.
+2. Choose a Google account whose email is not registered in the local database. Expect one POST `/auth/google` returning `200`, then `/auth/me` returning `200`, and a welcome heading using the protected profile's name. Avoid copying request credentials or authorization headers into screenshots, logs or reports. Verify storage contains no tokens and the address bar never contains a Google credential.
+3. Reload: expect `/auth/refresh`, then `/auth/me`, and the welcome view. Click **Log out**: expect `/auth/logout` returning `204`. Reload again and expect sign-in. Sign in with the same Google account again to check the returning-account flow.
+4. With a different Google email that belongs to an existing email/password traveler, click Google sign-in. Expect `409 google_link_required`, a message to use the existing sign-in method, and no welcome view. Confirm the existing password still signs in. There is no automatic account linking.
+5. Open the Google popup, then close/cancel it. Email fields must remain usable. Click **Cancel Google sign-in** to clear the local attempt, then retry Google sign-in. Under slow network throttling, completing Google authentication must disable both sign-in methods during the backend exchange and produce only one request.
+6. To exercise backend failure, stop FastAPI after loading the page, then complete Google authentication. Expect an unavailable message and re-enabled controls. Restart FastAPI and retry. To exercise a network failure, block the `/auth/google` request in browser developer tools while leaving Google reachable, then complete authentication; expect a connection message. Clear the block afterwards.
+7. Block `https://accounts.google.com/gsi/client` in developer tools and reload. Expect a load error (or the 15-second timeout), **Retry Google sign-in**, and usable email sign-in. Remove the block and retry. Stop Vite, remove `VITE_GOOGLE_CLIENT_ID` with `Remove-Item Env:VITE_GOOGLE_CLIENT_ID`, restart Vite, and check password sign-in, registration and reset navigation still work without Google configuration.
+
+Frontend Google tests cover callback success, collision, invalid credentials, server/network errors, retry, duplicate submission, cancellation and stale callbacks, missing configuration, script loading failures, protected profile loading, refresh restoration and logout. The tests fail if application code touches localStorage or sessionStorage. Real Google authentication and visual/keyboard behavior still require the browser checks above.
 
 ## Test registration in the browser
 

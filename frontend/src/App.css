@@ -150,14 +150,28 @@ button:disabled {
   background: #dfe7e2;
 }
 
-.google-button {
+.google-retry {
   background: white;
   border-color: #a9bab3;
   color: #203b3a;
 }
 
-.google-button:hover {
+.google-retry:hover {
   background: #f4f7f5;
+}
+
+.google-button-host {
+  width: 100%;
+  min-height: 44px;
+}
+
+.google-button-host[inert] {
+  opacity: 0.65;
+  pointer-events: none;
+}
+
+.google-retry {
+  margin-top: 12px;
 }
 
 .create-account {

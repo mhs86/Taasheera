@@ -1,5 +1,7 @@
-import { useEffect, useRef, useState } from 'react'
-import { restoreSession, signIn, signOut, type Traveler } from './auth'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { restoreSession, signIn, signInWithGoogle, signOut, type Traveler } from './auth'
+import GoogleSignIn from './GoogleSignIn'
+import { disableGoogleAutoSelect } from './googleIdentity'
 import './App.css'
 import CreateAccount from './CreateAccount'
 import ForgotPassword from './ForgotPassword'
@@ -13,7 +15,9 @@ const pageTitles = {
   'set-new-password': 'Set new password',
 }
 
-function App({ initialNavigation }: { initialNavigation: Navigation }) {
+function App({ initialNavigation, googleClientId = import.meta.env?.VITE_GOOGLE_CLIENT_ID?.trim() ?? '' }: {
+  initialNavigation: Navigation; googleClientId?: string
+}) {
   const [route, setRoute] = useState({ ...initialNavigation, version: 0 })
   const page = route.page
   const isResetPage = page === 'set-new-password'
@@ -76,6 +80,7 @@ function App({ initialNavigation }: { initialNavigation: Navigation }) {
             setSessionError('')
             try {
               await signOut()
+              disableGoogleAutoSelect()
               setTraveler(null)
               window.location.hash = 'sign-in'
             } catch {
@@ -86,7 +91,7 @@ function App({ initialNavigation }: { initialNavigation: Navigation }) {
           }}>{loggingOut ? 'Logging out…' : 'Log out'}</button>
         </section>
       ) : <>
-        {page === 'sign-in' && <SignIn onSignedIn={(profile) => {
+        {page === 'sign-in' && <SignIn googleClientId={googleClientId} onSignedIn={(profile) => {
           setSessionError('')
           setTraveler(profile)
         }} />}
@@ -99,10 +104,31 @@ function App({ initialNavigation }: { initialNavigation: Navigation }) {
   )
 }
 
-function SignIn({ onSignedIn }: { onSignedIn: (traveler: Traveler) => void }) {
+function SignIn({ onSignedIn, googleClientId }: { onSignedIn: (traveler: Traveler) => void; googleClientId: string }) {
   const [message, setMessage] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const inProgress = useRef(false)
+  const mounted = useRef(false)
+  useEffect(() => {
+    mounted.current = true
+    return () => { mounted.current = false }
+  }, [])
+  const googleCredential = useCallback(async (credential: string) => {
+    if (inProgress.current || !mounted.current) return
+    inProgress.current = true
+    setSubmitting(true)
+    setMessage('Signing in with Google…')
+    try {
+      const profile = await signInWithGoogle(credential)
+      if (mounted.current) onSignedIn(profile)
+    } catch (error) {
+      if (mounted.current) setMessage(error instanceof Error && error.name === 'Error'
+        ? error.message : 'Could not complete Google sign-in. Please try again.')
+    } finally {
+      inProgress.current = false
+      if (mounted.current) setSubmitting(false)
+    }
+  }, [onSignedIn])
 
   return (
     <section className="sign-in-card" aria-labelledby="sign-in-heading">
@@ -167,13 +193,8 @@ function SignIn({ onSignedIn }: { onSignedIn: (traveler: Traveler) => void }) {
 
       <div className="divider"><span>or</span></div>
 
-      <button
-        className="google-button"
-        type="button"
-        onClick={() => setMessage('Google sign-in is not connected yet. Please check back later.')}
-      >
-        Continue with Google
-      </button>
+      <GoogleSignIn clientId={googleClientId} disabled={submitting}
+        onCredential={googleCredential} onMessage={setMessage} />
 
       <p className="create-account">
         New to Taasheera?{' '}
