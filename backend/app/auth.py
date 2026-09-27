@@ -108,6 +108,9 @@ def create_auth_router(get_session):
     @router.post("/login", response_model=AccessTokenPublic, dependencies=[Depends(check_origin)])
     def login(data: LoginRequest, request: Request, response: Response, session: SessionDep):
         settings = request.app.state.auth_settings
+        # Serialize login with password reset so an old-password login cannot
+        # create a new session after reset has revoked existing sessions.
+        session.execute(update(Traveler).where(Traveler.email == data.email).values(password_hash=Traveler.password_hash))
         traveler = session.exec(select(Traveler).where(Traveler.email == data.email)).first()
         stored_hash = traveler.password_hash.encode("ascii") if traveler else DUMMY_HASH
         try:

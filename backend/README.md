@@ -1,6 +1,6 @@
 # Taasheera backend — traveler authentication
 
-The backend supports traveler registration, email/password login, a protected profile, refresh, and logout. The frontend connects registration and sign-in, displays the protected traveler profile, restores sessions after reload, and supports logout. There is no admin registration, Google sign-in, or password reset.
+The backend supports traveler registration, email/password login, a protected profile, refresh, logout, and email-based password reset. The frontend connects registration, sign-in, and password reset, displays the protected traveler profile, restores sessions after reload, and supports logout. There is no admin registration or Google sign-in.
 
 ## Windows setup and run
 
@@ -49,7 +49,77 @@ Cookie-changing endpoints check an incoming `Origin` against `AUTH_ALLOWED_ORIGI
 
 For a manual backend check, open http://127.0.0.1:8000/docs after starting with the environment above. Register a traveler, call login, copy only the returned access token into **Authorize**, then call `/auth/me`. Swagger/browser keeps the refresh cookie for refresh and logout. After logout, the old access token must return `401`. See `frontend/README.md` for the browser sign-in checklist.
 
+## Forgotten-password reset
+
+| Endpoint | JSON input | Response |
+| --- | --- | --- |
+| `POST /auth/forgot-password` | `email` | `202`: `{"detail":"If an account exists for that email, a password reset email will be sent."}` |
+| `POST /auth/reset-password` | `token`, `password` | `204`: password replaced; sign in again |
+
+The request response is identical for known emails, unknown emails, rate-limited requests, and SMTP delivery failures. Invalid request shapes return `422` without submitted values. If reset email is not configured, all valid email requests return the same `503`. Both endpoints enforce the existing Origin allowlist and use `Cache-Control: no-store`.
+
+Tokens use 32 cryptographically random bytes; only SHA-256 hashes are stored. A token expires 30 minutes after issuance. Reset completion consumes the token, hashes the new password with bcrypt cost 12, invalidates all outstanding reset links, and revokes every login session for that traveler in one transaction. The existing password rules apply: at least 8 characters, at most 72 UTF-8 bytes, with no trimming. Invalid, expired, and reused tokens all return `400` with `Invalid or expired password reset token.` Invalid passwords do not consume the link. A successful reset returns no access token, clears the refresh cookie, and requires fresh sign-in. Old access tokens and refresh cookies stop working on all devices.
+
+Database write locks and a conditional token update ensure only one simultaneous reset succeeds, even when two different outstanding links are used. Login and token issuance also serialize with reset completion. Merely requesting an email does not change the password or revoke sessions.
+
+Limits are shared in the database across workers/restarts and apply equally to known and unknown emails: one request per normalized email per 60 seconds, five per email per hour, and 20 per client IP per hour. These are windows starting at the first admitted request; repeated requests count against the hourly allowance even during the minute cooldown. Suppressed email requests retain the generic `202`. Reset completion allows 60 attempts per client IP per hour, then returns `429` with `Retry-After: 3600`. The application uses `request.client.host`, never parses forwarded headers itself. Configure Uvicorn's trusted proxy list correctly behind a reverse proxy; do not trust arbitrary forwarded client IPs. Add edge limits for invalid JSON and broader abuse controls before public deployment.
+
+### SMTP and trusted frontend URL
+
+All settings come from process environment variables; `.env` files are not loaded automatically. No SMTP dependency is needed beyond Python's standard library.
+
+| Variable | Required/default | Meaning |
+| --- | --- | --- |
+| `RESET_FRONTEND_URL` | Required to enable reset email | Full trusted reset page URL, e.g. `https://travel.example.com/reset-password`; no credentials, query, or fragment. HTTPS required except loopback HTTP. |
+| `SMTP_HOST` | Required to enable reset email | SMTP server hostname. |
+| `SMTP_FROM` | Required when enabled | Valid sender email address, e.g. `no-reply@example.com`. |
+| `SMTP_PORT` | `587` | Server port, 1–65535. Use the port required by your provider, usually 587 for STARTTLS or 465 for implicit TLS. |
+| `SMTP_SECURITY` | `starttls` | `starttls`, `ssl` (implicit TLS), or `none`. Certificate verification is enabled for TLS. `none` is allowed only with loopback SMTP and no credentials. |
+| `SMTP_USERNAME` | Empty | SMTP authentication username; omit for a local mail catcher. |
+| `SMTP_PASSWORD` | Empty | SMTP authentication password; supply with username through your environment/secret manager. Never commit it. |
+| `SMTP_TIMEOUT_SECONDS` | `10` | SMTP socket timeout, 1–60 seconds. |
+
+If both `RESET_FRONTEND_URL` and `SMTP_HOST` are unset, reset email is disabled and existing authentication still runs. Partial or invalid configuration fails startup. Supply the existing `JWT_SECRET`, `AUTH_COOKIE_SECURE`, and `AUTH_ALLOWED_ORIGINS` settings as described above as well. Add your exact frontend origin to `AUTH_ALLOWED_ORIGINS` in deployment; the reset page URL setting does not change that allowlist.
+
+Links are built only from `RESET_FRONTEND_URL`, never Host, Origin, or forwarded headers. The link format is `<RESET_FRONTEND_URL>#token=<random-token>`. Configure the frontend reset page path as `/reset-password`; the frontend reads the fragment, replaces it in browser history with `#set-new-password`, and POSTs the token and new password in JSON to `/auth/reset-password`. Tokens stay in memory, never localStorage or sessionStorage. Reloading after the fragment is removed requires reopening the original email link or requesting another. Fragments avoid putting the token in HTTP page requests and access logs. The frontend host must serve the SPA at `/reset-password` (Vite does this locally). Do not enable request-body logging, SMTP debug logging, SQL parameter logging, or message-body capture in production monitoring. The application never logs reset links, tokens, passwords, or provider exceptions.
+
+SMTP delivery runs after the generic response via a FastAPI background task, with an injectable `ResetSender` interface (`create_app(..., reset_sender=fake)`). If delivery fails or is uncertain, the token is deleted and the response remains generic. This is best-effort delivery, not a durable queue: a process crash can lose a pending email. The user can retry after the cooldown. Expired rate-limit rows and expired reset tokens are cleaned during requests; schedule maintenance for unused/expired auth records at deployment scale.
+
+### Local testing without an email account
+
+Use [Mailpit's official Docker image](https://mailpit.axllent.org/docs/install/docker/) to capture email locally; it does not deliver to real inboxes. With Docker installed, run in a separate terminal:
+
+```powershell
+docker run --rm --name taasheera-mailpit -p 127.0.0.1:1025:1025 -p 127.0.0.1:8025:8025 axllent/mailpit
+```
+
+In the backend terminal, set these before starting Uvicorn (alongside the existing JWT/local-cookie settings):
+
+```powershell
+$env:SMTP_HOST = "127.0.0.1"
+$env:SMTP_PORT = "1025"
+$env:SMTP_SECURITY = "none"
+$env:SMTP_FROM = "no-reply@example.com"
+$env:SMTP_USERNAME = ""
+$env:SMTP_PASSWORD = ""
+$env:SMTP_TIMEOUT_SECONDS = "10"
+$env:RESET_FRONTEND_URL = "http://127.0.0.1:5173/reset-password"
+.\.venv\Scripts\python.exe -m uvicorn app.main:app --reload
+```
+
+1. Register a test traveler through http://127.0.0.1:8000/docs and sign in. Save an access token temporarily to test revocation.
+2. Call `/auth/forgot-password` with that email. Open http://127.0.0.1:8025 to view the captured email. Call the same endpoint with an unknown email: the API response must match, and no extra email should appear.
+3. Start Vite with `npm.cmd run dev` from `frontend/`. Open the email link to reach **Set new password**, enter matching valid passwords, and submit. Alternatively, copy the value after `#token=` directly into the `/auth/reset-password` JSON body in Swagger. Do not put the token in a shell command or URL query. The complete Windows frontend/Mailpit checklist is in `frontend/README.md`.
+4. Expect `204`. Reuse the link: expect `400`. Sign in with the old password: expect `401`; the new password: expect `200`. Test the previously saved access token against `/auth/me`: expect `401`.
+5. Stop Mailpit, wait at least 60 seconds, and request another email. The generic `202` response remains unchanged and the failed-delivery token is invalidated. Restart Mailpit to resume email capture.
+
+Automated tests use a fake sender and temporary databases, requiring neither Docker, SMTP credentials, nor a real email account. SMTP transport is tested with a fake connection, including STARTTLS and implicit TLS; concurrency tests use separate clients/threads. Run the full suite with `.\.venv\Scripts\python.exe -m pytest -q`.
+
+SMTP implementation reference: [Python smtplib](https://docs.python.org/3/library/smtplib.html).
+
 ## Database configuration
+
+Password reset adds `passwordresettoken` and `resetratelimit` tables, created at startup; it does not change existing traveler columns. Use migrations before applying future changes to existing shared tables.
 
 The default is `backend/taasheera.db`, regardless of the working directory. Tables are created at startup. To change the database, set `DATABASE_URL` before starting the server:
 

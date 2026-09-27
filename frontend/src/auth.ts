@@ -1,3 +1,5 @@
+import { submitPasswordReset } from './passwordReset.ts'
+
 export type Traveler = { id: number; name: string; email: string }
 
 // Access tokens live only in this module's memory. The browser manages the
@@ -68,6 +70,13 @@ export function signOut(): Promise<void> {
   return sessionOperation(async () => {
     const response = await request('logout', { method: 'POST' })
     if (!response.ok) throw new Error('Could not log out. Please try again.')
+    accessToken = null
+  })
+}
+
+export function resetPassword(token: string, password: string): Promise<void> {
+  return sessionOperation(async () => {
+    await submitPasswordReset(token, password)
     accessToken = null
   })
 }

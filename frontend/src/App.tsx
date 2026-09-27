@@ -4,15 +4,7 @@ import './App.css'
 import CreateAccount from './CreateAccount'
 import ForgotPassword from './ForgotPassword'
 import SetNewPassword from './SetNewPassword'
-
-function getPage(): keyof typeof pageTitles {
-  switch (window.location.hash) {
-    case '#create-account': return 'create-account'
-    case '#forgot-password': return 'forgot-password'
-    case '#set-new-password': return 'set-new-password'
-    default: return 'sign-in'
-  }
-}
+import { readNavigation, type Navigation } from './navigation'
 
 const pageTitles = {
   'sign-in': 'Sign in',
@@ -21,14 +13,18 @@ const pageTitles = {
   'set-new-password': 'Set new password',
 }
 
-function App() {
-  const [page, setPage] = useState(getPage)
+function App({ initialNavigation }: { initialNavigation: Navigation }) {
+  const [route, setRoute] = useState({ ...initialNavigation, version: 0 })
+  const page = route.page
+  const isResetPage = page === 'set-new-password'
+  const isRecoveryPage = isResetPage || page === 'forgot-password'
   const [traveler, setTraveler] = useState<Traveler | null>(null)
   const [checking, setChecking] = useState(true)
   const [sessionError, setSessionError] = useState('')
   const [loggingOut, setLoggingOut] = useState(false)
 
   useEffect(() => {
+    if (isRecoveryPage) return
     let active = true
     restoreSession().then((profile) => {
       if (active) setTraveler(profile)
@@ -38,17 +34,20 @@ function App() {
       if (active) setChecking(false)
     })
     return () => { active = false }
-  }, [])
+  }, [isRecoveryPage])
 
   useEffect(() => {
-    const updatePage = () => setPage(getPage())
+    const updatePage = () => {
+      const next = readNavigation(window)
+      setRoute(previous => ({ ...next, version: previous.version + 1 }))
+    }
     window.addEventListener('hashchange', updatePage)
     return () => window.removeEventListener('hashchange', updatePage)
   }, [])
 
   useEffect(() => {
-    document.title = `${traveler ? 'Signed in' : pageTitles[page]} | Taasheera`
-  }, [page, traveler])
+    document.title = `${traveler && !isRecoveryPage ? 'Signed in' : pageTitles[page]} | Taasheera`
+  }, [page, traveler, isRecoveryPage])
 
   return (
     <main className="sign-in-page">
@@ -57,7 +56,17 @@ function App() {
         Taasheera
       </header>
 
-      {checking ? <p role="status">Restoring your session…</p> : traveler ? (
+      {isResetPage ? <SetNewPassword
+        key={route.version}
+        token={route.resetToken}
+        onTokenCleared={() => setRoute(previous => ({ ...previous, resetToken: null }))}
+        onSuccess={() => {
+          setTraveler(null)
+          setSessionError('')
+          setChecking(false)
+          setRoute(previous => ({ ...previous, resetToken: null }))
+        }}
+      /> : page === 'forgot-password' ? <ForgotPassword /> : checking ? <p role="status">Restoring your session…</p> : traveler ? (
         <section className="sign-in-card" aria-labelledby="signed-in-heading">
           <p className="eyebrow">YOUR TRAVELER ACCOUNT</p>
           <h1 id="signed-in-heading">Welcome, {traveler.name}</h1>
@@ -82,10 +91,8 @@ function App() {
           setTraveler(profile)
         }} />}
         {page === 'create-account' && <CreateAccount />}
-        {page === 'forgot-password' && <ForgotPassword />}
-        {page === 'set-new-password' && <SetNewPassword />}
       </>}
-      {sessionError && <p className="auth-status auth-error" role="alert">{sessionError}</p>}
+      {sessionError && !isRecoveryPage && <p className="auth-status auth-error" role="alert">{sessionError}</p>}
 
       <footer>Your next chapter starts with a journey.</footer>
     </main>

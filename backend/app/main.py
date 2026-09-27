@@ -11,15 +11,21 @@ from sqlmodel import Session, SQLModel, select
 from .database import build_engine
 from .auth import create_auth_router
 from .config import AuthSettings
+from .mailer import MailSettings, ResetSender, SmtpResetSender
+from .password_reset import create_password_reset_router
 from .models import RegisterRequest, Traveler, TravelerPublic
 
 
-def create_app(database_url: str | None = None) -> FastAPI:
+def create_app(database_url: str | None = None, *, reset_sender: ResetSender | None = None) -> FastAPI:
     engine = build_engine(database_url)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         app.state.auth_settings = AuthSettings.from_environment()
+        app.state.mail_settings = MailSettings.from_environment()
+        app.state.reset_sender = reset_sender or (
+            SmtpResetSender(app.state.mail_settings) if app.state.mail_settings else None
+        )
         # Development bootstrap only; use migrations once the team shares a database.
         SQLModel.metadata.create_all(engine)
         try:
@@ -35,6 +41,7 @@ def create_app(database_url: str | None = None) -> FastAPI:
             yield session
 
     app.include_router(create_auth_router(get_session))
+    app.include_router(create_password_reset_router(get_session))
 
     @app.exception_handler(RequestValidationError)
     async def validation_error_handler(request: Request, exc: RequestValidationError):
