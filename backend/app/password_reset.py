@@ -78,7 +78,7 @@ def create_password_reset_router(get_session):
         # A write lock on the traveler serializes issuance with reset completion.
         session.execute(update(Traveler).where(Traveler.email == data.email).values(password_hash=Traveler.password_hash))
         traveler = session.exec(select(Traveler).where(Traveler.email == data.email)).first()
-        if traveler is not None:
+        if traveler is not None and traveler.password_hash:
             raw = secrets.token_urlsafe(32)
             digest = token_hash(raw)
             session.execute(delete(PasswordResetToken).where(PasswordResetToken.expires_at <= now))
@@ -105,6 +105,10 @@ def create_password_reset_router(get_session):
         # Lock the account first, including when different outstanding links race.
         owner = select(PasswordResetToken.traveler_id).where(PasswordResetToken.token_hash == digest).scalar_subquery()
         session.execute(update(Traveler).where(Traveler.id == owner).values(password_hash=Traveler.password_hash))
+        password_owner = session.exec(select(Traveler).where(Traveler.id == owner)).first()
+        if password_owner is None or not password_owner.password_hash:
+            session.rollback()
+            raise HTTPException(400, INVALID_MESSAGE, headers={"Cache-Control": "no-store"})
         consumed = session.execute(update(PasswordResetToken).where(
             PasswordResetToken.token_hash == digest,
             PasswordResetToken.used.is_(False),

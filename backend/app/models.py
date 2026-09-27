@@ -9,7 +9,19 @@ class Traveler(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     name: str = Field(max_length=100)
     email: str = Field(max_length=254, unique=True, index=True)
+    # Empty means password authentication is disabled (Google-only account).
+    # Preserve the existing NOT NULL column for compatibility with local DBs.
     password_hash: str = Field(max_length=60, repr=False)
+
+
+class GoogleIdentity(SQLModel, table=True):
+    subject: str = Field(primary_key=True, max_length=255)
+    traveler_id: int = Field(foreign_key="traveler.id", unique=True, index=True)
+
+
+class GoogleLoginRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    id_token: SecretStr = SchemaField(min_length=1, max_length=8192)
 
 
 class PasswordInput(BaseModel):

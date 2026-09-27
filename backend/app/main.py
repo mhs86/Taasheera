@@ -10,6 +10,7 @@ from sqlmodel import Session, SQLModel, select
 
 from .database import build_engine
 from .auth import create_auth_router
+from .google_auth import create_google_auth_router
 from .config import AuthSettings
 from .mailer import MailSettings, ResetSender, SmtpResetSender
 from .password_reset import create_password_reset_router
@@ -41,6 +42,7 @@ def create_app(database_url: str | None = None, *, reset_sender: ResetSender | N
             yield session
 
     app.include_router(create_auth_router(get_session))
+    app.include_router(create_google_auth_router(get_session))
     app.include_router(create_password_reset_router(get_session))
 
     @app.exception_handler(RequestValidationError)

@@ -9,6 +9,7 @@ class AuthSettings:
     allowed_origins: tuple[str, ...] = ("http://127.0.0.1:5173", "http://127.0.0.1:8000")
     access_seconds: int = 15 * 60
     refresh_seconds: int = 7 * 24 * 60 * 60
+    google_client_id: str | None = None
 
     @classmethod
     def from_environment(cls):
@@ -21,8 +22,15 @@ class AuthSettings:
         origins = os.environ.get(
             "AUTH_ALLOWED_ORIGINS", "http://127.0.0.1:5173,http://127.0.0.1:8000"
         )
+        google_client_id = os.environ.get("GOOGLE_CLIENT_ID", "").strip()
+        if google_client_id and (
+            not google_client_id.endswith(".apps.googleusercontent.com")
+            or any(char.isspace() for char in google_client_id)
+        ):
+            raise RuntimeError("GOOGLE_CLIENT_ID must be a Google web application client ID.")
         return cls(
             jwt_secret=secret,
             cookie_secure=secure == "true",
             allowed_origins=tuple(origin.strip() for origin in origins.split(",") if origin.strip()),
+            google_client_id=google_client_id or None,
         )

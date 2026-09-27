@@ -68,6 +68,27 @@ def check_origin(request: Request):
         raise HTTPException(status_code=403, detail="Origin is not allowed.")
 
 
+def start_session(traveler: Traveler, request: Request, response: Response, session: Session):
+    """Common session issuance for password and verified Google sign-in."""
+    settings = request.app.state.auth_settings
+    previous = request.cookies.get(COOKIE_NAME)
+    if previous:
+        old = session.get(RefreshToken, token_hash(previous))
+        if old:
+            session.execute(update(AuthSession).where(AuthSession.id == old.session_id).values(revoked=True))
+    raw = secrets.token_urlsafe(32)
+    auth_session = AuthSession(
+        id=str(uuid4()), traveler_id=traveler.id, refresh_hash=token_hash(raw),
+        expires_at=int(time.time()) + settings.refresh_seconds,
+    )
+    session.add(auth_session)
+    session.flush()
+    session.add(RefreshToken(token_hash=auth_session.refresh_hash, session_id=auth_session.id))
+    session.commit()
+    set_refresh_cookie(response, raw, auth_session, settings)
+    return access_token(auth_session, settings)
+
+
 def create_auth_router(get_session):
     router = APIRouter(prefix="/auth", tags=["Authentication"])
     SessionDep = Annotated[Session, Depends(get_session)]
@@ -107,12 +128,12 @@ def create_auth_router(get_session):
 
     @router.post("/login", response_model=AccessTokenPublic, dependencies=[Depends(check_origin)])
     def login(data: LoginRequest, request: Request, response: Response, session: SessionDep):
-        settings = request.app.state.auth_settings
         # Serialize login with password reset so an old-password login cannot
         # create a new session after reset has revoked existing sessions.
         session.execute(update(Traveler).where(Traveler.email == data.email).values(password_hash=Traveler.password_hash))
         traveler = session.exec(select(Traveler).where(Traveler.email == data.email)).first()
-        stored_hash = traveler.password_hash.encode("ascii") if traveler else DUMMY_HASH
+        password_enabled = traveler is not None and bool(traveler.password_hash)
+        stored_hash = traveler.password_hash.encode("ascii") if password_enabled else DUMMY_HASH
         try:
             password = data.password.get_secret_value().encode("utf-8")
             # bcrypt rejects overlong input; still do bcrypt work before rejecting it.
@@ -121,30 +142,13 @@ def create_auth_router(get_session):
         except (ValueError, UnicodeError):
             matches = False
             valid_length = False
-        if traveler is None or not valid_length or not matches:
+        if not password_enabled or not valid_length or not matches:
             raise HTTPException(
                 status_code=401, detail="Invalid email or password.",
                 headers={"WWW-Authenticate": "Bearer", "Cache-Control": "no-store"},
             )
 
-        # Replacing a cookie also revokes the previous session in this browser.
-        previous = request.cookies.get(COOKIE_NAME)
-        if previous:
-            old = session.get(RefreshToken, token_hash(previous))
-            if old:
-                session.execute(update(AuthSession).where(AuthSession.id == old.session_id).values(revoked=True))
-
-        raw = secrets.token_urlsafe(32)
-        auth_session = AuthSession(
-            id=str(uuid4()), traveler_id=traveler.id, refresh_hash=token_hash(raw),
-            expires_at=int(time.time()) + settings.refresh_seconds,
-        )
-        session.add(auth_session)
-        session.flush()
-        session.add(RefreshToken(token_hash=auth_session.refresh_hash, session_id=auth_session.id))
-        session.commit()
-        set_refresh_cookie(response, raw, auth_session, settings)
-        return access_token(auth_session, settings)
+        return start_session(traveler, request, response, session)
 
     @router.get("/me", response_model=TravelerPublic)
     def me(response: Response, traveler: Annotated[Traveler, Depends(current_traveler)]):

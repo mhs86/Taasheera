@@ -1,6 +1,6 @@
 # Taasheera backend — traveler authentication
 
-The backend supports traveler registration, email/password login, a protected profile, refresh, logout, and email-based password reset. The frontend connects registration, sign-in, and password reset, displays the protected traveler profile, restores sessions after reload, and supports logout. There is no admin registration or Google sign-in.
+The backend supports traveler registration, email/password login, Google ID-token sign-in, a protected profile, refresh, logout, and email-based password reset. The frontend connects registration, email/password sign-in, and password reset, displays the protected traveler profile, restores sessions after reload, and supports logout. Google sign-in is backend-only; the frontend Google button remains a placeholder. There is no admin registration.
 
 ## Windows setup and run
 
@@ -48,6 +48,57 @@ A session expires seven days after login; rotation does not extend that deadline
 Cookie-changing endpoints check an incoming `Origin` against `AUTH_ALLOWED_ORIGINS`, a comma-separated exact allowlist. Defaults are `http://127.0.0.1:5173,http://127.0.0.1:8000`. Requests without an Origin are accepted for API clients unless marked cross-site by `Sec-Fetch-Site`. Configure exact HTTPS origins for deployment. This is CSRF protection, not a CORS allowance; no CORS middleware was added. The Vite development proxy forwards `/auth` to the backend on the same browser origin.
 
 For a manual backend check, open http://127.0.0.1:8000/docs after starting with the environment above. Register a traveler, call login, copy only the returned access token into **Authorize**, then call `/auth/me`. Swagger/browser keeps the refresh cookie for refresh and logout. After logout, the old access token must return `401`. See `frontend/README.md` for the browser sign-in checklist.
+
+## Google sign-in (backend only)
+
+`POST /auth/google` accepts JSON `{"id_token":"<Google Identity Services credential>"}`. The future frontend must send the **ID token** from the GIS JavaScript callback, not a Google API access token or authorization code. The endpoint is a same-origin JSON API, not Google's direct HTML form/redirect callback.
+
+The backend uses `google.oauth2.id_token.verify_oauth2_token` from the supported `google-auth` library to verify the signature, configured audience, issuer, and expiry. It additionally requires `email_verified: true`, a valid email, and a nonempty string `sub`. Google certificates are fetched over HTTPS with a 10-second request timeout; provider transport failures return `503`. Tokens and verifier exception details are not logged or returned.
+
+| Result | Response |
+| --- | --- |
+| First Google sign-in with an unused email | Creates a traveler and a Google identity, then returns `200` with `access_token`, `token_type: bearer`, and `expires_in`; sets the existing refresh cookie. |
+| Returning linked Google identity | Resolves by stable `sub`, then returns the same session response. Changed Google email/name claims do not overwrite the local profile or select another account. |
+| Email already belongs to an account not linked to this `sub` | `409`, with `detail.code: google_link_required` and a message to use the existing sign-in method. No identity is linked and no session is issued. |
+| Invalid/expired token, invalid subject, or unverified email | `401`: `Invalid Google ID token or unverified email.` |
+| Google sign-in unconfigured / Google unavailable | `503`; no account or session is created. |
+| Malformed JSON fields / untrusted Origin | Existing `422` validation / `403` Origin protection. Submitted token values are omitted from validation errors. |
+
+Google sign-in reuses the existing JWT, refresh rotation, cookie, `/auth/me`, and logout implementation. Replacing the current browser session revokes the prior session; logout revokes its access and refresh tokens. Other device sessions remain independent. There is no automatic account-linking endpoint in this increment.
+
+Google-only travelers have an empty password hash, explicitly disabling email/password sign-in. Forgot-password still returns its generic `202`, but sends no email and creates no reset token for them. Reset completion also refuses Google-only accounts, even if a stray reset-token row exists. Re-registering that email cannot enable a password.
+
+### Google Cloud Console configuration
+
+In the team's Google Cloud project, configure the OAuth consent screen/Google Auth Platform branding and audience: application name, support/developer contact, authorized production domains, homepage/privacy URLs as applicable, and approved test users while the app is in Testing. Create an **OAuth client ID** with application type **Web application**.
+
+Configure **Authorized JavaScript origins** for the exact future frontend origins (scheme, hostname, and port; no paths): `http://127.0.0.1:5173` for this repository's local Vite setup and the team's actual HTTPS production origin. If using localhost instead, register `http://localhost` and `http://localhost:5173`, and also update the backend Origin allowlist and local frontend host configuration consistently. Do not substitute the backend port for the frontend origin.
+
+For the planned GIS popup/JavaScript callback followed by a JSON POST, no authorized redirect URI is required for this endpoint. Do not configure `/auth/google` as a direct Google form-post callback: that would require a separate integration and Google's CSRF-token handling. Use the same web client ID in `GOOGLE_CLIENT_ID` and the future GIS frontend configuration. This verification flow needs **no client secret, service-account key, or Google API access credentials**. The client ID is public configuration; do not commit real credentials or token samples.
+
+See Google's [GIS setup guide](https://developers.google.com/identity/gsi/web/guides/get-google-api-clientid) and [server-side ID-token verification guide](https://developers.google.com/identity/gsi/web/guides/verify-google-id-token).
+
+### Local backend setup and testing
+
+From the repository root in PowerShell:
+
+```powershell
+cd backend
+.\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
+$env:GOOGLE_CLIENT_ID = "REPLACE_WITH_YOUR_WEB_CLIENT_ID.apps.googleusercontent.com"
+$env:JWT_SECRET = (& .\.venv\Scripts\python.exe -c "import secrets; print(secrets.token_urlsafe(48))")
+$env:AUTH_COOKIE_SECURE = "false"
+$env:AUTH_ALLOWED_ORIGINS = "http://127.0.0.1:5173,http://127.0.0.1:8000"
+.\.venv\Scripts\python.exe -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+```
+
+Replace the placeholder with the actual web client ID copied from the Console. If `GOOGLE_CLIENT_ID` is unset/empty, Google sign-in is disabled while other authentication remains available. A malformed configured client ID fails startup. Keep secure cookies enabled for HTTPS deployments. Environment files are not automatically loaded.
+
+Run focused tests with `.\.venv\Scripts\python.exe -m pytest tests/test_google_auth.py -q`, or the full regression suite with `.\.venv\Scripts\python.exe -m pytest -q`. Tests mock Google's verifier, block outbound requests, use temporary databases, and need no Google account/client ID, SMTP server, or real credentials. They verify application behavior and that the configured audience is passed to the supported verifier; they do not replace a live Google signature/integration check.
+
+After the team configures its Console project and implements the GIS frontend callback, send a freshly obtained ID token as the JSON body to `/auth/google`, then check `/auth/me`, refresh, and logout. Test a new Google traveler, a repeat sign-in, and a collision with a password account (expect `409`). Do not put ID tokens in URL queries, shell history, logs, or committed fixtures. Until frontend integration is implemented, the existing Google button cannot perform this live check.
+
+Existing local databases are preserved: startup creates the new `googleidentity` table and its unique constraints. It does not drop/rebuild the traveler table or change existing password hashes. The original non-null password column remains compatible; only newly created Google-only accounts use the disabled empty value. Back up shared databases before deployment and adopt migrations for future changes to existing tables.
 
 ## Forgotten-password reset
 
