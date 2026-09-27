@@ -1,4 +1,4 @@
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, EmailStr, SecretStr, StringConstraints, field_validator
 from pydantic import Field as SchemaField
@@ -39,3 +39,35 @@ class TravelerPublic(BaseModel):
     id: int
     name: str
     email: str
+
+
+class LoginRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    email: EmailStr
+    password: SecretStr
+
+    @field_validator("email")
+    @classmethod
+    def normalize_email(cls, value: str) -> str:
+        return value.lower()
+
+
+class AccessTokenPublic(BaseModel):
+    access_token: str
+    token_type: Literal["bearer"] = "bearer"
+    expires_in: int
+
+
+class AuthSession(SQLModel, table=True):
+    id: str = Field(primary_key=True)
+    traveler_id: int = Field(foreign_key="traveler.id", index=True)
+    refresh_hash: str = Field(max_length=64, repr=False)
+    expires_at: int
+    revoked: bool = False
+
+
+class RefreshToken(SQLModel, table=True):
+    # Retain past hashes until session cleanup so replay revokes the whole session.
+    token_hash: str = Field(primary_key=True, max_length=64, repr=False)
+    session_id: str = Field(foreign_key="authsession.id", index=True)

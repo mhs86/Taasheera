@@ -77,11 +77,11 @@ function CreateAccount() {
 
             if (response.status === 201) {
               form.reset()
-              setMessage('Your traveler account has been created. Sign-in is not available yet.')
+              setMessage('Your traveler account has been created. You can now sign in.')
             } else {
               setHasError(true)
               if (response.status === 409) {
-                setMessage('This email is already registered. Use a different email address. Sign-in is not available yet.')
+                setMessage('This email is already registered. Sign in or use a different email address.')
               } else if (response.status === 422) {
                 const body: unknown = await response.json().catch(() => null)
                 setMessage(validationMessage(body))

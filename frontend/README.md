@@ -1,6 +1,6 @@
 ﻿# Taasheera frontend
 
-React + TypeScript + Vite. Create account is connected to the registration API. Sign-in, Google sign-in, and password reset are still unavailable.
+React + TypeScript + Vite. Registration and email/password sign-in are connected to the backend. Signed-in travelers see their name from protected `/auth/me` and can log out. Google sign-in and password reset are still unavailable.
 
 ## Run locally on Windows
 
@@ -10,6 +10,8 @@ Terminal 1:
 
 ```powershell
 cd backend
+$env:JWT_SECRET = (& .\.venv\Scripts\python.exe -c "import secrets; print(secrets.token_urlsafe(48))")
+$env:AUTH_COOKIE_SECURE = "false" # Required for refresh cookies on local HTTP.
 .\.venv\Scripts\python.exe -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
@@ -22,7 +24,21 @@ npm.cmd run dev
 
 Open http://127.0.0.1:5173/#create-account. You can also follow Create an account from sign-in. If port 5173 is occupied, stop the old Vite server before starting this one. Restart Vite after changing its configuration.
 
-The browser posts JSON containing only `name`, `email`, and `password` to `/auth/register` on the frontend origin. Vite forwards that exact path to http://127.0.0.1:8000. Confirmation stays in the form. No backend CORS allowance is needed. This is a development proxy; a production host must route `/auth/register` to the API too. See [Vite proxy documentation](https://vite.dev/config/server-options.html#server-proxy).
+The browser calls `/auth` on the frontend origin. Vite forwards these requests to http://127.0.0.1:8000. No backend CORS allowance is needed. A production host must also route `/auth` to the API and use HTTPS with secure cookies. Use `127.0.0.1` consistently locally so the origin matches the backend allowlist.
+
+Access tokens stay in JavaScript memory, never localStorage or sessionStorage. Reload calls `/auth/refresh` with the HttpOnly cookie, then `/auth/me` with the returned bearer token. Web Locks serialize login, refresh, and logout across same-origin tabs; concurrent React mounts share one restoration request. Use a current browser with Web Locks support (HTTPS or loopback HTTP). Logout only shows the signed-out view after backend revocation succeeds; failures offer a retry. Other open tabs update their displayed profile on reload.
+
+## Test sign-in in the browser
+
+1. Start both servers above and open http://127.0.0.1:5173/. Register a test traveler, then follow **Sign in**.
+2. Enter that email and a wrong password. Expect `Invalid email or password.`, a cleared password field, and no signed-in view. Network should show `/auth/login` returning `401` and no `/auth/me` request.
+3. Enter the correct password. Expect `/auth/login` returning `200`, followed by `/auth/me` returning `200` with a bearer Authorization header. The welcome heading must show the name returned by `/auth/me`.
+4. Reload. Expect `/auth/refresh` then `/auth/me`, and the same welcome heading. A fresh signed-out browser instead receives `401` from refresh and shows sign-in. Reload two tabs concurrently to check serialized rotation.
+5. Open `/auth/me` directly on the frontend origin: expect `401` because a refresh cookie alone does not authorize protected access. In developer tools, confirm neither localStorage nor sessionStorage contains tokens; the refresh cookie is HttpOnly, SameSite Strict, path `/auth`, and lacks Secure only for local HTTP.
+6. Click **Log out**. Expect `/auth/logout` returning `204` and sign-in appearing. Reload and confirm you remain signed out. Reusing the prior bearer token against `/auth/me` must return `401` (also covered by backend tests).
+7. While signed in, switch the browser offline and click **Log out**. Expect a visible error rather than a false success. Restore connectivity and retry; logout should succeed.
+
+Automated session-module tests cover correct/wrong passwords, protected profile requests, restoration deduplication, missing cookies, profile failures, logout, and retryable failures. They mock HTTP; the backend suite separately exercises real API/session behavior. Browser visual and cookie checks require the manual steps above when no browser connection is available.
 
 ## Test registration in the browser
 
@@ -41,6 +57,7 @@ From `frontend/`:
 ```powershell
 npm.cmd run build
 npm.cmd run lint
+npm.cmd test # Node 22.18+ (native TypeScript stripping), validated with Node 24
 ```
 
 From `backend/`:

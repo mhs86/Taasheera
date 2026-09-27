@@ -9,6 +9,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, SQLModel, select
 
 from .database import build_engine
+from .auth import create_auth_router
+from .config import AuthSettings
 from .models import RegisterRequest, Traveler, TravelerPublic
 
 
@@ -17,6 +19,7 @@ def create_app(database_url: str | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        app.state.auth_settings = AuthSettings.from_environment()
         # Development bootstrap only; use migrations once the team shares a database.
         SQLModel.metadata.create_all(engine)
         try:
@@ -24,12 +27,14 @@ def create_app(database_url: str | None = None) -> FastAPI:
         finally:
             engine.dispose()
 
-    app = FastAPI(title="Taasheera registration API", lifespan=lifespan)
+    app = FastAPI(title="Taasheera traveler API", lifespan=lifespan)
     app.state.engine = engine
 
     def get_session():
         with Session(engine) as session:
             yield session
+
+    app.include_router(create_auth_router(get_session))
 
     @app.exception_handler(RequestValidationError)
     async def validation_error_handler(request: Request, exc: RequestValidationError):

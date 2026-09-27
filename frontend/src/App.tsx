@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { restoreSession, signIn, signOut, type Traveler } from './auth'
 import './App.css'
 import CreateAccount from './CreateAccount'
 import ForgotPassword from './ForgotPassword'
@@ -22,6 +23,22 @@ const pageTitles = {
 
 function App() {
   const [page, setPage] = useState(getPage)
+  const [traveler, setTraveler] = useState<Traveler | null>(null)
+  const [checking, setChecking] = useState(true)
+  const [sessionError, setSessionError] = useState('')
+  const [loggingOut, setLoggingOut] = useState(false)
+
+  useEffect(() => {
+    let active = true
+    restoreSession().then((profile) => {
+      if (active) setTraveler(profile)
+    }).catch(() => {
+      if (active) setSessionError('Could not restore your session. Check your connection and try reloading, or sign in again.')
+    }).finally(() => {
+      if (active) setChecking(false)
+    })
+    return () => { active = false }
+  }, [])
 
   useEffect(() => {
     const updatePage = () => setPage(getPage())
@@ -30,8 +47,8 @@ function App() {
   }, [])
 
   useEffect(() => {
-    document.title = `${pageTitles[page]} | Taasheera`
-  }, [page])
+    document.title = `${traveler ? 'Signed in' : pageTitles[page]} | Taasheera`
+  }, [page, traveler])
 
   return (
     <main className="sign-in-page">
@@ -40,18 +57,45 @@ function App() {
         Taasheera
       </header>
 
-      {page === 'sign-in' && <SignIn />}
-      {page === 'create-account' && <CreateAccount />}
-      {page === 'forgot-password' && <ForgotPassword />}
-      {page === 'set-new-password' && <SetNewPassword />}
+      {checking ? <p role="status">Restoring your session…</p> : traveler ? (
+        <section className="sign-in-card" aria-labelledby="signed-in-heading">
+          <p className="eyebrow">YOUR TRAVELER ACCOUNT</p>
+          <h1 id="signed-in-heading">Welcome, {traveler.name}</h1>
+          <p className="intro">You are signed in.</p>
+          <button className="primary-button" disabled={loggingOut} onClick={async () => {
+            setLoggingOut(true)
+            setSessionError('')
+            try {
+              await signOut()
+              setTraveler(null)
+              window.location.hash = 'sign-in'
+            } catch {
+              setSessionError('Could not confirm logout. Check your connection and try again.')
+            } finally {
+              setLoggingOut(false)
+            }
+          }}>{loggingOut ? 'Logging out…' : 'Log out'}</button>
+        </section>
+      ) : <>
+        {page === 'sign-in' && <SignIn onSignedIn={(profile) => {
+          setSessionError('')
+          setTraveler(profile)
+        }} />}
+        {page === 'create-account' && <CreateAccount />}
+        {page === 'forgot-password' && <ForgotPassword />}
+        {page === 'set-new-password' && <SetNewPassword />}
+      </>}
+      {sessionError && <p className="auth-status auth-error" role="alert">{sessionError}</p>}
 
       <footer>Your next chapter starts with a journey.</footer>
     </main>
   )
 }
 
-function SignIn() {
+function SignIn({ onSignedIn }: { onSignedIn: (traveler: Traveler) => void }) {
   const [message, setMessage] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const inProgress = useRef(false)
 
   return (
     <section className="sign-in-card" aria-labelledby="sign-in-heading">
@@ -59,16 +103,28 @@ function SignIn() {
       <h1 id="sign-in-heading">Welcome back</h1>
       <p className="intro">Sign in to your traveler account.</p>
 
-      <p className="availability-note" id="availability-note">
-        Preview only. Sign-in is not connected yet.
-      </p>
-
       <form
-        aria-describedby="availability-note"
-        onSubmit={(event) => {
+        aria-busy={submitting}
+        onSubmit={async (event) => {
           event.preventDefault()
-          // Connect real authentication here when the backend is ready.
-          setMessage('Email sign-in is not available yet. Your details have not been sent or saved.')
+          if (inProgress.current) return
+          const form = event.currentTarget
+          const fields = new FormData(form)
+          inProgress.current = true
+          setSubmitting(true)
+          setMessage('')
+          try {
+            const profile = await signIn(String(fields.get('email') ?? ''), String(fields.get('password') ?? ''))
+            onSignedIn(profile)
+          } catch (error) {
+            setMessage(error instanceof Error && error.name === 'Error'
+              ? error.message : 'Could not sign in. Check your connection and try again.')
+          } finally {
+            const password = form.elements.namedItem('password')
+            if (password instanceof HTMLInputElement) password.value = ''
+            inProgress.current = false
+            setSubmitting(false)
+          }
         }}
       >
         <label htmlFor="email">Email</label>
@@ -77,6 +133,7 @@ function SignIn() {
           name="email"
           type="email"
           autoComplete="email"
+          disabled={submitting}
           placeholder="you@example.com"
           required
         />
@@ -87,6 +144,7 @@ function SignIn() {
           name="password"
           type="password"
           autoComplete="current-password"
+          disabled={submitting}
           required
         />
 
@@ -97,7 +155,7 @@ function SignIn() {
           Forgot your password?
         </a>
 
-        <button className="primary-button" type="submit">Sign in</button>
+        <button className="primary-button" type="submit" disabled={submitting}>{submitting ? 'Signing in…' : 'Sign in'}</button>
       </form>
 
       <div className="divider"><span>or</span></div>
