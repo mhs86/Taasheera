@@ -2,7 +2,7 @@ from datetime import date
 
 import pytest
 
-from app.passport.mrz import MrzFormatError, check_digit, parse_td3
+from app.passport.mrz import MrzFormatError, check_digit, parse_td3, repair_ocr_lines
 
 
 # ICAO 9303 specimen passport ("Utopia"). Never use real passport data in tests.
@@ -97,6 +97,68 @@ def test_unused_personal_number_accepts_filler_check_digit():
 
     assert mrz.personal_number == ""
     assert mrz.is_valid
+
+
+def test_corrects_ocr_lookalikes_by_position():
+    # Real OCR output on a synthetic specimen: nationality "UTO" read as "UT0".
+    # Nationality has no check digit, so only position-based correction can fix it.
+    line2 = with_char(SPECIMEN_LINE2, 12, "0")
+    # A letter O inside the birth date, and the digit 1 in place of the I in ERIKSSON.
+    line2 = with_char(line2, 15, "O")
+    line1 = with_char(SPECIMEN_LINE1, 7, "1")
+
+    mrz = parse_td3(line1, line2, today=TODAY)
+
+    assert mrz.nationality == "UTO"
+    assert mrz.birth_date == date(1974, 8, 12)
+    assert mrz.surname == "ERIKSSON"
+    assert mrz.is_valid
+
+
+def test_check_digit_picks_between_lookalikes_in_document_number():
+    # Letter O and zero are both legal in a document number, so position can't decide.
+    # Only the single swap O -> 0 passes the check digits (seen on a real passport scan).
+    line2 = with_char(SPECIMEN_LINE2, 5, "O")
+
+    mrz = parse_td3(SPECIMEN_LINE1, line2, today=TODAY)
+
+    assert mrz.document_number == "L898902C3"
+    assert mrz.corrected_fields == {"document_number"}
+    assert mrz.is_valid
+
+
+def test_does_not_invent_a_value_when_the_truth_is_out_of_reach():
+    # "L" misread as "0": L isn't a look-alike we swap. Trying many swaps once produced
+    # a wrong value that passed both checks by luck; single swaps must leave it flagged.
+    line2 = with_char(SPECIMEN_LINE2, 0, "0")
+
+    mrz = parse_td3(SPECIMEN_LINE1, line2, today=TODAY)
+
+    assert mrz.document_number == "0898902C3"
+    assert mrz.corrected_fields == set()
+    assert "document_number" in mrz.suspect_fields
+
+
+def test_repair_turns_k_filler_back_into_filler_and_fixes_length():
+    # Tesseract reads runs of '<' as 'K' and miscounts them (seen on a real passport scan).
+    ocr_line1 = "P<UTOERIKSSON<<ANNA<MARIA<<<<<K<KK<<KK<KKK<K<<"
+    ocr_line2 = SPECIMEN_LINE2[:37] + "<K<<<" + SPECIMEN_LINE2[42:]
+
+    line1, line2 = repair_ocr_lines(ocr_line1, ocr_line2)
+
+    assert (line1, line2) == (SPECIMEN_LINE1, SPECIMEN_LINE2)
+
+
+def test_repair_keeps_a_name_that_ends_in_k():
+    line1, _ = repair_ocr_lines("P<UTOMALIK<<ERIK" + "<" * 25 + "K", SPECIMEN_LINE2)
+
+    assert line1 == "P<UTOMALIK<<ERIK" + "<" * 28
+
+
+def test_repair_pads_a_short_line_one():
+    line1, _ = repair_ocr_lines(SPECIMEN_LINE1[:40], SPECIMEN_LINE2)
+
+    assert line1 == SPECIMEN_LINE1
 
 
 def test_accepts_lowercase_and_surrounding_whitespace():
