@@ -4,3 +4,12 @@ CLAUDE.local.md
 .env.*
 !.env.example
 .DS_Store
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Local uploads (passport images must never be committed)
+storage/
