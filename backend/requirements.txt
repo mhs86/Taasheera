@@ -1,0 +1,6 @@
+fastapi>=0.115,<1
+uvicorn>=0.30,<1
+python-multipart>=0.0.18,<0.1
+pillow>=11,<13
+# Needs the Tesseract program installed (macOS: brew install tesseract).
+pytesseract>=0.3.13,<0.4
