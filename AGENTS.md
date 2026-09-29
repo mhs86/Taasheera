@@ -75,7 +75,7 @@ replace by team agreement and then update this table.
 | Frontend | React 19, TypeScript, Vite, ESLint | in use | Mainstream, fast dev loop, types catch API mistakes |
 | Database | PostgreSQL in prod (SQLite ok for local dev) + **Alembic** migrations | proposed | JSONB suits extraction results and embassy profiles; `create_all` can't evolve a shared schema |
 | File storage | Private S3-compatible bucket (e.g. Cloudflare R2 / Supabase Storage); local folder in dev behind the same interface | proposed | Passports must never sit in a public folder or on an ephemeral server disk |
-| Passport OCR | MRZ via PassportEye + Tesseract; vision LLM fallback when check digits fail | proposed | MRZ check digits let us verify a read instead of trusting it |
+| Passport OCR | Tesseract via pytesseract, MRZ located and repaired by our code (`backend/app/passport/`); vision LLM fallback when check digits fail | in use (vision fallback proposed) | MRZ check digits let us verify a read instead of trusting it |
 | LLM | Anthropic Claude via the official Python SDK, called only from the backend; native tool use for agent features | proposed | Keys never reach the browser; plain SDK over a framework (e.g. LangChain) keeps the agent loop small and debuggable |
 | Frontend libs | React Router (routes, 404), TanStack Query (API calls, loading/error states), Tailwind CSS (+ `rtl:` for Arabic later) | proposed | Covers routing, error toasts and styling without hand-rolling each |
 | Backend hosting | Docker container on Render / Railway / Fly.io | proposed | Tesseract (and later Playwright's Chromium) are system packages, so we need an image, not a plain Python runtime |
@@ -95,6 +95,7 @@ cd backend && python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt -r requirements-dev.txt
 uvicorn app.main:app --reload   # requires JWT_SECRET (>= 32 bytes)
 pytest
+uvicorn scripts.passport_demo:app --reload   # passport test page at :8000 (no auth); local demo only
 
 # frontend
 cd frontend && npm install
@@ -118,6 +119,16 @@ What we decided, why, and what we rejected. Newest at the bottom. Add an entry w
 1. **FastAPI backend.** Python fits the OCR/LLM work. *Rejected: a Node backend, which would split
    the AI tooling across two languages.*
 2. **React + Vite + TypeScript frontend.** Mainstream and typed.
+3. **MRZ-first passport extraction.** OCR only the MRZ (fixed ICAO 9303 format), then repair it:
+   look-alikes corrected by position, `<` misread as `K` restored, and in alphanumeric fields a
+   single look-alike swap accepted only if it's the one swap passing both check digits. Status is
+   verified / needs_review / unreadable. *Rejected: full-page field OCR (nothing to verify against).*
+   *Replaced: PassportEye*, whose MRZ locator failed on a real passport with a patterned background;
+   we now OCR the page with Tesseract and find the MRZ lines ourselves, retrying rotations and scales
+   within a 6 s budget. Note: check digits miss some errors (e.g. `L`/`1`, `G`/`6` are equal mod 10),
+   so the traveler confirms every field.
+4. **Passport images:** re-encoded to JPEG on upload (fixes rotation, strips EXIF/GPS), stored under
+   `<traveler_id>/<random id>`, so reads are owner-scoped by construction. Local disk in dev, private bucket in prod.
 
 ## Personal instructions
 
