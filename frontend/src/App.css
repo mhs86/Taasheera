@@ -93,6 +93,34 @@ input::placeholder {
   color: #6b7975;
 }
 
+.create-password-field {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+
+.create-password-field input {
+  flex: 1;
+  min-width: 0;
+  margin-bottom: 0;
+}
+
+.create-password-toggle {
+  flex: 0 0 46px;
+  width: 46px;
+  padding: 10px;
+  border-color: #a9bab3;
+  background: white;
+  color: #203b3a;
+}
+
+.create-password-toggle svg {
+  display: block;
+  width: 24px;
+  height: 24px;
+  margin: auto;
+}
+
 .forgot-password {
   align-self: flex-end;
   margin: -4px 0 22px;

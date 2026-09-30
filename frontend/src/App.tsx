@@ -26,6 +26,7 @@ function App({ initialNavigation, googleClientId = import.meta.env?.VITE_GOOGLE_
   const [checking, setChecking] = useState(true)
   const [sessionError, setSessionError] = useState('')
   const [loggingOut, setLoggingOut] = useState(false)
+  const [registrationMessage, setRegistrationMessage] = useState('')
 
   useEffect(() => {
     if (isRecoveryPage) return
@@ -43,6 +44,7 @@ function App({ initialNavigation, googleClientId = import.meta.env?.VITE_GOOGLE_
   useEffect(() => {
     const updatePage = () => {
       const next = readNavigation(window)
+      if (next.page !== 'sign-in') setRegistrationMessage('')
       setRoute(previous => ({ ...next, version: previous.version + 1 }))
     }
     window.addEventListener('hashchange', updatePage)
@@ -91,11 +93,15 @@ function App({ initialNavigation, googleClientId = import.meta.env?.VITE_GOOGLE_
           }}>{loggingOut ? 'Logging out…' : 'Log out'}</button>
         </section>
       ) : <>
-        {page === 'sign-in' && <SignIn googleClientId={googleClientId} onSignedIn={(profile) => {
+        {page === 'sign-in' && <SignIn googleClientId={googleClientId} initialMessage={registrationMessage} onSignedIn={(profile) => {
+          setRegistrationMessage('')
           setSessionError('')
           setTraveler(profile)
         }} />}
-        {page === 'create-account' && <CreateAccount />}
+        {page === 'create-account' && <CreateAccount onCreated={() => {
+          setRegistrationMessage('Your traveler account has been created. You can now sign in.')
+          window.location.hash = 'sign-in'
+        }} />}
       </>}
       {sessionError && !isRecoveryPage && <p className="auth-status auth-error" role="alert">{sessionError}</p>}
 
@@ -104,8 +110,10 @@ function App({ initialNavigation, googleClientId = import.meta.env?.VITE_GOOGLE_
   )
 }
 
-function SignIn({ onSignedIn, googleClientId }: { onSignedIn: (traveler: Traveler) => void; googleClientId: string }) {
-  const [message, setMessage] = useState('')
+function SignIn({ onSignedIn, googleClientId, initialMessage }: {
+  onSignedIn: (traveler: Traveler) => void; googleClientId: string; initialMessage: string
+}) {
+  const [message, setMessage] = useState(initialMessage)
   const [submitting, setSubmitting] = useState(false)
   const inProgress = useRef(false)
   const mounted = useRef(false)
