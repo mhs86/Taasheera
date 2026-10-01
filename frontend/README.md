@@ -4,15 +4,13 @@ React + TypeScript + Vite. Registration, email/password sign-in, Google sign-in,
 
 ## Run locally on Windows
 
-Use two PowerShell terminals, each starting at the repository root. The backend virtual environment and frontend dependencies must already be installed (see `backend/README.md`; run `npm.cmd install` in `frontend/` if needed).
+First complete the one-time backend setup in `backend/README.md`. From `frontend/`, run `npm.cmd ci` once after cloning to install the locked frontend dependencies. Then use two PowerShell terminals, each starting at the repository root:
 
 Terminal 1:
 
 ```powershell
 cd backend
-$env:JWT_SECRET = (& .\.venv\Scripts\python.exe -c "import secrets; print(secrets.token_urlsafe(48))")
-$env:AUTH_COOKIE_SECURE = "false" # Required for refresh cookies on local HTTP.
-.\.venv\Scripts\python.exe -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+.\.venv\Scripts\python.exe dev.py run
 ```
 
 Terminal 2:
@@ -21,6 +19,8 @@ Terminal 2:
 cd frontend
 npm.cmd run dev
 ```
+
+The public Google Web Client ID is already in `frontend/.env.development` and `backend/.env.development`. The backend development launcher reads its private JWT secret from Git-ignored `backend/.env.local`. No client ID or JWT setting needs to be typed into either terminal on later starts.
 
 Open http://127.0.0.1:5173/#create-account. You can also follow Create an account from sign-in. If port 5173 is occupied, stop the old Vite server before starting this one. Restart Vite after changing its configuration.
 
@@ -46,26 +46,21 @@ In Google Cloud Console / Google Auth Platform, configure branding, audience and
 
 The integration uses Google's official rendered button in popup mode with a JavaScript credential callback. It needs no authorized redirect URI, client secret, Google API access token or One Tap. Do not configure `/auth/google` as a Google redirect/form-post URL. See Google's [setup guide](https://developers.google.com/identity/gsi/web/guides/get-google-api-clientid) and [button guide](https://developers.google.com/identity/gsi/web/guides/display-button).
 
-Stop existing development servers. In a backend PowerShell terminal, from the repository root:
+Stop existing development servers. Complete the one-time setup in `backend/README.md`, then start the backend from the repository root:
 
 ```powershell
 cd backend
-$env:JWT_SECRET = (& .\.venv\Scripts\python.exe -c "import secrets; print(secrets.token_urlsafe(48))")
-$env:AUTH_COOKIE_SECURE = "false"
-$env:AUTH_ALLOWED_ORIGINS = "http://127.0.0.1:5173,http://127.0.0.1:8000"
-$env:GOOGLE_CLIENT_ID = "REPLACE_WITH_YOUR_WEB_CLIENT_ID.apps.googleusercontent.com"
-.\.venv\Scripts\python.exe -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+.\.venv\Scripts\python.exe dev.py run
 ```
 
 In a frontend PowerShell terminal, from the repository root:
 
 ```powershell
 cd frontend
-$env:VITE_GOOGLE_CLIENT_ID = "REPLACE_WITH_YOUR_WEB_CLIENT_ID.apps.googleusercontent.com"
 npm.cmd run dev
 ```
 
-Replace both placeholders with **the same Web application client ID**. `VITE_GOOGLE_CLIENT_ID` is public and embedded in the browser bundle; never use a client secret here. Restart Vite after changing it, and set it before `npm.cmd run build` for production. Backend environment files are not automatically loaded. No real IDs or credentials need to be committed. Without the frontend setting, the page explains that Google sign-in is unavailable and keeps email sign-in enabled.
+The tracked development files already contain the same public Web application client ID. To change it in VS Code, edit `VITE_GOOGLE_CLIENT_ID` in `frontend/.env.development` and `GOOGLE_CLIENT_ID` in `backend/.env.development`, then restart both servers. Never put a Google Client Secret in either file. Production must supply its own `VITE_GOOGLE_CLIENT_ID` at build time and `GOOGLE_CLIENT_ID` and `JWT_SECRET` through deployment configuration; the development launcher is only for local HTTP. Without the frontend setting, the page explains that Google sign-in is unavailable and keeps email sign-in enabled.
 
 The page loads only `https://accounts.google.com/gsi/client`, shares concurrent loads and offers retry after a load error or 15-second timeout. The credential callback sends JSON `{ "id_token": "<credential>" }` to `/auth/google` through the same Vite proxy. On success, the existing in-memory access token, protected `/auth/me`, refresh cookie and logout flow apply. Google credentials are never put in storage, URLs or logs. A `409 google_link_required` asks the traveler to use their existing sign-in method; no linking is attempted.
 
@@ -81,14 +76,14 @@ These steps need a real configured client ID and allowed Google test account. Au
 4. With a different Google email that belongs to an existing email/password traveler, click Google sign-in. Expect `409 google_link_required`, a message to use the existing sign-in method, and no welcome view. Confirm the existing password still signs in. There is no automatic account linking.
 5. Open the Google popup, then close/cancel it. Email fields must remain usable. Click **Cancel Google sign-in** to clear the local attempt, then retry Google sign-in. Under slow network throttling, completing Google authentication must disable both sign-in methods during the backend exchange and produce only one request.
 6. To exercise backend failure, stop FastAPI after loading the page, then complete Google authentication. Expect an unavailable message and re-enabled controls. Restart FastAPI and retry. To exercise a network failure, block the `/auth/google` request in browser developer tools while leaving Google reachable, then complete authentication; expect a connection message. Clear the block afterwards.
-7. Block `https://accounts.google.com/gsi/client` in developer tools and reload. Expect a load error (or the 15-second timeout), **Retry Google sign-in**, and usable email sign-in. Remove the block and retry. Stop Vite, remove `VITE_GOOGLE_CLIENT_ID` with `Remove-Item Env:VITE_GOOGLE_CLIENT_ID`, restart Vite, and check password sign-in, registration and reset navigation still work without Google configuration.
+7. Block `https://accounts.google.com/gsi/client` in developer tools and reload. Expect a load error (or the 15-second timeout), **Retry Google sign-in**, and usable email sign-in. Remove the block and retry. The automated tests cover missing Google configuration.
 
 Frontend Google tests cover callback success, collision, invalid credentials, server/network errors, retry, duplicate submission, cancellation and stale callbacks, missing configuration, script loading failures, protected profile loading, refresh restoration and logout. The tests fail if application code touches localStorage or sessionStorage. Real Google authentication and visual/keyboard behavior still require the browser checks above.
 
 ## Test registration in the browser
 
-1. Enter a name, a new email such as `traveler-test-1@example.com`, and matching passwords of at least 8 characters, such as `Travel-test-123`. Submit. Expect an account-created message, cleared fields, and no automatic sign-in. This creates a real traveler in the configured development database.
-2. Submit again using the same email and valid passwords. Expect an already-registered message. Email matching is case-insensitive. Password fields clear after each request, including errors.
+1. Enter a name, a new email such as `traveler-test-1@example.com`, and matching passwords of at least 8 characters, such as `Travel-test-123`. Submit. Expect navigation to Sign In with an account-created message and no automatic sign-in. This creates a real traveler in the configured development database.
+2. Return to Create Account and submit again using the same email and valid passwords. Expect an already-registered message. Email matching is case-insensitive. Password fields clear after each request, including errors.
 3. Leave a required field empty, enter an invalid email, or enter mismatching passwords. The browser should block submission. To exercise an API validation response, use matching passwords of 73 ASCII characters: expect the password length message and no account creation. The limit is 72 UTF-8 bytes, so non-ASCII passwords may reach it sooner.
 4. In browser developer tools, select a slow network preset, then submit with a new email. The button should say Creating account and stay disabled while the request runs. The fields are disabled too; repeated clicks should not create extra requests. Return network throttling to normal afterwards.
 5. Stop FastAPI with Ctrl+C, keep Vite running, and submit a valid form. Expect a backend-unavailable message. For a browser network failure, select Offline in developer tools after loading the page, then submit. Expect a connection message. Restore the connection and restart FastAPI afterwards.
@@ -109,9 +104,6 @@ Terminal 2, from the repository root (stop any earlier backend server first):
 
 ```powershell
 cd backend
-$env:JWT_SECRET = (& .\.venv\Scripts\python.exe -c "import secrets; print(secrets.token_urlsafe(48))")
-$env:AUTH_COOKIE_SECURE = "false"
-$env:AUTH_ALLOWED_ORIGINS = "http://127.0.0.1:5173,http://127.0.0.1:8000"
 $env:SMTP_HOST = "127.0.0.1"
 $env:SMTP_PORT = "1025"
 $env:SMTP_SECURITY = "none"
@@ -120,7 +112,7 @@ $env:SMTP_USERNAME = ""
 $env:SMTP_PASSWORD = ""
 $env:SMTP_TIMEOUT_SECONDS = "10"
 $env:RESET_FRONTEND_URL = "http://127.0.0.1:5173/reset-password"
-.\.venv\Scripts\python.exe -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+.\.venv\Scripts\python.exe dev.py run
 ```
 
 Terminal 3, from the repository root:

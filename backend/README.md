@@ -1,23 +1,27 @@
 # Taasheera backend — traveler authentication
 
-The backend supports traveler registration, email/password login, Google ID-token sign-in, a protected profile, refresh, logout, and email-based password reset. The frontend connects registration, email/password sign-in, and password reset, displays the protected traveler profile, restores sessions after reload, and supports logout. Google sign-in is backend-only; the frontend Google button remains a placeholder. There is no admin registration.
+The backend supports traveler registration, email/password login, Google ID-token sign-in, a protected profile, refresh, logout, and email-based password reset. The frontend connects these flows and displays the protected traveler profile. There is no admin registration.
 
 ## Windows setup and run
 
-Install Python 3.12 or newer. From the repository root in PowerShell:
+Install Python 3.12 or newer. From the repository root in PowerShell, run this setup once after cloning:
 
 ```powershell
 cd backend
 py -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
-$env:JWT_SECRET = (& .\.venv\Scripts\python.exe -c "import secrets; print(secrets.token_urlsafe(48))")
-$env:AUTH_COOKIE_SECURE = "false" # Local HTTP only; keep true for HTTPS deployments.
-.\.venv\Scripts\python.exe -m uvicorn app.main:app --reload
+.\.venv\Scripts\python.exe dev.py setup
 ```
 
-No virtual environment activation or PowerShell execution-policy change is needed. If `py` is unavailable, use the full path to your installed Python for the first command.
+On every later start, run from `backend/`:
 
-The secret command assigns a generated value without printing it to the terminal. Keep the same secret across processes/restarts that should accept existing access tokens. Supply a persistent secret through your deployment's environment/secret manager; never commit it. `.env` files are ignored but are not automatically loaded. Startup fails if `JWT_SECRET` is missing or shorter than 32 bytes. Changing it invalidates existing access JWTs; persisted refresh sessions still work until revoked or expired.
+```powershell
+.\.venv\Scripts\python.exe dev.py run
+```
+
+`dev.py setup` creates `backend/.env.local` once with a private JWT signing secret; it never prints or replaces that secret. `dev.py run` automatically reads it and the public `GOOGLE_CLIENT_ID` in the tracked `backend/.env.development`, then starts Uvicorn on `http://127.0.0.1:8000` with local HTTP cookies. No virtual environment activation or PowerShell execution-policy change is needed. If `py` is unavailable, use the full path to your installed Python for the first command.
+
+The local secret stays stable across restarts and is Git-ignored. The development launcher loads only these local settings; production startup still reads environment variables and must receive its own `JWT_SECRET`, `GOOGLE_CLIENT_ID`, and secure-cookie settings from deployment configuration. Never commit a production secret or Google Client Secret. Changing the JWT secret invalidates existing access JWTs; persisted refresh sessions still work until revoked or expired.
 
 Open http://127.0.0.1:8000/docs to try registration. Stop the server with Ctrl+C. For a run-only environment, install `requirements.txt` instead of `requirements-dev.txt`.
 
@@ -49,9 +53,9 @@ Cookie-changing endpoints check an incoming `Origin` against `AUTH_ALLOWED_ORIGI
 
 For a manual backend check, open http://127.0.0.1:8000/docs after starting with the environment above. Register a traveler, call login, copy only the returned access token into **Authorize**, then call `/auth/me`. Swagger/browser keeps the refresh cookie for refresh and logout. After logout, the old access token must return `401`. See `frontend/README.md` for the browser sign-in checklist.
 
-## Google sign-in (backend only)
+## Google sign-in
 
-`POST /auth/google` accepts JSON `{"id_token":"<Google Identity Services credential>"}`. The future frontend must send the **ID token** from the GIS JavaScript callback, not a Google API access token or authorization code. The endpoint is a same-origin JSON API, not Google's direct HTML form/redirect callback.
+`POST /auth/google` accepts JSON `{"id_token":"<Google Identity Services credential>"}`. The frontend sends the **ID token** from the GIS JavaScript callback, not a Google API access token or authorization code. The endpoint is a same-origin JSON API, not Google's direct HTML form/redirect callback.
 
 The backend uses `google.oauth2.id_token.verify_oauth2_token` from the supported `google-auth` library to verify the signature, configured audience, issuer, and expiry. It additionally requires `email_verified: true`, a valid email, and a nonempty string `sub`. Google certificates are fetched over HTTPS with a 10-second request timeout; provider transport failures return `503`. Tokens and verifier exception details are not logged or returned.
 
@@ -74,29 +78,23 @@ In the team's Google Cloud project, configure the OAuth consent screen/Google Au
 
 Configure **Authorized JavaScript origins** for the exact future frontend origins (scheme, hostname, and port; no paths): `http://127.0.0.1:5173` for this repository's local Vite setup and the team's actual HTTPS production origin. If using localhost instead, register `http://localhost` and `http://localhost:5173`, and also update the backend Origin allowlist and local frontend host configuration consistently. Do not substitute the backend port for the frontend origin.
 
-For the planned GIS popup/JavaScript callback followed by a JSON POST, no authorized redirect URI is required for this endpoint. Do not configure `/auth/google` as a direct Google form-post callback: that would require a separate integration and Google's CSRF-token handling. Use the same web client ID in `GOOGLE_CLIENT_ID` and the future GIS frontend configuration. This verification flow needs **no client secret, service-account key, or Google API access credentials**. The client ID is public configuration; do not commit real credentials or token samples.
+For the GIS popup/JavaScript callback followed by a JSON POST, no authorized redirect URI is required for this endpoint. Do not configure `/auth/google` as a direct Google form-post callback: that would require a separate integration and Google's CSRF-token handling. The same public web client ID is in `backend/.env.development` and `frontend/.env.development`; edit both files together in VS Code if the team changes it. This verification flow needs **no client secret, service-account key, or Google API access credentials**. Do not commit those credentials or token samples.
 
 See Google's [GIS setup guide](https://developers.google.com/identity/gsi/web/guides/get-google-api-clientid) and [server-side ID-token verification guide](https://developers.google.com/identity/gsi/web/guides/verify-google-id-token).
 
 ### Local backend setup and testing
 
-From the repository root in PowerShell:
+After the one-time setup above, start the backend from `backend/`:
 
 ```powershell
-cd backend
-.\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
-$env:GOOGLE_CLIENT_ID = "REPLACE_WITH_YOUR_WEB_CLIENT_ID.apps.googleusercontent.com"
-$env:JWT_SECRET = (& .\.venv\Scripts\python.exe -c "import secrets; print(secrets.token_urlsafe(48))")
-$env:AUTH_COOKIE_SECURE = "false"
-$env:AUTH_ALLOWED_ORIGINS = "http://127.0.0.1:5173,http://127.0.0.1:8000"
-.\.venv\Scripts\python.exe -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+.\.venv\Scripts\python.exe dev.py run
 ```
 
-Replace the placeholder with the actual web client ID copied from the Console. If `GOOGLE_CLIENT_ID` is unset/empty, Google sign-in is disabled while other authentication remains available. A malformed configured client ID fails startup. Keep secure cookies enabled for HTTPS deployments. Environment files are not automatically loaded.
+The client ID is already tracked for local development. Google Cloud still needs `http://127.0.0.1:5173` as an authorized JavaScript origin, and test users must be allowed while the app is in Testing. If `GOOGLE_CLIENT_ID` is unset/empty in a production process, Google sign-in is disabled while other authentication remains available. A malformed configured client ID fails startup. Keep secure cookies enabled for HTTPS deployments.
 
 Run focused tests with `.\.venv\Scripts\python.exe -m pytest tests/test_google_auth.py -q`, or the full regression suite with `.\.venv\Scripts\python.exe -m pytest -q`. Tests mock Google's verifier, block outbound requests, use temporary databases, and need no Google account/client ID, SMTP server, or real credentials. They verify application behavior and that the configured audience is passed to the supported verifier; they do not replace a live Google signature/integration check.
 
-After the team configures its Console project and implements the GIS frontend callback, send a freshly obtained ID token as the JSON body to `/auth/google`, then check `/auth/me`, refresh, and logout. Test a new Google traveler, a repeat sign-in, and a collision with a password account (expect `409`). Do not put ID tokens in URL queries, shell history, logs, or committed fixtures. Until frontend integration is implemented, the existing Google button cannot perform this live check.
+After the team configures its Console project, use the frontend Google button to send a freshly obtained ID token to `/auth/google`, then check `/auth/me`, refresh, and logout. Test a new Google traveler, a repeat sign-in, and a collision with a password account (expect `409`). Do not put ID tokens in URL queries, shell history, logs, or committed fixtures.
 
 Existing local databases are preserved: startup creates the new `googleidentity` table and its unique constraints. It does not drop/rebuild the traveler table or change existing password hashes. The original non-null password column remains compatible; only newly created Google-only accounts use the disabled empty value. Back up shared databases before deployment and adopt migrations for future changes to existing tables.
 
@@ -117,7 +115,7 @@ Limits are shared in the database across workers/restarts and apply equally to k
 
 ### SMTP and trusted frontend URL
 
-All settings come from process environment variables; `.env` files are not loaded automatically. No SMTP dependency is needed beyond Python's standard library.
+SMTP settings come from process environment variables; the local launcher loads only its JWT secret and Google client ID from the development files. No SMTP dependency is needed beyond Python's standard library.
 
 | Variable | Required/default | Meaning |
 | --- | --- | --- |
@@ -130,7 +128,7 @@ All settings come from process environment variables; `.env` files are not loade
 | `SMTP_PASSWORD` | Empty | SMTP authentication password; supply with username through your environment/secret manager. Never commit it. |
 | `SMTP_TIMEOUT_SECONDS` | `10` | SMTP socket timeout, 1–60 seconds. |
 
-If both `RESET_FRONTEND_URL` and `SMTP_HOST` are unset, reset email is disabled and existing authentication still runs. Partial or invalid configuration fails startup. Supply the existing `JWT_SECRET`, `AUTH_COOKIE_SECURE`, and `AUTH_ALLOWED_ORIGINS` settings as described above as well. Add your exact frontend origin to `AUTH_ALLOWED_ORIGINS` in deployment; the reset page URL setting does not change that allowlist.
+If both `RESET_FRONTEND_URL` and `SMTP_HOST` are unset, reset email is disabled and existing authentication still runs. Partial or invalid configuration fails startup. The local launcher supplies the development JWT and cookie settings; supply production auth settings separately. Add your exact frontend origin to `AUTH_ALLOWED_ORIGINS` in deployment; the reset page URL setting does not change that allowlist.
 
 Links are built only from `RESET_FRONTEND_URL`, never Host, Origin, or forwarded headers. The link format is `<RESET_FRONTEND_URL>#token=<random-token>`. Configure the frontend reset page path as `/reset-password`; the frontend reads the fragment, replaces it in browser history with `#set-new-password`, and POSTs the token and new password in JSON to `/auth/reset-password`. Tokens stay in memory, never localStorage or sessionStorage. Reloading after the fragment is removed requires reopening the original email link or requesting another. Fragments avoid putting the token in HTTP page requests and access logs. The frontend host must serve the SPA at `/reset-password` (Vite does this locally). Do not enable request-body logging, SMTP debug logging, SQL parameter logging, or message-body capture in production monitoring. The application never logs reset links, tokens, passwords, or provider exceptions.
 
@@ -144,7 +142,7 @@ Use [Mailpit's official Docker image](https://mailpit.axllent.org/docs/install/d
 docker run --rm --name taasheera-mailpit -p 127.0.0.1:1025:1025 -p 127.0.0.1:8025:8025 axllent/mailpit
 ```
 
-In the backend terminal, set these before starting Uvicorn (alongside the existing JWT/local-cookie settings):
+In the backend terminal, set these Mailpit settings before starting the local development launcher:
 
 ```powershell
 $env:SMTP_HOST = "127.0.0.1"
@@ -155,7 +153,7 @@ $env:SMTP_USERNAME = ""
 $env:SMTP_PASSWORD = ""
 $env:SMTP_TIMEOUT_SECONDS = "10"
 $env:RESET_FRONTEND_URL = "http://127.0.0.1:5173/reset-password"
-.\.venv\Scripts\python.exe -m uvicorn app.main:app --reload
+.\.venv\Scripts\python.exe dev.py run
 ```
 
 1. Register a test traveler through http://127.0.0.1:8000/docs and sign in. Save an access token temporarily to test revocation.
@@ -176,10 +174,10 @@ The default is `backend/taasheera.db`, regardless of the working directory. Tabl
 
 ```powershell
 $env:DATABASE_URL = "sqlite:///./another-local.db"
-.\.venv\Scripts\python.exe -m uvicorn app.main:app --reload
+.\.venv\Scripts\python.exe dev.py run
 ```
 
-Relative SQLite paths are relative to the working directory. Configuration comes from the process environment; `.env` files are not automatically loaded. Other SQLAlchemy database URLs can be used later, but require the appropriate driver and database setup. Database files, virtual environments, local tools, `.env` files, and common secret files are ignored by Git.
+Relative SQLite paths are relative to the working directory. Production configuration comes from the process environment; the local development launcher reads only `backend/.env.development` and Git-ignored `backend/.env.local`. Other SQLAlchemy database URLs can be used later, but require the appropriate driver and database setup. Database files, virtual environments, local tools, local `.env` files, and common secret files are ignored by Git.
 
 ## Registration contract
 
