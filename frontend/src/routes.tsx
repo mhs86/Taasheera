@@ -1,4 +1,6 @@
 import type { RouteObject } from 'react-router'
+import AuthRoute from './AuthRoute'
+import { readNavigation } from './navigation'
 import Layout from './Layout'
 import Faq from './pages/Faq'
 import Home from './pages/Home'
@@ -22,4 +24,6 @@ export const routes: RouteObject[] = [
       },
     ],
   },
+  { path: 'sign-in', loader: () => readNavigation(window), element: <AuthRoute /> },
+  { path: 'reset-password', loader: () => readNavigation(window), element: <AuthRoute /> },
 ]

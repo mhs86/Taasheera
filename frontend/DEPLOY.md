@@ -15,14 +15,15 @@ any static host works if it follows the same rules below.
 ## Routing rules
 
 1. **SPA fallback.** Every path that isn't a built file serves `index.html`, so `/faq`,
-   `/reset-password` and unknown paths load the app. The app itself shows the 404 page for
+   `/sign-in`, `/reset-password` and unknown paths load the app. The app itself shows the 404 page for
    unknown routes. `vercel.json` already does this.
 2. **API proxy (add once the backend has a URL).** The browser calls the API on the frontend's
-   own origin (`/auth/...`), so auth cookies stay first-party. Add rewrites for the backend's
-   route prefixes **above** the SPA fallback in `vercel.json`, for example:
+   own origin (`/auth/...` and `/passports/...`), so auth cookies stay first-party. Add rewrites for
+   both backend route prefixes **above** the SPA fallback in `vercel.json`, for example:
 
    ```json
    { "source": "/auth/:path*", "destination": "https://<backend-host>/auth/:path*" }
+   { "source": "/passports/:path*", "destination": "https://<backend-host>/passports/:path*" }
    ```
 
    The backend must then use secure cookies (`AUTH_COOKIE_SECURE=true`) and list the frontend's

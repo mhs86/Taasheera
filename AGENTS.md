@@ -78,7 +78,7 @@ replace by team agreement and then update this table.
 | Passport OCR | Tesseract via pytesseract, MRZ located and repaired by our code (`backend/app/passport/`); vision LLM fallback when check digits fail | in use (vision fallback proposed) | MRZ check digits let us verify a read instead of trusting it |
 | LLM | Anthropic Claude via the official Python SDK, called only from the backend; native tool use for agent features | proposed | Keys never reach the browser; plain SDK over a framework (e.g. LangChain) keeps the agent loop small and debuggable |
 | Frontend routing, toasts | React Router (data router: routes, 404, error boundaries), sonner (toasts via `src/api.ts`) | in use | Page crashes and failed API calls show a page or a toast instead of a blank screen |
-| Frontend styling | Plain CSS with custom properties (`src/index.css` tokens); DM Sans + Space Grotesk, layout modelled on Migraide (simple, no pricing) | in use | Small site, no extra build tooling; the auth screens (`hariri_auth_sprint1`) still use `system-ui` and should switch to these tokens when merged. Tailwind not adopted (see decision 6) |
+| Frontend styling | Plain CSS with custom properties (`src/index.css` tokens); DM Sans + Space Grotesk, layout modelled on Migraide (simple, no pricing) | in use | Small site, no extra build tooling; auth screens use the same site font and scoped form styles. Tailwind not adopted (see decision 6) |
 | Frontend data fetching | TanStack Query (loading/error states) | proposed | Adopt once pages load real data |
 | Backend hosting | Docker container on Render / Railway / Fly.io | proposed | Tesseract (and later Playwright's Chromium) are system packages, so we need an image, not a plain Python runtime |
 | Frontend hosting | Vercel static hosting (`frontend/vercel.json`, see `frontend/DEPLOY.md`) | configured, not yet deployed | Free, previews per PR. An API proxy rewrite is added once the backend has a URL (see `DEPLOY.md`), so cookies stay first-party |
@@ -138,6 +138,11 @@ What we decided, why, and what we rejected. Newest at the bottom. Add an entry w
 6. **Plain CSS with custom properties, sonner for toasts.** Design tokens in `src/index.css`, no CSS
    build step; sonner is a small, well-known toast library. *Rejected: Tailwind (was proposed),
    which adds tooling and class-heavy markup that a site this size doesn't need.*
+7. **Sprint 1 integration.** The auth pages mount at `/sign-in` and `/reset-password` in the site
+   router; hash fragments select the auth form and carry reset tokens. The main FastAPI app mounts
+   the passport endpoints with the same authenticated traveler dependency used by `/auth/me`.
+   Local passport images default to ignored `backend/storage/passports/`; production still needs
+   private bucket storage.
 
 ## Personal instructions
 

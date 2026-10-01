@@ -55,6 +55,16 @@ test('homepage explains the service and links every call to action to sign-up', 
   assert.equal(document.title, 'Taasheera | Your AI visa agent')
 })
 
+test('Get started opens the merged account page through the site router', async (t) => {
+  t.mock.method(globalThis, 'fetch', async () => new Response(null, { status: 401 }))
+  window.history.replaceState(null, '', '/sign-in#create-account')
+  await render('/sign-in#create-account')
+  await settle()
+  assert.equal(container.querySelector('h1')?.textContent, 'Create account')
+  assert.equal(container.querySelector('form input[name="email"]')?.type, 'email')
+  window.history.replaceState(null, '', '/')
+})
+
 test('mobile menu opens with every nav link and closes on a link or Escape', async () => {
   await render('/')
   const button = container.querySelector('.menu-button')

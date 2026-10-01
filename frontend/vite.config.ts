@@ -11,6 +11,7 @@ export default defineConfig({
     // Same-origin browser requests; FastAPI needs no CORS middleware locally.
     proxy: {
       '/auth': 'http://127.0.0.1:8000',
+      '/passports': 'http://127.0.0.1:8000',
     },
   },
 })

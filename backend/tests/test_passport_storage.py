@@ -1,3 +1,4 @@
+import os
 import stat
 
 import pytest
@@ -31,6 +32,7 @@ def test_rejects_ids_that_are_not_ours(storage, upload_id):
     assert storage.load(1, upload_id) is None
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Windows reports ACL permissions through a different API")
 def test_files_are_readable_by_owner_only(storage, tmp_path):
     upload_id = storage.save(1, b"jpeg bytes")
 
