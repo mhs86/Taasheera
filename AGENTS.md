@@ -48,10 +48,10 @@ Product rules that come from the domain:
 
 Group 7: Mohammad Sharafeddin, Dani Salman, Ahmad Zeid, Ahmad Al Hariri.
 
-Current sprint: **Sprint 1**. Goal: a deployed app where a traveler can sign in, upload a passport,
-have the details extracted and corrected, and ask a basic assistant about it.
-Areas: Al Hariri (auth), Sharafeddin (infra, CI/CD, monitoring), Salman (frontend shell, homepage,
-FAQ, error pages, frontend deploy), Zeid (passport upload/extraction/review, minimal assistant).
+Current sprint: **Sprint 1**. Goal (from Jira): a deployed app where a traveler can find the URL, sign in,
+upload a passport, have the details extracted and corrected, and have an onboarding page.
+Areas: Al Hariri (auth), Sharafeddin (infra, CI/CD, monitoring, frontend deploy), Salman (frontend
+shell, homepage, FAQ, error pages), Zeid (passport upload/extraction/review, minimal assistant).
 The product backlog (US 1 to US 130, 15 epics) is a guide and will change. Update this section each sprint.
 
 Git:
@@ -77,9 +77,11 @@ replace by team agreement and then update this table.
 | File storage | Private S3-compatible bucket (e.g. Cloudflare R2 / Supabase Storage); local folder in dev behind the same interface | proposed | Passports must never sit in a public folder or on an ephemeral server disk |
 | Passport OCR | Tesseract via pytesseract, MRZ located and repaired by our code (`backend/app/passport/`); vision LLM fallback when check digits fail | in use (vision fallback proposed) | MRZ check digits let us verify a read instead of trusting it |
 | LLM | Anthropic Claude via the official Python SDK, called only from the backend; native tool use for agent features | proposed | Keys never reach the browser; plain SDK over a framework (e.g. LangChain) keeps the agent loop small and debuggable |
-| Frontend libs | React Router (routes, 404), TanStack Query (API calls, loading/error states), Tailwind CSS (+ `rtl:` for Arabic later) | proposed | Covers routing, error toasts and styling without hand-rolling each |
+| Frontend routing, toasts | React Router (data router: routes, 404, error boundaries), sonner (toasts via `src/api.ts`) | in use | Page crashes and failed API calls show a page or a toast instead of a blank screen |
+| Frontend styling | Plain CSS with custom properties (`src/index.css` tokens); DM Sans + Space Grotesk, layout modelled on Migraide (simple, no pricing) | in use | Small site, no extra build tooling; the auth screens (`hariri_auth_sprint1`) still use `system-ui` and should switch to these tokens when merged. Tailwind not adopted (see decision 6) |
+| Frontend data fetching | TanStack Query (loading/error states) | proposed | Adopt once pages load real data |
 | Backend hosting | Docker container on Render / Railway / Fly.io | proposed | Tesseract (and later Playwright's Chromium) are system packages, so we need an image, not a plain Python runtime |
-| Frontend hosting | Static hosting (Vercel / Netlify / Cloudflare Pages) | proposed | Free, previews per PR |
+| Frontend hosting | Vercel static hosting (`frontend/vercel.json`, see `frontend/DEPLOY.md`) | configured, not yet deployed | Free, previews per PR. An API proxy rewrite is added once the backend has a URL (see `DEPLOY.md`), so cookies stay first-party |
 | Domain | One domain: `app.<domain>` for the frontend and `api.<domain>` for the backend | proposed | Auth uses cookies; two unrelated domains (e.g. `*.vercel.app` + `*.onrender.com`) are cross-site and browsers block those cookies |
 | CI/CD, observability | GitHub Actions; JSON logging with request IDs; Sentry; uptime check | proposed | Sprint 1 infra stories |
 | Later sprints | Playwright (Python) for L2/L3 portal filling; pypdf for L1 PDF forms; a job queue (e.g. arq + Redis) for long agent runs; Telegram Bot API; transactional email | proposed | Not needed in Sprint 1 |
@@ -129,6 +131,13 @@ What we decided, why, and what we rejected. Newest at the bottom. Add an entry w
    so the traveler confirms every field.
 4. **Passport images:** re-encoded to JPEG on upload (fixes rotation, strips EXIF/GPS), stored under
    `<traveler_id>/<random id>`, so reads are owner-scoped by construction. Local disk in dev, private bucket in prod.
+5. **Path-based routing with React Router.** Real paths (`/faq`, `/sign-in`) so unknown URLs can show
+   a 404 and the static host can serve one `index.html` for everything. API calls go to the frontend
+   origin and are proxied (Vite in dev, host rewrites in production), so auth cookies stay first-party.
+   *Rejected: hash-only routing, which cannot 404.*
+6. **Plain CSS with custom properties, sonner for toasts.** Design tokens in `src/index.css`, no CSS
+   build step; sonner is a small, well-known toast library. *Rejected: Tailwind (was proposed),
+   which adds tooling and class-heavy markup that a site this size doesn't need.*
 
 ## Personal instructions
 
