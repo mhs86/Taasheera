@@ -19,10 +19,11 @@ function validationMessage(body: unknown): string {
   return [...new Set(messages)].join(' ') || fallback
 }
 
-function CreateAccount() {
+function CreateAccount({ onCreated }: { onCreated: () => void }) {
   const [message, setMessage] = useState('')
   const [hasError, setHasError] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [showPassword, setShowPassword] = useState(false)
   const requestInProgress = useRef(false)
   const passwordRef = useRef<HTMLInputElement>(null)
   const confirmPasswordRef = useRef<HTMLInputElement>(null)
@@ -77,7 +78,7 @@ function CreateAccount() {
 
             if (response.status === 201) {
               form.reset()
-              setMessage('Your traveler account has been created. You can now sign in.')
+              onCreated()
             } else {
               setHasError(true)
               if (response.status === 409) {
@@ -130,18 +131,34 @@ function CreateAccount() {
         />
 
         <label htmlFor="password">Password</label>
-        <input
-          ref={passwordRef}
-          id="password"
-          name="password"
-          type="password"
-          autoComplete="new-password"
-          disabled={isSubmitting}
-          minLength={8}
-          aria-describedby="password-help"
-          onChange={validatePasswords}
-          required
-        />
+        <div className="create-password-field">
+          <input
+            ref={passwordRef}
+            id="password"
+            name="password"
+            type={showPassword ? 'text' : 'password'}
+            autoComplete="new-password"
+            disabled={isSubmitting}
+            minLength={8}
+            aria-describedby="password-help"
+            onChange={validatePasswords}
+            required
+          />
+          <button
+            type="button"
+            className="create-password-toggle"
+            aria-label={showPassword ? 'Hide password' : 'Show password'}
+            aria-pressed={showPassword}
+            disabled={isSubmitting}
+            onClick={() => setShowPassword(value => !value)}
+          >
+            <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12Z" />
+              <circle cx="12" cy="12" r="3" />
+              {showPassword && <path d="M3 21 21 3" />}
+            </svg>
+          </button>
+        </div>
 
         <label htmlFor="confirm-password">Confirm password</label>
         <input

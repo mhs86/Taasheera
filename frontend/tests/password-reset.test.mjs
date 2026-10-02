@@ -19,8 +19,10 @@ beforeEach(() => {
   window.history.replaceState(null, '', '/')
   globalThis.fetch = async (url, options) => {
     calls.push({ url, ...options })
-    assert.equal(options.credentials, 'same-origin')
-    assert.equal(options.cache, 'no-store')
+    if (url !== '/auth/register') {
+      assert.equal(options.credentials, 'same-origin')
+      assert.equal(options.cache, 'no-store')
+    }
     assert.ok(options.signal)
     const reply = replies.shift()
     assert.ok(reply, `Unexpected request to ${url}`)
@@ -237,4 +239,33 @@ test('registration and sign-in hash routes still render their existing forms', a
   assert.ok(document.querySelector('[name="name"]'))
   await navigate('#sign-in')
   assert.ok(document.querySelector('[autocomplete="current-password"]'))
+})
+
+test('registration from the site path shows the password toggle and returns to sign-in', async () => {
+  replies.push({ status: 401 })
+  await mount('/sign-in#create-account')
+  assert.equal(document.querySelector('h1').textContent, 'Create account')
+
+  const toggle = document.querySelector('[aria-label="Show password"]')
+  assert.ok(toggle)
+  await act(async () => toggle.click())
+  assert.equal(document.querySelector('[name="password"]').type, 'text')
+  assert.equal(document.querySelector('[aria-label="Hide password"]')?.getAttribute('aria-pressed'), 'true')
+
+  fill('name', 'Maya Traveler')
+  fill('email', 'maya@example.com')
+  fill('password', 'Travel-test-123')
+  fill('confirmPassword', 'Travel-test-123')
+  replies.push({ status: 201 })
+  await submit()
+  await act(async () => window.dispatchEvent(new window.HashChangeEvent('hashchange')))
+
+  assert.equal(calls.at(-1).url, '/auth/register')
+  assert.deepEqual(JSON.parse(calls.at(-1).body), {
+    name: 'Maya Traveler', email: 'maya@example.com', password: 'Travel-test-123',
+  })
+  assert.equal(window.location.pathname, '/sign-in')
+  assert.equal(window.location.hash, '#sign-in')
+  assert.equal(document.querySelector('h1').textContent, 'Welcome back')
+  assert.match(text(), /Your traveler account has been created/)
 })

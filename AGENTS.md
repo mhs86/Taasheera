@@ -71,38 +71,31 @@ replace by team agreement and then update this table.
 | Area | Choice | Status | Why |
 |---|---|---|---|
 | Backend | Python, FastAPI, SQLModel, Pydantic v2, uvicorn | in use | Typed validation, auto OpenAPI docs; Python is where the OCR/AI libraries are |
-| Auth | bcrypt, PyJWT access/refresh tokens in cookies, google-auth | in use | See `backend/app/auth.py`, `google_auth.py` |
+| Auth | bcrypt, PyJWT access tokens in memory, rotating HttpOnly refresh cookies, google-auth | in use | See `backend/app/auth.py`, `google_auth.py` |
 | Frontend | React 19, TypeScript, Vite, ESLint | in use | Mainstream, fast dev loop, types catch API mistakes |
-| Database | PostgreSQL in prod (SQLite ok for local dev) + **Alembic** migrations | proposed | JSONB suits extraction results and embassy profiles; `create_all` can't evolve a shared schema |
-| File storage | Private S3-compatible bucket (e.g. Cloudflare R2 / Supabase Storage); local folder in dev behind the same interface | proposed | Passports must never sit in a public folder or on an ephemeral server disk |
+| Database | SQLite in local dev; PostgreSQL and Alembic migrations | SQLite in use; production setup proposed | `create_all` makes new tables but cannot evolve a shared schema |
+| File storage | Owner-scoped local folder in dev; private S3-compatible bucket before production | local in use; bucket proposed | Passports must never sit in a public folder or on an ephemeral server disk |
 | Passport OCR | Tesseract via pytesseract, MRZ located and repaired by our code (`backend/app/passport/`); vision LLM fallback when check digits fail | in use (vision fallback proposed) | MRZ check digits let us verify a read instead of trusting it |
 | LLM | Anthropic Claude via the official Python SDK, called only from the backend; native tool use for agent features | proposed | Keys never reach the browser; plain SDK over a framework (e.g. LangChain) keeps the agent loop small and debuggable |
 | Frontend routing, toasts | React Router (data router: routes, 404, error boundaries), sonner (toasts via `src/api.ts`) | in use | Page crashes and failed API calls show a page or a toast instead of a blank screen |
 | Frontend styling | Plain CSS with custom properties (`src/index.css` tokens); DM Sans + Space Grotesk, layout modelled on Migraide (simple, no pricing) | in use | Small site, no extra build tooling; auth screens use the same site font and scoped form styles. Tailwind not adopted (see decision 6) |
 | Frontend data fetching | TanStack Query (loading/error states) | proposed | Adopt once pages load real data |
-| Backend hosting | Docker container on Render / Railway / Fly.io | proposed | Tesseract (and later Playwright's Chromium) are system packages, so we need an image, not a plain Python runtime |
-| Frontend hosting | Vercel static hosting (`frontend/vercel.json`, see `frontend/DEPLOY.md`) | configured, not yet deployed | Free, previews per PR. An API proxy rewrite is added once the backend has a URL (see `DEPLOY.md`), so cookies stay first-party |
-| Domain | One domain: `app.<domain>` for the frontend and `api.<domain>` for the backend | proposed | Auth uses cookies; two unrelated domains (e.g. `*.vercel.app` + `*.onrender.com`) are cross-site and browsers block those cookies |
+| Backend hosting | Container with Tesseract | proposed | OCR needs a system Tesseract installation; no production image is in this branch |
+| Frontend hosting | Vercel static hosting (`frontend/vercel.json`, see `frontend/DEPLOY.md`) | SPA fallback configured; API proxy pending | Proxy `/auth` and `/passports` through the browser origin before deployment so cookies stay first-party |
+| Domain | One public frontend origin with an API proxy | proposed | Auth cookies work on the browser origin; production proxy and HTTPS are not configured yet |
 | CI/CD, observability | GitHub Actions; JSON logging with request IDs; Sentry; uptime check | proposed | Sprint 1 infra stories |
 | Later sprints | Playwright (Python) for L2/L3 portal filling; pypdf for L1 PDF forms; a job queue (e.g. arq + Redis) for long agent runs; Telegram Bot API; transactional email | proposed | Not needed in Sprint 1 |
 
-Layout: `backend/app/` (one module per feature; each exposes a `create_*_router(get_session)`
-factory that `main.py` includes), `backend/tests/`, `frontend/src/`, `frontend/tests/`.
+Layout: `backend/app/` (router factories included by `main.py`), `backend/scripts/`
+(passport demo), `backend/tests/`, `frontend/src/`, `frontend/tests/`.
 
-Commands:
-
-```bash
-# backend
-cd backend && python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt -r requirements-dev.txt
-uvicorn app.main:app --reload   # requires JWT_SECRET (>= 32 bytes)
-pytest
-uvicorn scripts.passport_demo:app --reload   # passport test page at :8000 (no auth); local demo only
-
-# frontend
-cd frontend && npm install
-npm run dev | npm run build | npm run lint | npm test
-```
+Local Windows setup is in `backend/README.md` and `frontend/README.md`. From `backend/`,
+create `.venv`, install `requirements-dev.txt`, run `python dev.py setup` once, then
+`python dev.py run` to load the ignored local JWT secret and public Google client ID and
+serve on port 8000. From `frontend/`, run `npm ci` and `npm run dev` on port 5173.
+Check with backend `python -m pytest -q` and frontend `npm test`, `npm run lint`,
+`npm run build`. The authenticated API proxies `/auth` and `/passports` through Vite;
+the standalone passport demo is separate. OCR needs system Tesseract on `PATH`.
 
 ## Conventions
 
@@ -143,6 +136,11 @@ What we decided, why, and what we rejected. Newest at the bottom. Add an entry w
    the passport endpoints with the same authenticated traveler dependency used by `/auth/me`.
    Local passport images default to ignored `backend/storage/passports/`; production still needs
    private bucket storage.
+8. **Local auth setup.** `backend/dev.py setup` creates an ignored, persistent JWT secret;
+   `dev.py run` loads it with the public development Google client ID and local HTTP cookie
+   setting. The frontend reads the same public client ID from `.env.development`. Registration
+   returns to the sign-in form with a success message, and the create-account password can be shown
+   or hidden. These settings are for local development; production supplies its own environment.
 
 ## Personal instructions
 
