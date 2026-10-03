@@ -13,6 +13,7 @@ from sqlalchemy import update
 from sqlmodel import Session, select
 
 from .config import AuthSettings
+from .activity import record_activity
 from .models import AccessTokenPublic, AuthSession, LoginRequest, RefreshToken, Traveler, TravelerPublic
 
 
@@ -150,12 +151,18 @@ def create_auth_router(get_session, current_traveler=None):
             matches = False
             valid_length = False
         if not password_enabled or not valid_length or not matches:
+            if traveler is not None:
+                record_activity(session, request.app.state.activity_directory, traveler.id,
+                                "sign_in", "email_password", "failure")
             raise HTTPException(
                 status_code=401, detail="Invalid email or password.",
                 headers={"WWW-Authenticate": "Bearer", "Cache-Control": "no-store"},
             )
 
-        return start_session(traveler, request, response, session)
+        result = start_session(traveler, request, response, session)
+        record_activity(session, request.app.state.activity_directory, traveler.id,
+                        "sign_in", "email_password", "success")
+        return result
 
     @router.get("/me", response_model=TravelerPublic)
     def me(response: Response, traveler: Annotated[Traveler, Depends(current_traveler)]):
@@ -207,8 +214,12 @@ def create_auth_router(get_session, current_traveler=None):
         raw = request.cookies.get(COOKIE_NAME)
         old = session.get(RefreshToken, token_hash(raw)) if raw else None
         if old:
+            auth_session = session.get(AuthSession, old.session_id)
             session.execute(update(AuthSession).where(AuthSession.id == old.session_id).values(revoked=True))
             session.commit()
+            if auth_session is not None:
+                record_activity(session, request.app.state.activity_directory,
+                                auth_session.traveler_id, "logout", "session", "success")
         response = Response(status_code=204)
         clear_refresh_cookie(response, request.app.state.auth_settings)
         return response

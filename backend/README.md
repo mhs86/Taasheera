@@ -44,6 +44,28 @@ storage default is `backend/storage/passports/` (ignored by Git). Set
 still needed before production deployment. Install the Tesseract executable to run
 OCR outside tests.
 
+## Activity audit
+
+`ActivityEvent` links each server-timestamped event to a traveler. The backend records successful
+registration, known-account email/password sign-in successes and failures, verified Google sign-ins,
+logout, and passport upload/extraction outcomes. `POST /activity/events` accepts only a bearer token,
+an allowlisted `page_visit` or `click`, a fixed page/control identifier, and a matching outcome;
+the traveler ID comes from the token, not the request body. It returns `204` and rejects extra fields.
+No request bodies, URLs, passport IDs, OCR results, email addresses, credentials, or free text enter
+activity records.
+
+The SQLModel table is authoritative. A matching JSONL entry is appended to
+`backend/storage/activity-logs/<traveler_id>/<UTC-date>.jsonl`, which is ignored by Git and not
+served by FastAPI. Set `ACTIVITY_LOG_DIR` to an absolute private directory to move it. File creation
+requests owner-only permissions where supported. If the JSONL mirror cannot be written, the database
+event remains and the server emits a generic error line; the completed traveler action is not undone.
+Back up and restrict both the database and JSONL directory in deployment. Schema creation currently
+uses `create_all`; a shared production database needs an Alembic migration for this new table.
+
+Anonymous clicks, duplicate-email registration attempts, unknown-email sign-in failures, invalid
+Google credentials, and failed Google account collisions have no verified traveler owner, so they are
+not stored. Browser activity requests are best effort; failed delivery is not queued for later retry.
+
 ## Login and session API
 
 | Endpoint | Input | Success |

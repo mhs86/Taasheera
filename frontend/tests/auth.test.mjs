@@ -78,3 +78,23 @@ test('restore service failure is distinct from an absent session and is retryabl
   await assert.rejects(auth.restoreSession(), /Could not restore/)
   assert.equal(await auth.restoreSession(), null)
 })
+
+test('activity requests use the in-memory bearer token and contain only event identifiers', async () => {
+  arrange({ status: 200, body: { access_token: 'activity-token' } },
+    { status: 200, body: traveler }, { status: 204 })
+  await auth.signIn(traveler.email, 'correct-password')
+  assert.equal(await auth.postActivity({ event_type: 'click', page: 'faq',
+    control: 'faq-question', outcome: 'initiated' }), true)
+  const call = calls.at(-1)
+  assert.equal(call.url, '/activity/events')
+  assert.equal(call.headers.Authorization, 'Bearer activity-token')
+  assert.deepEqual(JSON.parse(call.body), { event_type: 'click', page: 'faq',
+    control: 'faq-question', outcome: 'initiated' })
+  assert.equal(call.body.includes('correct-password'), false)
+  assert.equal(call.body.includes('activity-token'), false)
+
+  arrange({ status: 204 })
+  await auth.signOut()
+  assert.equal(await auth.postActivity({ event_type: 'page_visit', page: 'home', outcome: 'visited' }), false)
+  assert.deepEqual(calls.map(c => c.url), ['/auth/logout'])
+})

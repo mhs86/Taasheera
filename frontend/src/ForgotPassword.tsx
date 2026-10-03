@@ -49,14 +49,14 @@ function ForgotPassword() {
           required
         />
 
-        <button className="primary-button" type="submit" disabled={submitting}>
+        <button className="primary-button" data-activity-id="reset-request" type="submit" disabled={submitting}>
           {submitting ? 'Sending…' : 'Request password reset'}
         </button>
       </form>
 
       <p className={`auth-status${hasError ? ' auth-error' : ''}`} role={hasError ? 'alert' : 'status'}>{message}</p>
 
-      <p className="create-account"><a href="#sign-in">Back to sign-in</a></p>
+      <p className="create-account"><a href="#sign-in" data-activity-id="sign-in-link">Back to sign-in</a></p>
     </section>
   )
 }

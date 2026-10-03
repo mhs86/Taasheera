@@ -147,6 +147,7 @@ function CreateAccount({ onCreated }: { onCreated: () => void }) {
           <button
             type="button"
             className="create-password-toggle"
+            data-activity-id="password-toggle"
             aria-label={showPassword ? 'Hide password' : 'Show password'}
             aria-pressed={showPassword}
             disabled={isSubmitting}
@@ -175,13 +176,13 @@ function CreateAccount({ onCreated }: { onCreated: () => void }) {
         <p className="password-help" id="password-help">
           Use at least 8 characters and at most 72 UTF-8 bytes. Some characters use more than one byte.
         </p>
-        <button className="primary-button" type="submit" disabled={isSubmitting}>
+        <button className="primary-button" data-activity-id="submit-registration" type="submit" disabled={isSubmitting}>
           {isSubmitting ? 'Creating account…' : 'Create account'}
         </button>
       </form>
 
       <p className="create-account">
-        Already have an account? <a href="#sign-in">Sign in</a>
+        Already have an account? <a href="#sign-in" data-activity-id="sign-in-link">Sign in</a>
       </p>
 
       <p className={`auth-status${hasError ? ' auth-error' : ''}`} role="status">{message}</p>

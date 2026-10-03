@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, EmailStr, SecretStr, StringConstraints, field_validator
@@ -12,6 +13,15 @@ class Traveler(SQLModel, table=True):
     # Empty means password authentication is disabled (Google-only account).
     # Preserve the existing NOT NULL column for compatibility with local DBs.
     password_hash: str = Field(max_length=60, repr=False)
+
+
+class ActivityEvent(SQLModel, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+    traveler_id: int = Field(foreign_key="traveler.id", index=True)
+    occurred_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), index=True)
+    event_type: str = Field(max_length=40, index=True)
+    identifier: str = Field(max_length=80)
+    outcome: str = Field(max_length=20)
 
 
 class GoogleIdentity(SQLModel, table=True):

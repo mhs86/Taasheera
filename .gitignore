@@ -13,3 +13,5 @@ __pycache__/
 
 # Local uploads (passport images must never be committed)
 storage/
+# Private per-traveler activity audit mirrors (also covered by storage/)
+backend/storage/activity-logs/

@@ -6,7 +6,7 @@ export default function FaqList({ items }: { items: Faq[] }) {
     <div className="faq-list">
       {items.map(item => (
         <details key={item.question} className="faq-item">
-          <summary>
+          <summary data-activity-id="faq-question">
             {item.question}
             <span className="faq-icon" aria-hidden="true" />
           </summary>

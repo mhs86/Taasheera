@@ -27,13 +27,13 @@ function SetNewPassword({ token, onTokenCleared, onSuccess }: Props) {
 
       {succeeded ? <>
         <p className="auth-status" role="status">Your password has been changed. Sign in again with your new password.</p>
-        <p className="create-account"><a href="#sign-in">Sign in</a></p>
+        <p className="create-account"><a href="#sign-in" data-activity-id="sign-in-link">Sign in</a></p>
       </> : !token ? <>
         <p className="auth-status auth-error" role="alert">
           {message || 'This reset link is missing or invalid. Open the link from your email, or request a new one.'}
         </p>
-        <p className="create-account"><a href="#forgot-password">Request a new reset link</a></p>
-        <p className="create-account"><a href="#sign-in">Back to sign-in</a></p>
+        <p className="create-account"><a href="#forgot-password" data-activity-id="reset-link">Request a new reset link</a></p>
+        <p className="create-account"><a href="#sign-in" data-activity-id="sign-in-link">Back to sign-in</a></p>
       </> : <>
         <p className="intro">Enter and confirm your new password.</p>
         <form
@@ -73,13 +73,13 @@ function SetNewPassword({ token, onTokenCleared, onSuccess }: Props) {
             autoComplete="new-password" onChange={validatePasswords} disabled={submitting} required />
 
           <p className="password-help" id="password-help">Use at least 8 characters and at most 72 UTF-8 bytes.</p>
-          <button className="primary-button" type="submit" disabled={submitting}>
+          <button className="primary-button" data-activity-id="reset-submit" type="submit" disabled={submitting}>
             {submitting ? 'Changing password…' : 'Set new password'}
           </button>
         </form>
         <p className="auth-status auth-error" role="alert">{message}</p>
-        <p className="create-account"><a href="#forgot-password">Request a new reset link</a></p>
-        <p className="create-account"><a href="#sign-in">Back to sign-in</a></p>
+        <p className="create-account"><a href="#forgot-password" data-activity-id="reset-link">Request a new reset link</a></p>
+        <p className="create-account"><a href="#sign-in" data-activity-id="sign-in-link">Back to sign-in</a></p>
       </>}
     </section>
   )

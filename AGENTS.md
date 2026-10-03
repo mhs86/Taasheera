@@ -81,9 +81,10 @@ replace by team agreement and then update this table.
 | Frontend styling | Plain CSS with custom properties (`src/index.css` tokens); DM Sans + Space Grotesk, layout modelled on Migraide (simple, no pricing) | in use | Small site, no extra build tooling; auth screens use the same site font and scoped form styles. Tailwind not adopted (see decision 6) |
 | Frontend data fetching | TanStack Query (loading/error states) | proposed | Adopt once pages load real data |
 | Backend hosting | Container with Tesseract | proposed | OCR needs a system Tesseract installation; no production image is in this branch |
-| Frontend hosting | Vercel static hosting (`frontend/vercel.json`, see `frontend/DEPLOY.md`) | SPA fallback configured; API proxy pending | Proxy `/auth` and `/passports` through the browser origin before deployment so cookies stay first-party |
+| Frontend hosting | Vercel static hosting (`frontend/vercel.json`, see `frontend/DEPLOY.md`) | SPA fallback configured; API proxy pending | Proxy `/auth`, `/passports`, and `/activity` through the browser origin before deployment so cookies stay first-party |
 | Domain | One public frontend origin with an API proxy | proposed | Auth cookies work on the browser origin; production proxy and HTTPS are not configured yet |
 | CI/CD, observability | GitHub Actions; JSON logging with request IDs; Sentry; uptime check | proposed | Sprint 1 infra stories |
+| User activity logging | SQLModel `ActivityEvent` plus private per-traveler JSONL mirrors in `backend/storage/activity-logs/` | in use | Auth and passport actions are recorded on the backend; allowlisted frontend page/control events use authenticated `/activity/events` |
 | Later sprints | Playwright (Python) for L2/L3 portal filling; pypdf for L1 PDF forms; a job queue (e.g. arq + Redis) for long agent runs; Telegram Bot API; transactional email | proposed | Not needed in Sprint 1 |
 
 Layout: `backend/app/` (router factories included by `main.py`), `backend/scripts/`
@@ -94,7 +95,7 @@ create `.venv`, install `requirements-dev.txt`, run `python dev.py setup` once, 
 `python dev.py run` to load the ignored local JWT secret and public Google client ID and
 serve on port 8000. From `frontend/`, run `npm ci` and `npm run dev` on port 5173.
 Check with backend `python -m pytest -q` and frontend `npm test`, `npm run lint`,
-`npm run build`. The authenticated API proxies `/auth` and `/passports` through Vite;
+`npm run build`. The authenticated API proxies `/auth`, `/passports`, and `/activity` through Vite;
 the standalone passport demo is separate. OCR needs system Tesseract on `PATH`.
 
 ## Conventions
@@ -141,6 +142,11 @@ What we decided, why, and what we rejected. Newest at the bottom. Add an entry w
    setting. The frontend reads the same public client ID from `.env.development`. Registration
    returns to the sign-in form with a success message, and the create-account password can be shown
    or hidden. These settings are for local development; production supplies its own environment.
+9. **Activity audit.** Server timestamps and authenticated traveler IDs own every event. Frontend
+   payloads contain only allowlisted page/control IDs and outcomes; backend auth and passport events
+   never copy request bodies. The database is authoritative; JSONL is a private, best-effort mirror.
+   `ACTIVITY_LOG_DIR` can override its absolute directory. Anonymous clicks and failed attempts with
+   no verified traveler identity cannot be assigned to a traveler.
 
 ## Personal instructions
 

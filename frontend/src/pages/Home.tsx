@@ -22,11 +22,11 @@ export default function Home() {
             cover letter and give you a document checklist, ready for you to review and submit.
           </p>
           <div className="hero-buttons">
-            <Link to={createAccountPath} className="pill-button pill-primary">
+            <Link to={createAccountPath} className="pill-button pill-primary" data-activity-id="get-started-link">
               <span className="pill-icon"><ArrowIcon /></span>
               <span className="pill-label">Get started</span>
             </Link>
-            <a href="#how-it-works" className="pill-button pill-secondary">
+            <a href="#how-it-works" className="pill-button pill-secondary" data-activity-id="how-it-works-link">
               <span className="pill-label">How it works</span>
             </a>
           </div>
@@ -120,14 +120,14 @@ export default function Home() {
             <h2 id="faq-heading">Frequently asked questions</h2>
           </header>
           <FaqList items={faqs.slice(0, 5)} />
-          <p className="more-link"><Link to="/faq">See all questions</Link></p>
+          <p className="more-link"><Link to="/faq" data-activity-id="faq-link">See all questions</Link></p>
         </div>
       </section>
 
       <section className="section section-raised" aria-labelledby="cta-heading">
         <div className="container final-cta">
           <h2 id="cta-heading">Ready to start your visa application?</h2>
-          <Link to={createAccountPath} className="pill-button pill-primary">
+          <Link to={createAccountPath} className="pill-button pill-primary" data-activity-id="get-started-link">
             <span className="pill-icon"><ArrowIcon /></span>
             <span className="pill-label">Get started</span>
           </Link>

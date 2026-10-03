@@ -7,6 +7,8 @@ export type Traveler = { id: number; name: string; email: string }
 let accessToken: string | null = null
 let restoring: Promise<Traveler | null> | null = null
 
+export function hasAccessToken(): boolean { return accessToken !== null }
+
 async function request(path: string, options: RequestInit = {}) {
   return fetch(`/auth/${path}`, {
     ...options,
@@ -38,7 +40,24 @@ async function profile(): Promise<Traveler> {
     accessToken = null
     throw new Error('Could not load your traveler profile. Please sign in again.')
   }
-  return response.json()
+  const traveler = await response.json()
+  if (typeof window !== 'undefined') window.dispatchEvent(new window.Event('taasheera-auth-changed'))
+  return traveler
+}
+
+export async function postActivity(event: { event_type: 'page_visit' | 'click'; page: string; control?: string; outcome: 'visited' | 'initiated' }): Promise<boolean> {
+  if (!accessToken) return false
+  try {
+    const response = await fetch('/activity/events', {
+      method: 'POST', credentials: 'same-origin', cache: 'no-store',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
+      body: JSON.stringify(event), signal: AbortSignal.timeout(5000),
+    })
+    return response.status === 204
+  } catch {
+    // Activity collection must not interrupt the action the traveler selected.
+    return false
+  }
 }
 
 export function restoreSession(): Promise<Traveler | null> {
