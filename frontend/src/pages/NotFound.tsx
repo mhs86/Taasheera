@@ -13,8 +13,8 @@ export default function NotFound() {
         <h1 id="not-found-heading">Page not found</h1>
         <p>We couldn't find the page you were looking for. Your applications and documents are safe.</p>
         <div className="status-actions">
-          <Link to="/" className="pill-button pill-primary"><span className="pill-label">Back to home</span></Link>
-          <Link to="/faq" className="pill-button pill-secondary"><span className="pill-label">Read the FAQ</span></Link>
+          <Link to="/" className="pill-button pill-primary" data-activity-id="home-link"><span className="pill-label">Back to home</span></Link>
+          <Link to="/faq" className="pill-button pill-secondary" data-activity-id="faq-link"><span className="pill-label">Read the FAQ</span></Link>
         </div>
       </div>
     </section>

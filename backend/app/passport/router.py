@@ -78,6 +78,7 @@ def create_passport_router(
     current_traveler_id,
     *,
     reader: MrzReader = read_mrz_lines,
+    record_event=None,
 ) -> APIRouter:
     router = APIRouter(prefix="/passports", tags=["passports"])
     TravelerId = Annotated[int, Depends(current_traveler_id)]
@@ -96,8 +97,13 @@ def create_passport_router(
         try:
             jpeg = normalize_image(data)
         except InvalidImageError as exc:
+            if record_event:
+                record_event(traveler_id, "passport_upload", "failure")
             raise HTTPException(status_code=exc.status_code, detail=str(exc)) from None
-        return PassportUploadPublic(id=storage.save(traveler_id, jpeg))
+        result = PassportUploadPublic(id=storage.save(traveler_id, jpeg))
+        if record_event:
+            record_event(traveler_id, "passport_upload", "success")
+        return result
 
     @router.get("/{upload_id}/image")
     def passport_image(upload_id: str, traveler_id: TravelerId):
@@ -107,6 +113,9 @@ def create_passport_router(
     @router.post("/{upload_id}/extract", response_model=ExtractionPublic)
     def extract(upload_id: str, traveler_id: TravelerId):
         image = load_owned(traveler_id, upload_id)
-        return ExtractionPublic.from_extraction(extract_passport(image, reader=reader))
+        result = ExtractionPublic.from_extraction(extract_passport(image, reader=reader))
+        if record_event:
+            record_event(traveler_id, "passport_extraction", result.status)
+        return result
 
     return router

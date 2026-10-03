@@ -55,12 +55,12 @@ export default function GoogleSignIn({ clientId, disabled, onCredential, onMessa
     {status === 'loading' && <p className="auth-status" role="status">Loading Google sign-in…</p>}
     {status === 'failed' && <>
       <p className="auth-status auth-error" role="alert">Google sign-in could not load. Retry or use email sign-in.</p>
-      <button type="button" className="google-retry" disabled={disabled} onClick={() => {
+      <button type="button" className="google-retry" data-activity-id="google-retry" disabled={disabled} onClick={() => {
         setStatus('loading')
         setAttempt(value => value + 1)
       }}>Retry Google sign-in</button>
     </>}
-    {waiting && !disabled && <button type="button" className="google-retry" onClick={() => {
+    {waiting && !disabled && <button type="button" className="google-retry" data-activity-id="google-cancel" onClick={() => {
       accepting.current = false
       setWaiting(false)
       setAttempt(value => value + 1)

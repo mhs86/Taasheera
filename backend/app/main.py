@@ -11,6 +11,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, SQLModel, select
 
 from .database import build_engine
+from .activity import activity_directory_from_environment, create_activity_router, record_activity
 from .auth import create_auth_router, create_current_traveler
 from .google_auth import create_google_auth_router
 from .config import AuthSettings
@@ -27,6 +28,7 @@ def create_app(database_url: str | None = None, *, reset_sender: ResetSender | N
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         app.state.auth_settings = AuthSettings.from_environment()
+        app.state.activity_directory = activity_directory_from_environment()
         app.state.mail_settings = MailSettings.from_environment()
         app.state.reset_sender = reset_sender or (
             SmtpResetSender(app.state.mail_settings) if app.state.mail_settings else None
@@ -46,6 +48,7 @@ def create_app(database_url: str | None = None, *, reset_sender: ResetSender | N
             yield session
 
     current_traveler = create_current_traveler(get_session)
+    app.include_router(create_activity_router(get_session, current_traveler))
     app.include_router(create_auth_router(get_session, current_traveler))
     app.include_router(create_google_auth_router(get_session))
     app.include_router(create_password_reset_router(get_session))
@@ -56,7 +59,13 @@ def create_app(database_url: str | None = None, *, reset_sender: ResetSender | N
     def current_traveler_id(traveler: Annotated[Traveler, Depends(current_traveler)]) -> int:
         return traveler.id
 
-    app.include_router(create_passport_router(passport_storage, current_traveler_id))
+    def record_passport_activity(traveler_id: int, event_type: str, outcome: str):
+        with Session(engine) as session:
+            record_activity(session, app.state.activity_directory, traveler_id,
+                            event_type, "passport", outcome)
+
+    app.include_router(create_passport_router(passport_storage, current_traveler_id,
+                                              record_event=record_passport_activity))
 
     @app.exception_handler(RequestValidationError)
     async def validation_error_handler(request: Request, exc: RequestValidationError):
@@ -78,6 +87,7 @@ def create_app(database_url: str | None = None, *, reset_sender: ResetSender | N
     ) -> Traveler:
         email_query = select(Traveler).where(Traveler.email == data.email)
         if session.exec(email_query).first() is not None:
+            # No authenticated traveler owns this attempted registration.
             raise HTTPException(status_code=409, detail="Email is already registered.")
 
         password_hash = bcrypt.hashpw(
@@ -96,6 +106,8 @@ def create_app(database_url: str | None = None, *, reset_sender: ResetSender | N
             raise
 
         session.refresh(traveler)
+        record_activity(session, app.state.activity_directory, traveler.id,
+                        "registration", "email_password", "success")
         return traveler
 
     return app

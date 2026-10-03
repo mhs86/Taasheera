@@ -77,7 +77,7 @@ function App({ initialNavigation, googleClientId = import.meta.env?.VITE_GOOGLE_
           <p className="eyebrow">YOUR TRAVELER ACCOUNT</p>
           <h1 id="signed-in-heading">Welcome, {traveler.name}</h1>
           <p className="intro">You are signed in.</p>
-          <button className="primary-button" disabled={loggingOut} onClick={async () => {
+          <button className="primary-button" data-activity-id="logout-button" disabled={loggingOut} onClick={async () => {
             setLoggingOut(true)
             setSessionError('')
             try {
@@ -191,12 +191,13 @@ function SignIn({ onSignedIn, googleClientId, initialMessage }: {
 
         <a
           className="forgot-password"
+          data-activity-id="forgot-password-link"
           href="#forgot-password"
         >
           Forgot your password?
         </a>
 
-        <button className="primary-button" type="submit" disabled={submitting}>{submitting ? 'Signing in…' : 'Sign in'}</button>
+        <button className="primary-button" data-activity-id="submit-login" type="submit" disabled={submitting}>{submitting ? 'Signing in…' : 'Sign in'}</button>
       </form>
 
       <div className="divider"><span>or</span></div>
@@ -206,7 +207,7 @@ function SignIn({ onSignedIn, googleClientId, initialMessage }: {
 
       <p className="create-account">
         New to Taasheera?{' '}
-        <a href="#create-account">
+        <a href="#create-account" data-activity-id="create-account-link">
           Create an account
         </a>
       </p>

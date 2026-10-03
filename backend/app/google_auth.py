@@ -12,6 +12,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
 from .auth import check_origin, start_session
+from .activity import record_activity
 from .models import AccessTokenPublic, GoogleIdentity, GoogleLoginRequest, Traveler
 
 
@@ -102,7 +103,14 @@ def create_google_auth_router(get_session):
         if not client_id:
             raise HTTPException(503, "Google sign-in is not configured.", headers={"Cache-Control": "no-store"})
         claims = verify_google_token(data.id_token.get_secret_value(), client_id)
+        new_account = session.get(GoogleIdentity, claims["sub"]) is None
         traveler = google_traveler(session, claims)
-        return start_session(traveler, request, response, session)
+        result = start_session(traveler, request, response, session)
+        if new_account:
+            record_activity(session, request.app.state.activity_directory, traveler.id,
+                            "registration", "google", "success")
+        record_activity(session, request.app.state.activity_directory, traveler.id,
+                        "sign_in", "google", "success")
+        return result
 
     return router
