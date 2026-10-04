@@ -125,6 +125,15 @@ def test_review_rejects_extra_fields(client):
                       headers={"X-Traveler": "1"}).status_code == 422
 
 
+def test_uploads_can_be_disabled_on_a_host_without_durable_storage(tmp_path):
+    app = FastAPI()
+    app.include_router(create_passport_router(PassportImageStorage(tmp_path), fake_traveler_id,
+                                              uploads_enabled=False))
+    response = upload(TestClient(app))
+    assert response.status_code == 503
+    assert not list(tmp_path.iterdir())
+
+
 def test_file_name_is_ignored_and_content_is_checked(client):
     response = upload(client, data=b"#!/bin/sh\necho not an image", name="passport.jpg")
 

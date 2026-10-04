@@ -81,6 +81,7 @@ def create_passport_router(
     *,
     reader: MrzReader = read_mrz_lines,
     record_event=None,
+    uploads_enabled: bool = True,
 ) -> APIRouter:
     router = APIRouter(prefix="/passports", tags=["passports"])
     TravelerId = Annotated[int, Depends(current_traveler_id)]
@@ -94,6 +95,8 @@ def create_passport_router(
 
     @router.post("", response_model=PassportUploadPublic, status_code=201)
     def upload_passport(file: UploadFile, traveler_id: TravelerId):
+        if not uploads_enabled:
+            raise HTTPException(status_code=503, detail="Passport uploads are not available on this deployment.")
         # Read one byte past the limit so oversized files are detected without reading them fully.
         data = file.file.read(MAX_UPLOAD_BYTES + 1)
         try:

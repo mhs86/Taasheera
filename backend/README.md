@@ -61,13 +61,16 @@ the deployment host overrides the server command.
 
 ## Passport API
 
-The main app mounts `POST /passports`, `GET /passports/{id}/image`, and
-`POST /passports/{id}/extract`. Each needs the same bearer access token as `/auth/me`;
+The main app mounts `POST /passports`, `GET /passports/{id}/image`,
+`POST /passports/{id}/extract`, and `GET`/`PUT /passports/{id}/review`. Each needs the same bearer access token as `/auth/me`;
 the upload ID is resolved only within the authenticated traveler's folder. The local
 storage default is `backend/storage/passports/` (ignored by Git). Set
 `PASSPORT_STORAGE_DIR` to use another local directory. A private bucket adapter is
 still needed before production deployment. Install the Tesseract executable to run
 OCR outside tests.
+
+Set `PASSPORT_UPLOADS_ENABLED=false` on a host without durable private file storage.
+The free Render blueprint does this; it runs the existing API for registration and sign-in only.
 
 ## Activity audit
 

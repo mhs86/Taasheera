@@ -90,8 +90,13 @@ def create_app(database_url: str | None = None, *, reset_sender: ResetSender | N
             record_activity(session, app.state.activity_directory, traveler_id,
                             event_type, "passport", outcome)
 
-    app.include_router(create_passport_router(passport_storage, current_traveler_id,
-                                              record_event=record_passport_activity))
+    uploads_setting = os.environ.get("PASSPORT_UPLOADS_ENABLED", "true").lower()
+    if uploads_setting not in {"true", "false"}:
+        raise RuntimeError("PASSPORT_UPLOADS_ENABLED must be true or false.")
+    app.include_router(create_passport_router(
+        passport_storage, current_traveler_id, record_event=record_passport_activity,
+        uploads_enabled=uploads_setting == "true",
+    ))
 
     @app.exception_handler(RequestValidationError)
     async def validation_error_handler(request: Request, exc: RequestValidationError):

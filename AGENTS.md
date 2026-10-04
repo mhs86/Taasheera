@@ -80,7 +80,7 @@ replace by team agreement and then update this table.
 | Frontend routing, toasts | React Router (data router: routes, 404, error boundaries), sonner (toasts via `src/api.ts`) | in use | Page crashes and failed API calls show a page or a toast instead of a blank screen |
 | Frontend styling | Plain CSS with custom properties (`src/index.css` tokens); DM Sans + Space Grotesk, layout modelled on Migraide (simple, no pricing) | in use | Small site, no extra build tooling; auth screens use the same site font and scoped form styles. Tailwind not adopted (see decision 6) |
 | Frontend data fetching | TanStack Query (loading/error states) | proposed | Adopt once pages load real data |
-| Backend hosting | Non-root container with Tesseract and health checks (`backend/Dockerfile`) | image in use; host pending | The image is tested without choosing a hosting provider |
+| Backend hosting | Non-root container with Tesseract and health checks (`backend/Dockerfile`); free Render demo blueprint (`render.yaml`) | image and blueprint in use; live host pending | Free Render can demo auth; its expiring database and ephemeral files are unsuitable for real passport storage |
 | Frontend hosting | Netlify static hosting (`netlify.toml`, see `docs/NETLIFY.md`); Vercel config retained | Netlify build and SPA fallback in use; API proxy needs backend URL | Build `frontend/dist`; proxy `/auth`, `/passports`, and `/activity` through the browser origin so cookies stay first-party |
 | Domain | One public frontend origin with an API proxy | proposed | Auth cookies work on the browser origin; production proxy and HTTPS are not configured yet |
 | CI/CD, observability | GitHub Actions CI and JSON request logs with request IDs; deployment job, Sentry, uptime check | CI/request logs in use; deployment and monitoring proposed | CI runs tests, lint, build, PostgreSQL migration, and container smoke checks without deployment credentials |
@@ -161,6 +161,10 @@ What we decided, why, and what we rejected. Newest at the bottom. Add an entry w
     A generated `_redirects` file serves SPA paths and, when `BACKEND_URL` is set, proxies API
     paths to an HTTPS FastAPI host. Passport review now saves owner-scoped corrected fields beside
     the private image. Netlify only hosts the frontend; backend hosting and durable storage remain required.
+12. **Free auth demo backend.** `render.yaml` deploys the existing API and a temporary PostgreSQL
+    database on Render. The Render startup command runs Alembic migrations because its free plan
+    has no pre-deploy command. Free instances lose local files and the free database expires after
+    30 days, so passport uploads are disabled there; durable storage is still needed for production.
 
 ## Personal instructions
 
