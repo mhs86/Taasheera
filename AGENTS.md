@@ -73,30 +73,33 @@ replace by team agreement and then update this table.
 | Backend | Python, FastAPI, SQLModel, Pydantic v2, uvicorn | in use | Typed validation, auto OpenAPI docs; Python is where the OCR/AI libraries are |
 | Auth | bcrypt, PyJWT access tokens in memory, rotating HttpOnly refresh cookies, google-auth | in use | See `backend/app/auth.py`, `google_auth.py` |
 | Frontend | React 19, TypeScript, Vite, ESLint | in use | Mainstream, fast dev loop, types catch API mistakes |
-| Database | SQLite in local dev; PostgreSQL and Alembic migrations | SQLite in use; production setup proposed | `create_all` makes new tables but cannot evolve a shared schema |
+| Database | SQLite in local dev; PostgreSQL driver and Alembic migrations | migration code in use; managed PostgreSQL pending | `migrate.py upgrade` versions the current schema; local bootstrap still uses `create_all` |
 | File storage | Owner-scoped local folder in dev; private S3-compatible bucket before production | local in use; bucket proposed | Passports must never sit in a public folder or on an ephemeral server disk |
 | Passport OCR | Tesseract via pytesseract, MRZ located and repaired by our code (`backend/app/passport/`); vision LLM fallback when check digits fail | in use (vision fallback proposed) | MRZ check digits let us verify a read instead of trusting it |
 | LLM | Anthropic Claude via the official Python SDK, called only from the backend; native tool use for agent features | proposed | Keys never reach the browser; plain SDK over a framework (e.g. LangChain) keeps the agent loop small and debuggable |
 | Frontend routing, toasts | React Router (data router: routes, 404, error boundaries), sonner (toasts via `src/api.ts`) | in use | Page crashes and failed API calls show a page or a toast instead of a blank screen |
 | Frontend styling | Plain CSS with custom properties (`src/index.css` tokens); DM Sans + Space Grotesk, layout modelled on Migraide (simple, no pricing) | in use | Small site, no extra build tooling; auth screens use the same site font and scoped form styles. Tailwind not adopted (see decision 6) |
 | Frontend data fetching | TanStack Query (loading/error states) | proposed | Adopt once pages load real data |
-| Backend hosting | Container with Tesseract | proposed | OCR needs a system Tesseract installation; no production image is in this branch |
+| Backend hosting | Non-root container with Tesseract and health checks (`backend/Dockerfile`) | image in use; host pending | The image is tested without choosing a hosting provider |
 | Frontend hosting | Vercel static hosting (`frontend/vercel.json`, see `frontend/DEPLOY.md`) | SPA fallback configured; API proxy pending | Proxy `/auth`, `/passports`, and `/activity` through the browser origin before deployment so cookies stay first-party |
 | Domain | One public frontend origin with an API proxy | proposed | Auth cookies work on the browser origin; production proxy and HTTPS are not configured yet |
-| CI/CD, observability | GitHub Actions; JSON logging with request IDs; Sentry; uptime check | proposed | Sprint 1 infra stories |
+| CI/CD, observability | GitHub Actions CI and JSON request logs with request IDs; deployment job, Sentry, uptime check | CI/request logs in use; deployment and monitoring proposed | CI runs tests, lint, build, PostgreSQL migration, and container smoke checks without deployment credentials |
 | User activity logging | SQLModel `ActivityEvent` plus private per-traveler JSONL mirrors in `backend/storage/activity-logs/` | in use | Auth and passport actions are recorded on the backend; allowlisted frontend page/control events use authenticated `/activity/events` |
 | Later sprints | Playwright (Python) for L2/L3 portal filling; pypdf for L1 PDF forms; a job queue (e.g. arq + Redis) for long agent runs; Telegram Bot API; transactional email | proposed | Not needed in Sprint 1 |
 
-Layout: `backend/app/` (router factories included by `main.py`), `backend/scripts/`
-(passport demo), `backend/tests/`, `frontend/src/`, `frontend/tests/`.
+Layout: `backend/app/` (router factories included by `main.py`), `backend/alembic/`
+(schema revisions), `backend/scripts/` (passport demo), `backend/tests/`,
+`frontend/src/`, `frontend/tests/`. Deployment plan: `docs/DEPLOYMENT_PLAN.md`.
 
 Local Windows setup is in `backend/README.md` and `frontend/README.md`. From `backend/`,
-create `.venv`, install `requirements-dev.txt`, run `python dev.py setup` once, then
+create `.venv`, install `requirements-dev.lock`, run `python dev.py setup` once, then
 `python dev.py run` to load the ignored local JWT secret and public Google client ID and
 serve on port 8000. From `frontend/`, run `npm ci` and `npm run dev` on port 5173.
 Check with backend `python -m pytest -q` and frontend `npm test`, `npm run lint`,
 `npm run build`. The authenticated API proxies `/auth`, `/passports`, and `/activity` through Vite;
 the standalone passport demo is separate. OCR needs system Tesseract on `PATH`.
+Local `dev.py run` still creates missing tables; deployment uses `python migrate.py upgrade`
+before starting the API with `APP_ENV=production` and `SCHEMA_AUTO_CREATE=false`.
 
 ## Conventions
 
@@ -147,6 +150,13 @@ What we decided, why, and what we rejected. Newest at the bottom. Add an entry w
    never copy request bodies. The database is authoritative; JSONL is a private, best-effort mirror.
    `ACTIVITY_LOG_DIR` can override its absolute directory. Anonymous clicks and failed attempts with
    no verified traveler identity cannot be assigned to a traveler.
+10. **Predeployment build path.** A GitHub Actions workflow gates backend, frontend, OCR, PostgreSQL
+    migration, and image smoke checks. Python runtime/test dependencies are pinned in lock files. Alembic
+    owns production schema changes; an exact old local schema can be stamped without data loss.
+    The image includes Tesseract, runs as non-root, and checks database/schema/OCR readiness.
+    JSON request logs contain a server-generated request ID, route template, status, and duration;
+    request bodies and values are omitted. Production hosting, durable private storage, API rewrites, secrets, and release automation
+    remain deployment decisions.
 
 ## Personal instructions
 

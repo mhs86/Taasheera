@@ -25,12 +25,14 @@ def test_dev_launcher_loads_files_and_preserves_explicit_environment(tmp_path, m
     monkeypatch.delenv("JWT_SECRET", raising=False)
     monkeypatch.delenv("GOOGLE_CLIENT_ID", raising=False)
     monkeypatch.delenv("AUTH_COOKIE_SECURE", raising=False)
+    monkeypatch.delenv("SCHEMA_AUTO_CREATE", raising=False)
 
     dev.configure_environment()
     settings = AuthSettings.from_environment()
     assert settings.jwt_secret == "s" * 48
     assert settings.google_client_id == "dev-client.apps.googleusercontent.com"
     assert settings.cookie_secure is False
+    assert dev.os.environ["SCHEMA_AUTO_CREATE"] == "true"
 
     monkeypatch.setenv("JWT_SECRET", "p" * 48)
     monkeypatch.setenv("GOOGLE_CLIENT_ID", "override.apps.googleusercontent.com")

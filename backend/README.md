@@ -9,7 +9,7 @@ Install Python 3.12 or newer. From the repository root in PowerShell, run this s
 ```powershell
 cd backend
 py -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
+.\.venv\Scripts\python.exe -m pip install -r requirements-dev.lock
 .\.venv\Scripts\python.exe dev.py setup
 ```
 
@@ -23,9 +23,9 @@ On every later start, run from `backend/`:
 
 The local secret stays stable across restarts and is Git-ignored. The development launcher loads only these local settings; production startup still reads environment variables and must receive its own `JWT_SECRET`, `GOOGLE_CLIENT_ID`, and secure-cookie settings from deployment configuration. Never commit a production secret or Google Client Secret. Changing the JWT secret invalidates existing access JWTs; persisted refresh sessions still work until revoked or expired.
 
-Open http://127.0.0.1:8000/docs to try registration. Stop the server with Ctrl+C. For a run-only environment, install `requirements.txt` instead of `requirements-dev.txt`.
+Open http://127.0.0.1:8000/docs to try registration. Stop the server with Ctrl+C. For a run-only environment, install `requirements.lock` instead of `requirements-dev.lock`.
 
-Run the tests from `backend/`:
+Run the tests from `backend/` (CI installs `requirements-dev.lock`):
 
 ```powershell
 .\.venv\Scripts\python.exe -m pytest -q
@@ -33,6 +33,31 @@ Run the tests from `backend/`:
 
 Tests use isolated temporary SQLite databases and never the development database.
 They generate their own signing secrets and require no developer secrets.
+
+## Migration and container checks
+
+Local `dev.py run` keeps `SCHEMA_AUTO_CREATE=true` so existing developer databases continue to
+work. A deployed process defaults to `SCHEMA_AUTO_CREATE=false` and refuses to start until the
+Alembic schema revision is current. Before starting a new image, run `python migrate.py upgrade`
+against its `DATABASE_URL`; `python migrate.py status` reports the current and required revisions.
+The upgrade command creates a fresh schema. It can also stamp an unversioned database only when
+its schema exactly matches the committed models; it refuses mismatched schemas and never discards
+traveler data. Back up an existing database before its first migration. Do not run migrations
+independently in every API replica.
+
+From the repository root, build the image with `docker build -t taasheera-backend backend`.
+It includes Tesseract and a font, runs as a non-root user, and has a Docker health check. Its
+`/health/live` endpoint checks the process; `/health/ready` checks the database, Alembic revision,
+and Tesseract when required. The image expects `APP_ENV=production`, an explicit `DATABASE_URL`,
+`JWT_SECRET`, an exact HTTPS `AUTH_ALLOWED_ORIGINS`, and secure cookies. Supply a durable private
+mount or storage adapter for passports and activity logs. The image does not bundle `.env` files.
+See `docs/DEPLOYMENT_PLAN.md` for the remaining hosting-dependent work.
+
+Each API response includes a server-generated `X-Request-ID`. Structured request logs contain only
+that ID, HTTP method, route template, response status, and duration. They exclude the raw URL,
+query string, headers, request body, traveler fields, passport IDs, and credentials. The provided
+local launcher and container disable Uvicorn's separate raw-path access log; keep it disabled if
+the deployment host overrides the server command.
 
 ## Passport API
 
@@ -59,8 +84,8 @@ The SQLModel table is authoritative. A matching JSONL entry is appended to
 served by FastAPI. Set `ACTIVITY_LOG_DIR` to an absolute private directory to move it. File creation
 requests owner-only permissions where supported. If the JSONL mirror cannot be written, the database
 event remains and the server emits a generic error line; the completed traveler action is not undone.
-Back up and restrict both the database and JSONL directory in deployment. Schema creation currently
-uses `create_all`; a shared production database needs an Alembic migration for this new table.
+Back up and restrict both the database and JSONL directory in deployment. The initial Alembic
+revision includes this table; local development still uses `create_all` for convenience.
 
 Anonymous clicks, duplicate-email registration attempts, unknown-email sign-in failures, invalid
 Google credentials, and failed Google account collisions have no verified traveler owner, so they are
@@ -128,7 +153,7 @@ Run focused tests with `.\.venv\Scripts\python.exe -m pytest tests/test_google_a
 
 After the team configures its Console project, use the frontend Google button to send a freshly obtained ID token to `/auth/google`, then check `/auth/me`, refresh, and logout. Test a new Google traveler, a repeat sign-in, and a collision with a password account (expect `409`). Do not put ID tokens in URL queries, shell history, logs, or committed fixtures.
 
-Existing local databases are preserved: startup creates the new `googleidentity` table and its unique constraints. It does not drop/rebuild the traveler table or change existing password hashes. The original non-null password column remains compatible; only newly created Google-only accounts use the disabled empty value. Back up shared databases before deployment and adopt migrations for future changes to existing tables.
+Existing local databases are preserved: local development startup creates missing tables, including `googleidentity`, without dropping/rebuilding the traveler table or changing existing password hashes. The original non-null password column remains compatible; only newly created Google-only accounts use the disabled empty value. Deployment uses the Alembic migration step above.
 
 ## Forgotten-password reset
 
@@ -200,9 +225,9 @@ SMTP implementation reference: [Python smtplib](https://docs.python.org/3/librar
 
 ## Database configuration
 
-Password reset adds `passwordresettoken` and `resetratelimit` tables, created at startup; it does not change existing traveler columns. Use migrations before applying future changes to existing shared tables.
+Password reset adds `passwordresettoken` and `resetratelimit` tables without changing existing traveler columns. Local development creates missing tables at startup; deployment uses Alembic.
 
-The default is `backend/taasheera.db`, regardless of the working directory. Tables are created at startup. To change the database, set `DATABASE_URL` before starting the server:
+The local default is `backend/taasheera.db`, regardless of the working directory. Local development creates missing tables at startup. To change the database, set `DATABASE_URL` before starting the server:
 
 ```powershell
 $env:DATABASE_URL = "sqlite:///./another-local.db"
@@ -227,10 +252,10 @@ Names are trimmed and must contain 1–100 characters. Emails are validated, tri
 
 ## Team decisions
 
-- Choose the shared database and driver, and adopt migrations before evolving a shared schema. `create_all` creates missing tables; it does not migrate existing ones.
+- Choose the managed PostgreSQL service and private storage before deployment. The driver and initial Alembic revision are in the repository; `create_all` is for local development only.
 - Agree on the password minimum and bcrypt cost for the target server. The 72-byte limit is a bcrypt constraint, including for non-ASCII passwords.
 - Confirm case-insensitive email identity and the explicit duplicate-email response. Email ownership verification is not implemented in this increment.
-- Before deployment, agree on token lifetimes, secret management, HTTPS origins, login rate limiting, and a cleanup job for expired sessions and their retained refresh hashes. New auth tables are created on startup; no existing traveler columns change.
+- Before deployment, agree on token lifetimes, secret management, HTTPS origins, login rate limiting, and a cleanup job for expired sessions and their retained refresh hashes. The initial migration includes the auth tables without changing existing traveler columns.
 
 Implementation references: [FastAPI database sessions](https://fastapi.tiangolo.com/tutorial/sql-databases/), [SQLModel testing](https://sqlmodel.tiangolo.com/tutorial/fastapi/tests/), and [bcrypt usage and limits](https://pypi.org/project/bcrypt/).
 Token/cookie references: [PyJWT validation](https://pyjwt.readthedocs.io/en/stable/api.html) and [Starlette cookie options](https://www.starlette.io/responses/).

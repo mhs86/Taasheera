@@ -1,0 +1,4 @@
+The initial revision is the complete SQLModel schema as of Sprint 1.
+Use `python migrate.py upgrade` as a release step. The initial downgrade is
+deliberately disabled because it would delete traveler records; restore a
+database backup instead of downgrading below the baseline.

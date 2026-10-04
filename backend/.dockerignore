@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+*.pyc
+*.db
+*.db-*
+storage/
+tests/
+scripts/
+.env*
+*.log
+README.md
+dev.py
