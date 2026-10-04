@@ -1,0 +1,13 @@
+.passport-page { padding-top: 72px; padding-bottom: 96px; }
+.passport-page h1 { font: 700 clamp(2rem, 5vw, 3rem)/1.15 var(--font-display); }
+.passport-page > p { color: var(--fg-muted); }
+.passport-upload, .passport-review { display: grid; gap: 14px; margin-top: 28px; padding: 24px; border: 1px solid var(--border); border-radius: 16px; background: var(--card); }
+.passport-upload label, .passport-review label { font-weight: 600; }
+.passport-review label { display: grid; gap: 5px; }
+.passport-review label.suspect { color: #a12b28; }
+.passport-upload input, .passport-review input, .passport-review select { width: 100%; min-height: 44px; padding: 8px; border: 1px solid #a9bab3; border-radius: 8px; background: white; color: var(--fg); }
+.passport-upload button, .passport-review button { min-height: 46px; padding: 10px 18px; border: 0; border-radius: 8px; background: var(--brand); color: white; font: inherit; font-weight: 600; cursor: pointer; }
+.passport-upload button:disabled, .passport-review button:disabled { opacity: .6; cursor: wait; }
+.passport-preview { display: block; max-width: 100%; max-height: 400px; margin: 28px auto; border-radius: 8px; }
+.passport-note, .passport-message { padding: 14px; border-radius: 8px; background: var(--brand-muted); }
+.passport-disclaimer { margin-top: 32px; font-size: .9rem; }

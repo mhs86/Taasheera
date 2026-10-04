@@ -1,5 +1,7 @@
 # Deploying the frontend
 
+For Netlify deployment, use [the Netlify guide](../docs/NETLIFY.md). The instructions below describe the existing Vercel setup.
+
 The frontend is a static Vite build (`npm run build` → `dist/`). `vercel.json` configures Vercel;
 any static host works if it follows the same rules below.
 

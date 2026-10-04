@@ -10,6 +10,7 @@ bucket with the same `<traveler_id>/<upload_id>` key scheme.
 import os
 import re
 import uuid
+import json
 from pathlib import Path
 
 _UPLOAD_ID = re.compile(r"[0-9a-f]{32}")
@@ -40,3 +41,26 @@ class PassportImageStorage:
         if path is None or not path.is_file():
             return None
         return path.read_bytes()
+
+    def save_review(self, owner_id: int, upload_id: str, fields: dict) -> None:
+        image_path = self._path(owner_id, upload_id)
+        if image_path is None or not image_path.is_file():
+            raise FileNotFoundError(upload_id)
+        review_path = image_path.with_suffix(".json")
+        temporary = review_path.with_name(f"{review_path.name}.{uuid.uuid4().hex}.tmp")
+        try:
+            fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            with os.fdopen(fd, "w", encoding="utf-8") as file:
+                json.dump(fields, file)
+            os.replace(temporary, review_path)
+        finally:
+            temporary.unlink(missing_ok=True)
+
+    def load_review(self, owner_id: int, upload_id: str) -> dict | None:
+        image_path = self._path(owner_id, upload_id)
+        if image_path is None or not image_path.is_file():
+            return None
+        review_path = image_path.with_suffix(".json")
+        if not review_path.is_file():
+            return None
+        return json.loads(review_path.read_text(encoding="utf-8"))

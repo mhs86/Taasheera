@@ -81,7 +81,7 @@ replace by team agreement and then update this table.
 | Frontend styling | Plain CSS with custom properties (`src/index.css` tokens); DM Sans + Space Grotesk, layout modelled on Migraide (simple, no pricing) | in use | Small site, no extra build tooling; auth screens use the same site font and scoped form styles. Tailwind not adopted (see decision 6) |
 | Frontend data fetching | TanStack Query (loading/error states) | proposed | Adopt once pages load real data |
 | Backend hosting | Non-root container with Tesseract and health checks (`backend/Dockerfile`) | image in use; host pending | The image is tested without choosing a hosting provider |
-| Frontend hosting | Vercel static hosting (`frontend/vercel.json`, see `frontend/DEPLOY.md`) | SPA fallback configured; API proxy pending | Proxy `/auth`, `/passports`, and `/activity` through the browser origin before deployment so cookies stay first-party |
+| Frontend hosting | Netlify static hosting (`netlify.toml`, see `docs/NETLIFY.md`); Vercel config retained | Netlify build and SPA fallback in use; API proxy needs backend URL | Build `frontend/dist`; proxy `/auth`, `/passports`, and `/activity` through the browser origin so cookies stay first-party |
 | Domain | One public frontend origin with an API proxy | proposed | Auth cookies work on the browser origin; production proxy and HTTPS are not configured yet |
 | CI/CD, observability | GitHub Actions CI and JSON request logs with request IDs; deployment job, Sentry, uptime check | CI/request logs in use; deployment and monitoring proposed | CI runs tests, lint, build, PostgreSQL migration, and container smoke checks without deployment credentials |
 | User activity logging | SQLModel `ActivityEvent` plus private per-traveler JSONL mirrors in `backend/storage/activity-logs/` | in use | Auth and passport actions are recorded on the backend; allowlisted frontend page/control events use authenticated `/activity/events` |
@@ -157,6 +157,10 @@ What we decided, why, and what we rejected. Newest at the bottom. Add an entry w
     JSON request logs contain a server-generated request ID, route template, status, and duration;
     request bodies and values are omitted. Production hosting, durable private storage, API rewrites, secrets, and release automation
     remain deployment decisions.
+11. **Netlify frontend build.** Build the existing Vite app from `frontend/` and publish `dist/`.
+    A generated `_redirects` file serves SPA paths and, when `BACKEND_URL` is set, proxies API
+    paths to an HTTPS FastAPI host. Passport review now saves owner-scoped corrected fields beside
+    the private image. Netlify only hosts the frontend; backend hosting and durable storage remain required.
 
 ## Personal instructions
 

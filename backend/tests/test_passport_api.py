@@ -102,6 +102,29 @@ def test_owner_can_fetch_the_stored_image(client):
     assert response.headers["cache-control"] == "private, no-store"
 
 
+def test_review_is_saved_and_owner_scoped(client):
+    upload_id = upload(client).json()["id"]
+    fields = client.post(f"/passports/{upload_id}/extract", headers={"X-Traveler": "1"}).json()["fields"]
+    fields["surname"] = "CORRECTED"
+    url = f"/passports/{upload_id}/review"
+
+    assert client.get(url, headers={"X-Traveler": "1"}).status_code == 404
+    assert client.put(url, json=fields, headers={"X-Traveler": "1"}).status_code == 200
+    saved = client.get(url, headers={"X-Traveler": "1"})
+    assert saved.json()["surname"] == "CORRECTED"
+    assert saved.headers["cache-control"] == "private, no-store"
+    assert client.get(url, headers={"X-Traveler": "2"}).status_code == 404
+    assert client.put(url, json=fields, headers={"X-Traveler": "2"}).status_code == 404
+
+
+def test_review_rejects_extra_fields(client):
+    upload_id = upload(client).json()["id"]
+    fields = client.post(f"/passports/{upload_id}/extract", headers={"X-Traveler": "1"}).json()["fields"]
+    fields["traveler_id"] = 2
+    assert client.put(f"/passports/{upload_id}/review", json=fields,
+                      headers={"X-Traveler": "1"}).status_code == 422
+
+
 def test_file_name_is_ignored_and_content_is_checked(client):
     response = upload(client, data=b"#!/bin/sh\necho not an image", name="passport.jpg")
 

@@ -109,6 +109,15 @@ test('unknown routes show the 404 page inside the site layout', async () => {
   assert.equal(document.title, 'Page not found | Taasheera')
 })
 
+test('passport page asks signed-out travelers to sign in', async (t) => {
+  t.mock.method(globalThis, 'fetch', async () => new Response(null, { status: 401 }))
+  await render('/passport')
+  await settle()
+  assert.match(container.querySelector('h1').textContent, /Upload and review your passport/)
+  assert.equal(container.querySelector('.passport-page a[href="/sign-in"]')?.textContent, 'sign in')
+  assert.equal(container.querySelector('input[type="file"]'), null)
+})
+
 test('a crashing page shows the 500 page instead of a blank screen', async (t) => {
   t.mock.method(console, 'error', () => {})
   await render('/crash')
