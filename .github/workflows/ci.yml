@@ -1,0 +1,102 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+    branches: [dev, main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: taasheera_ci
+          POSTGRES_PASSWORD: ci-only-password
+          POSTGRES_DB: taasheera_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U taasheera_ci -d taasheera_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      TEST_POSTGRES_URL: postgresql+psycopg://taasheera_ci:ci-only-password@127.0.0.1:5432/taasheera_ci
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: |
+            backend/requirements.txt
+            backend/requirements.lock
+            backend/requirements-dev.txt
+            backend/requirements-dev.lock
+      - name: Install OCR and test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y tesseract-ocr fonts-dejavu-core
+          python -m pip install -r backend/requirements-dev.lock
+      - name: Test API, OCR, and migrations
+        working-directory: backend
+        run: python -m pytest -q
+      - name: Check migrated PostgreSQL schema for drift
+        working-directory: backend
+        run: DATABASE_URL="$TEST_POSTGRES_URL" python -m alembic check
+
+  frontend:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm test
+      - run: npm run lint
+      - run: npm run build
+
+  container:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build backend image
+        run: docker build -t taasheera-backend-ci backend
+      - name: Migrate and smoke-test backend image
+        run: |
+          docker volume create taasheera-ci-data
+          printf 'JWT_SECRET=%s\n' "$(openssl rand -hex 32)" > "$RUNNER_TEMP/taasheera-ci.env"
+          printf 'AUTH_ALLOWED_ORIGINS=https://ci.invalid\n' >> "$RUNNER_TEMP/taasheera-ci.env"
+          docker run --rm --env-file "$RUNNER_TEMP/taasheera-ci.env" \
+            -e DATABASE_URL=sqlite:////app/storage/ci.db \
+            -v taasheera-ci-data:/app/storage \
+            --entrypoint python taasheera-backend-ci migrate.py upgrade
+          docker run -d --name taasheera-ci --env-file "$RUNNER_TEMP/taasheera-ci.env" \
+            -e DATABASE_URL=sqlite:////app/storage/ci.db \
+            -v taasheera-ci-data:/app/storage \
+            -p 127.0.0.1:18000:8000 taasheera-backend-ci
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:18000/health/ready; then exit 0; fi
+            echo "Waiting for API readiness ($attempt/30)"
+            sleep 1
+          done
+          docker logs taasheera-ci
+          exit 1
+      - name: Stop smoke-test container
+        if: always()
+        run: |
+          docker rm -f taasheera-ci 2>/dev/null || true
+          docker volume rm taasheera-ci-data 2>/dev/null || true

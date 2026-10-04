@@ -1,5 +1,6 @@
 from contextlib import asynccontextmanager
 import os
+import shutil
 from pathlib import Path
 from typing import Annotated
 
@@ -8,13 +9,17 @@ from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy import text as sql_text
+from sqlalchemy.exc import SQLAlchemyError
 from sqlmodel import Session, SQLModel, select
 
 from .database import build_engine
 from .activity import activity_directory_from_environment, create_activity_router, record_activity
 from .auth import create_auth_router, create_current_traveler
 from .google_auth import create_google_auth_router
-from .config import AuthSettings
+from .config import AuthSettings, RuntimeSettings
+from .schema import require_current_schema
+from .observability import install_request_logging
 from .mailer import MailSettings, ResetSender, SmtpResetSender
 from .password_reset import create_password_reset_router
 from .models import RegisterRequest, Traveler, TravelerPublic
@@ -28,13 +33,16 @@ def create_app(database_url: str | None = None, *, reset_sender: ResetSender | N
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         app.state.auth_settings = AuthSettings.from_environment()
+        app.state.runtime_settings = RuntimeSettings.from_environment()
         app.state.activity_directory = activity_directory_from_environment()
         app.state.mail_settings = MailSettings.from_environment()
         app.state.reset_sender = reset_sender or (
             SmtpResetSender(app.state.mail_settings) if app.state.mail_settings else None
         )
-        # Development bootstrap only; use migrations once the team shares a database.
-        SQLModel.metadata.create_all(engine)
+        if app.state.runtime_settings.schema_auto_create:
+            SQLModel.metadata.create_all(engine)
+        else:
+            require_current_schema(engine)
         try:
             yield
         finally:
@@ -42,6 +50,24 @@ def create_app(database_url: str | None = None, *, reset_sender: ResetSender | N
 
     app = FastAPI(title="Taasheera traveler API", lifespan=lifespan)
     app.state.engine = engine
+    install_request_logging(app)
+
+    @app.get("/health/live", include_in_schema=False)
+    def liveness():
+        return {"status": "ok"}
+
+    @app.get("/health/ready", include_in_schema=False)
+    def readiness(request: Request):
+        try:
+            with engine.connect() as connection:
+                connection.execute(sql_text("SELECT 1"))
+            if not request.app.state.runtime_settings.schema_auto_create:
+                require_current_schema(engine)
+            if request.app.state.runtime_settings.require_tesseract and shutil.which("tesseract") is None:
+                raise RuntimeError("OCR unavailable")
+        except (SQLAlchemyError, RuntimeError):
+            raise HTTPException(status_code=503, detail="Service is not ready.") from None
+        return {"status": "ok"}
 
     def get_session():
         with Session(engine) as session:

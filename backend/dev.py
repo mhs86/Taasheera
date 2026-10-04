@@ -38,6 +38,7 @@ def configure_environment() -> None:
     os.environ.setdefault("JWT_SECRET", read_setting(PRIVATE_CONFIG, "JWT_SECRET"))
     os.environ.setdefault("GOOGLE_CLIENT_ID", read_setting(PUBLIC_CONFIG, "GOOGLE_CLIENT_ID"))
     os.environ.setdefault("AUTH_COOKIE_SECURE", "false")  # Loopback HTTP only.
+    os.environ.setdefault("SCHEMA_AUTO_CREATE", "true")  # Existing local DBs remain usable.
 
 
 if __name__ == "__main__":
@@ -47,6 +48,6 @@ if __name__ == "__main__":
         configure_environment()
         import uvicorn
 
-        uvicorn.run("app.main:app", host="127.0.0.1", port=8000, reload=True)
+        uvicorn.run("app.main:app", host="127.0.0.1", port=8000, reload=True, access_log=False)
     else:
         raise SystemExit("Usage: python dev.py setup | run")
