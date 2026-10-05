@@ -10,7 +10,8 @@ let restoring: Promise<Traveler | null> | null = null
 
 export function hasAccessToken(): boolean { return accessToken !== null }
 
-export async function protectedFetch(path: string, options: RequestInit = {}): Promise<Response> {
+// Options are apiFetch's, so a caller can pass `silent: true` and show its own error instead of a toast.
+export async function protectedFetch(path: string, options: Parameters<typeof apiFetch>[1] = {}): Promise<Response> {
   if (!accessToken && !(await restoreSession())) throw new Error('Please sign in to continue.')
   const send = () => apiFetch(path, {
     ...options,
