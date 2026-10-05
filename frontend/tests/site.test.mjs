@@ -37,6 +37,7 @@ async function render(path) {
   return router
 }
 const settle = () => act(() => new Promise(resolve => setTimeout(resolve, 20)))
+const click = el => act(async () => el.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true, button: 0 })))
 
 afterEach(async () => {
   await act(async () => root.unmount())
@@ -65,10 +66,65 @@ test('Get started opens the merged account page through the site router', async 
   window.history.replaceState(null, '', '/')
 })
 
+test('every Get started button loads the account page as a new document', async () => {
+  // Inside the router, /sign-in would read the #hash before the URL changed and open sign-in instead.
+  const router = await render('/')
+  await click(container.querySelector('.menu-button'))
+  const ctas = [...container.querySelectorAll('a')].filter(a => a.textContent.trim() === 'Get started')
+  assert.equal(ctas.length, 4, 'header, mobile menu, hero and final call to action')
+  const handledByRouter = []
+  // Runs after React Router's handler; cancelling here stops jsdom from attempting the page load.
+  const recordAndCancel = event => { handledByRouter.push(event.defaultPrevented); event.preventDefault() }
+  window.addEventListener('click', recordAndCancel)
+  try {
+    for (const cta of ctas) await click(cta)
+  } finally {
+    window.removeEventListener('click', recordAndCancel)
+  }
+  assert.deepEqual(handledByRouter, [false, false, false, false])
+  assert.equal(router.state.location.pathname, '/')
+})
+
+test('signed-in travelers see Log out and Your passport instead of Log in and Get started', async (t) => {
+  const requests = []
+  t.mock.method(globalThis, 'fetch', async (url) => {
+    requests.push(url)
+    if (url === '/auth/refresh') return Response.json({ access_token: 'test-access-token' })
+    if (url === '/auth/me') return Response.json({ id: 1, name: 'Anna', email: 'anna@example.com' })
+    return new Response(null, { status: 204 }) // logout and activity events
+  })
+  const router = await render('/faq')
+  await settle()
+  const header = container.querySelector('.nav-right')
+  assert.equal(header.querySelector('.logout-button')?.textContent, 'Log out')
+  assert.equal(header.querySelector('a.header-cta')?.getAttribute('href'), '/passport')
+  assert.equal(container.querySelector('a[href^="/sign-in"]'), null, 'no Log in or Get started anywhere')
+  assert.ok(container.querySelector('.footer-links a[href="/passport"]'))
+
+  await click(container.querySelector('.menu-button'))
+  const items = [...container.querySelectorAll('#mobile-menu a, #mobile-menu button')].map(el => el.textContent.trim())
+  assert.deepEqual(items, ['How it works', 'Destinations', 'Privacy', 'FAQ', 'Log out', 'Your passport'])
+
+  await click(container.querySelector('#mobile-menu .logout-button'))
+  await settle()
+  assert.ok(requests.includes('/auth/logout'))
+  assert.equal(router.state.location.pathname, '/')
+  assert.equal(container.querySelector('#mobile-menu'), null)
+  assert.equal(container.querySelector('.nav-right .login-link')?.textContent, 'Log in')
+})
+
+test('the sign-in page logo links back home', async (t) => {
+  t.mock.method(globalThis, 'fetch', async () => new Response(null, { status: 401 }))
+  await render('/sign-in')
+  await settle()
+  const logo = container.querySelector('.brand a')
+  assert.equal(logo?.getAttribute('href'), '/')
+  assert.equal(logo?.getAttribute('aria-label'), 'Taasheera home')
+})
+
 test('mobile menu opens with every nav link and closes on a link or Escape', async () => {
   await render('/')
   const button = container.querySelector('.menu-button')
-  const click = el => act(async () => el.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, button: 0 })))
   assert.equal(button.getAttribute('aria-expanded'), 'false')
   assert.equal(container.querySelector('#mobile-menu'), null)
 
