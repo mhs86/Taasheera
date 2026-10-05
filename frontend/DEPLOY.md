@@ -20,13 +20,14 @@ any static host works if it follows the same rules below.
    `/sign-in`, `/reset-password` and unknown paths load the app. The app itself shows the 404 page for
    unknown routes. `vercel.json` already does this.
 2. **API proxy (add once the backend has a URL).** The browser calls the API on the frontend's
-   own origin (`/auth/...`, `/passports/...`, and `/activity/...`), so auth cookies stay first-party. Add rewrites for
-   all three backend route prefixes **above** the SPA fallback in `vercel.json`, for example:
+   own origin (`/auth/...`, `/passports/...`, `/activity/...`, and `/assistant/...`), so auth cookies stay first-party. Add rewrites for
+   all four backend route prefixes **above** the SPA fallback in `vercel.json`, for example:
 
    ```json
    { "source": "/auth/:path*", "destination": "https://<backend-host>/auth/:path*" },
    { "source": "/passports/:path*", "destination": "https://<backend-host>/passports/:path*" },
-   { "source": "/activity/:path*", "destination": "https://<backend-host>/activity/:path*" }
+   { "source": "/activity/:path*", "destination": "https://<backend-host>/activity/:path*" },
+   { "source": "/assistant/:path*", "destination": "https://<backend-host>/assistant/:path*" }
    ```
 
    The backend must then use secure cookies (`AUTH_COOKIE_SECURE=true`) and list the frontend's

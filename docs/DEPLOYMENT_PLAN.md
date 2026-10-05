@@ -20,7 +20,7 @@ This branch prepares repeatable checks and a deployable backend image. It does n
 ## Still needed when a host is chosen
 
 - Provision a managed PostgreSQL database and a private, durable home for passport images and activity JSONL logs. The current file paths require a persistent private volume; a bucket adapter is still proposed.
-- Configure TLS, one public frontend origin, and a proxy for `/auth`, `/passports`, and `/activity` before the SPA fallback. `frontend/vercel.json` cannot contain a real API destination until there is a backend URL.
+- Configure TLS, one public frontend origin, and a proxy for `/auth`, `/passports`, `/activity`, and `/assistant` before the SPA fallback. `frontend/vercel.json` cannot contain a real API destination until there is a backend URL.
 - Supply deployment secrets and settings: `APP_ENV=production`, `DATABASE_URL`, `JWT_SECRET`, `AUTH_ALLOWED_ORIGINS`, `AUTH_COOKIE_SECURE=true`, `GOOGLE_CLIENT_ID`, and any reset-email settings. `backend/.env.example` lists the keys with empty required values. Never copy a local `.env` file into the image.
 - Run `python migrate.py upgrade` once as a release step before starting new API instances. Configure trusted proxy IPs, backups, monitoring, and a deployment job for the selected host. Keep deployment credentials out of PR CI.
 - Smoke-test registration, sign-in, passport upload/extraction, activity logging, refresh cookies, and password reset on the HTTPS URL before promoting `dev` to `main`.
