@@ -169,6 +169,10 @@ test('a failed check is flagged, edits are marked, and only confirmed details ar
   assert.equal(saved.surname, 'ERIKSSON')
   assert.match(text(), /Your details are confirmed/)
   assert.equal($('.review-head .trust').textContent, 'Confirmed')
+
+  // The confirmation points straight to the assistant.
+  await click(button('Ask the assistant'))
+  assert.ok($('.assistant-panel'), 'the chat opens from the confirmation message')
 })
 
 test('an unreadable photo becomes an empty form that will not save until it is valid', async () => {

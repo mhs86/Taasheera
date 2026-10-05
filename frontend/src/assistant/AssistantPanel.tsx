@@ -10,8 +10,14 @@ const suggestions: Record<AssistantStep, string[]> = {
 const MAX_LENGTH = 1000
 
 // The chat lives only in this page: closing the tab forgets it (no history between visits in Sprint 1).
-export default function AssistantPanel({ step }: { step: AssistantStep }) {
-  const [open, setOpen] = useState(false)
+type Props = {
+  step: AssistantStep
+  // Controlled by the page, so other parts of it (e.g. the confirmation message) can open the chat.
+  open: boolean
+  onOpenChange: (open: boolean) => void
+}
+
+export default function AssistantPanel({ step, open, onOpenChange }: Props) {
   const [turns, setTurns] = useState<ChatTurn[]>([])
   const [draft, setDraft] = useState('')
   const [pending, setPending] = useState(false)
@@ -26,15 +32,15 @@ export default function AssistantPanel({ step }: { step: AssistantStep }) {
   useEffect(() => {
     if (!open) return
     const onKey = (event: globalThis.KeyboardEvent) => {
-      if (event.key === 'Escape') { setOpen(false); launcher.current?.focus() }
+      if (event.key === 'Escape') { onOpenChange(false); launcher.current?.focus() }
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
-  }, [open])
+  }, [open, onOpenChange])
   useEffect(() => { log.current?.scrollTo?.({ top: log.current.scrollHeight }) }, [turns, pending])
 
   function close() {
-    setOpen(false)
+    onOpenChange(false)
     launcher.current?.focus()
   }
 
@@ -113,7 +119,7 @@ export default function AssistantPanel({ step }: { step: AssistantStep }) {
 
     <button ref={launcher} type="button" className={`assistant-launcher${open ? ' is-open' : ''}`}
       aria-expanded={open} aria-controls={open ? panelId : undefined}
-      onClick={() => (open ? close() : setOpen(true))} data-activity-id="assistant-open">
+      onClick={() => (open ? close() : onOpenChange(true))} data-activity-id="assistant-open">
       <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 4.5h12v8H9l-3.5 3v-3H4z" /></svg>
       {open ? 'Close assistant' : 'Ask about your passport'}
     </button>

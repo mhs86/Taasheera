@@ -37,6 +37,7 @@ function PassportPage({ uploadId }: { uploadId?: string }) {
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [message, setMessage] = useState('')
+  const [assistantOpen, setAssistantOpen] = useState(false)
 
   useEffect(() => {
     document.title = 'Your passport | Taasheera'
@@ -174,14 +175,17 @@ function PassportPage({ uploadId }: { uploadId?: string }) {
           </div>}
           {fields && <ReviewForm fields={fields} extraction={extraction} edited={edited} errors={errors}
             saving={saving} saved={saved} onChange={change} onSubmit={save} />}
-          {saved && <p className="passport-saved" role="status">
-            Your details are confirmed. The assistant can now answer questions about them.
-          </p>}
+          {saved && <div className="passport-saved" role="status">
+            <p>Your details are confirmed. The assistant can now answer questions about them.</p>
+            <button type="button" className="button button-secondary" onClick={() => setAssistantOpen(true)}
+              data-activity-id="assistant-open">Ask the assistant</button>
+          </div>}
         </div>}
       </div>
 
       {message && <p className="passport-message" role="alert">{message}</p>}
-      <AssistantPanel step={uploadId ? 'passport_review' : 'passport_upload'} />
+      <AssistantPanel step={uploadId ? 'passport_review' : 'passport_upload'}
+        open={assistantOpen} onOpenChange={setAssistantOpen} />
     </>}
 
     <p className="passport-disclaimer">Taasheera helps prepare applications and does not give legal or immigration advice. Nothing is submitted to an embassy from this page.</p>
