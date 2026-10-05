@@ -22,7 +22,7 @@ export default function Home() {
             cover letter and give you a document checklist, ready for you to review and submit.
           </p>
           <div className="hero-buttons">
-            <Link to={createAccountPath} className="pill-button pill-primary" data-activity-id="get-started-link">
+            <Link to={createAccountPath} reloadDocument className="pill-button pill-primary" data-activity-id="get-started-link">
               <span className="pill-icon"><ArrowIcon /></span>
               <span className="pill-label">Get started</span>
             </Link>
@@ -127,7 +127,7 @@ export default function Home() {
       <section className="section section-raised" aria-labelledby="cta-heading">
         <div className="container final-cta">
           <h2 id="cta-heading">Ready to start your visa application?</h2>
-          <Link to={createAccountPath} className="pill-button pill-primary" data-activity-id="get-started-link">
+          <Link to={createAccountPath} reloadDocument className="pill-button pill-primary" data-activity-id="get-started-link">
             <span className="pill-icon"><ArrowIcon /></span>
             <span className="pill-label">Get started</span>
           </Link>

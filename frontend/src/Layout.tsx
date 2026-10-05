@@ -1,8 +1,10 @@
-import { useState, type KeyboardEvent, type MouseEvent } from 'react'
-import { Link, NavLink, Outlet, ScrollRestoration } from 'react-router'
-import { Toaster } from 'sonner'
+import { useEffect, useState, type KeyboardEvent, type MouseEvent } from 'react'
+import { Link, NavLink, Outlet, ScrollRestoration, useNavigate } from 'react-router'
+import { toast, Toaster } from 'sonner'
 import { ArrowIcon, MenuIcon } from './icons'
 import ActivityTracker from './ActivityTracker'
+import { restoreSession, signOut, type Traveler } from './auth'
+import { disableGoogleAutoSelect } from './googleIdentity'
 import { createAccountPath, signInPath } from './paths'
 import './site.css'
 
@@ -17,15 +19,60 @@ function MainLinks() {
   )
 }
 
+type AccountProps = { traveler: Traveler | null; loggingOut: boolean; onLogOut: () => void; inMenu?: boolean }
+
+// Signed out: Log in / Get started. Signed in: Log out / Your passport.
+function AccountLinks({ traveler, loggingOut, onLogOut, inMenu = false }: AccountProps) {
+  const cta = traveler
+    ? <Link to="/passport" className="header-cta" data-activity-id="passport-link">
+        <span className="mini-circle"><ArrowIcon /></span>Your passport
+      </Link>
+    : <Link to={createAccountPath} reloadDocument className="header-cta" data-activity-id="get-started-link">
+        <span className="mini-circle"><ArrowIcon /></span>Get started
+      </Link>
+  const account = traveler
+    ? <button type="button" className={`logout-button${inMenu ? '' : ' login-link'}`} data-activity-id="logout-button"
+        disabled={loggingOut} onClick={onLogOut}>{loggingOut ? 'Logging out…' : 'Log out'}</button>
+    : <Link to={signInPath} className={inMenu ? undefined : 'login-link'} data-activity-id="login-link">Log in</Link>
+  return <>{account}{cta}</>
+}
+
 export default function Layout() {
+  const navigate = useNavigate()
   // Below 1000px the nav links collapse into this menu (see site.css).
   const [menuOpen, setMenuOpen] = useState(false)
+  const [traveler, setTraveler] = useState<Traveler | null>(null)
+  const [loggingOut, setLoggingOut] = useState(false)
   const closeOnLink = (event: MouseEvent) => {
     if ((event.target as Element).closest('a')) setMenuOpen(false)
   }
   const closeOnEscape = (event: KeyboardEvent) => {
     if (event.key === 'Escape') setMenuOpen(false)
   }
+
+  // Shares the session restore ActivityTracker already makes; a failure just leaves the header signed out.
+  useEffect(() => {
+    let active = true
+    restoreSession().then(profile => { if (active) setTraveler(profile) }).catch(() => {})
+    return () => { active = false }
+  }, [])
+
+  async function logOut() {
+    setLoggingOut(true)
+    try {
+      await signOut()
+      disableGoogleAutoSelect()
+      setTraveler(null)
+      setMenuOpen(false)
+      // Leaving the page unmounts anything it showed, such as a passport under review.
+      navigate('/')
+    } catch {
+      toast.error('Could not log out. Check your connection and try again.')
+    } finally {
+      setLoggingOut(false)
+    }
+  }
+  const account = { traveler, loggingOut, onLogOut: logOut }
 
   return (
     <div className="site">
@@ -41,10 +88,7 @@ export default function Layout() {
             <MainLinks />
           </nav>
           <div className="nav-right">
-            <Link to={signInPath} className="login-link" data-activity-id="login-link">Log in</Link>
-            <Link to={createAccountPath} className="header-cta" data-activity-id="get-started-link">
-              <span className="mini-circle"><ArrowIcon /></span>Get started
-            </Link>
+            <AccountLinks {...account} />
             <button
               type="button"
               className="menu-button"
@@ -61,10 +105,7 @@ export default function Layout() {
         {menuOpen && (
           <nav id="mobile-menu" className="mobile-menu" aria-label="Menu" onClick={closeOnLink}>
             <MainLinks />
-            <Link to={signInPath} data-activity-id="login-link">Log in</Link>
-            <Link to={createAccountPath} className="header-cta" data-activity-id="get-started-link">
-              <span className="mini-circle"><ArrowIcon /></span>Get started
-            </Link>
+            <AccountLinks {...account} inMenu />
           </nav>
         )}
       </header>
@@ -80,7 +121,9 @@ export default function Layout() {
             <nav className="footer-links" aria-label="Footer">
               <Link to="/#how-it-works" data-activity-id="how-it-works-link">How it works</Link>
               <Link to="/faq" data-activity-id="faq-link">FAQ</Link>
-              <Link to={signInPath} data-activity-id="login-link">Log in</Link>
+              {traveler
+                ? <Link to="/passport" data-activity-id="passport-link">Your passport</Link>
+                : <Link to={signInPath} data-activity-id="login-link">Log in</Link>}
             </nav>
           </div>
           <p className="footer-legal">
