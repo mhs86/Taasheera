@@ -151,3 +151,14 @@ def test_repaired_document_number_is_reported(tmp_path):
     assert body["status"] == "verified"
     assert body["fields"]["document_number"] == "L898902C3"
     assert body["corrected_fields"] == ["document_number"]
+
+
+def test_review_accepts_a_passport_without_given_names(client):
+    upload_id = upload(client).json()["id"]
+    fields = client.post(f"/passports/{upload_id}/extract", headers={"X-Traveler": "1"}).json()["fields"]
+    fields["given_names"] = ""
+
+    response = client.put(f"/passports/{upload_id}/review", json=fields, headers={"X-Traveler": "1"})
+
+    assert response.status_code == 200
+    assert response.json()["given_names"] == ""
