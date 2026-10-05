@@ -18,7 +18,7 @@ RUN python -m pip install --no-cache-dir -r requirements.lock
 
 COPY app/ ./app/
 COPY alembic/ ./alembic/
-COPY alembic.ini migrate.py ./
+COPY alembic.ini migrate.py render_start.py ./
 RUN mkdir -p /app/storage \
     && chown -R taasheera:taasheera /app/storage
 

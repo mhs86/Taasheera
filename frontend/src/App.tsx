@@ -77,6 +77,7 @@ function App({ initialNavigation, googleClientId = import.meta.env?.VITE_GOOGLE_
           <p className="eyebrow">YOUR TRAVELER ACCOUNT</p>
           <h1 id="signed-in-heading">Welcome, {traveler.name}</h1>
           <p className="intro">You are signed in.</p>
+          <a href="/passport" className="primary-button passport-link">Upload your passport</a>
           <button className="primary-button" data-activity-id="logout-button" disabled={loggingOut} onClick={async () => {
             setLoggingOut(true)
             setSessionError('')

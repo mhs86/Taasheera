@@ -19,7 +19,7 @@ On every later start, run from `backend/`:
 .\.venv\Scripts\python.exe dev.py run
 ```
 
-`dev.py setup` creates `backend/.env.local` once with a private JWT signing secret; it never prints or replaces that secret. `dev.py run` automatically reads it and the public `GOOGLE_CLIENT_ID` in the tracked `backend/.env.development`, then starts Uvicorn on `http://127.0.0.1:8000` with local HTTP cookies. No virtual environment activation or PowerShell execution-policy change is needed. If `py` is unavailable, use the full path to your installed Python for the first command.
+`dev.py setup` creates `backend/.env.local` once with a private JWT signing secret; it never prints or replaces that secret. To use the passport assistant locally, add a line `GEMINI_API_KEY=<key>` to that same file (get a free key at https://aistudio.google.com, or ask the team for the shared test key privately). Never put the key in a tracked file: this repository is public. `dev.py run` automatically reads it and the public `GOOGLE_CLIENT_ID` in the tracked `backend/.env.development`, then starts Uvicorn on `http://127.0.0.1:8000` with local HTTP cookies. No virtual environment activation or PowerShell execution-policy change is needed. If `py` is unavailable, use the full path to your installed Python for the first command.
 
 The local secret stays stable across restarts and is Git-ignored. The development launcher loads only these local settings; production startup still reads environment variables and must receive its own `JWT_SECRET`, `GOOGLE_CLIENT_ID`, and secure-cookie settings from deployment configuration. Never commit a production secret or Google Client Secret. Changing the JWT secret invalidates existing access JWTs; persisted refresh sessions still work until revoked or expired.
 
@@ -61,13 +61,16 @@ the deployment host overrides the server command.
 
 ## Passport API
 
-The main app mounts `POST /passports`, `GET /passports/{id}/image`, and
-`POST /passports/{id}/extract`. Each needs the same bearer access token as `/auth/me`;
+The main app mounts `POST /passports`, `GET /passports/{id}/image`,
+`POST /passports/{id}/extract`, and `GET`/`PUT /passports/{id}/review`. Each needs the same bearer access token as `/auth/me`;
 the upload ID is resolved only within the authenticated traveler's folder. The local
 storage default is `backend/storage/passports/` (ignored by Git). Set
 `PASSPORT_STORAGE_DIR` to use another local directory. A private bucket adapter is
 still needed before production deployment. Install the Tesseract executable to run
 OCR outside tests.
+
+Set `PASSPORT_UPLOADS_ENABLED=false` on a host without durable private file storage.
+The free Render blueprint does this; it runs the existing API for registration and sign-in only.
 
 ## Activity audit
 

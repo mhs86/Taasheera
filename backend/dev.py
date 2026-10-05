@@ -23,6 +23,18 @@ def read_setting(path: Path, key: str) -> str:
     raise SystemExit(f"Missing {key} in {path.name}.")
 
 
+def read_optional_setting(path: Path, key: str) -> str | None:
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except FileNotFoundError:
+        return None
+    for line in lines:
+        name, separator, value = line.partition("=")
+        if separator and name.strip() == key and value.strip():
+            return value.strip()
+    return None
+
+
 def setup() -> None:
     try:
         descriptor = os.open(PRIVATE_CONFIG, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
@@ -39,6 +51,11 @@ def configure_environment() -> None:
     os.environ.setdefault("GOOGLE_CLIENT_ID", read_setting(PUBLIC_CONFIG, "GOOGLE_CLIENT_ID"))
     os.environ.setdefault("AUTH_COOKIE_SECURE", "false")  # Loopback HTTP only.
     os.environ.setdefault("SCHEMA_AUTO_CREATE", "true")  # Existing local DBs remain usable.
+    # Optional: the passport assistant's key, kept in the Git-ignored file like the JWT secret.
+    # Without it the assistant answers "unavailable" and everything else still works.
+    gemini_key = read_optional_setting(PRIVATE_CONFIG, "GEMINI_API_KEY")
+    if gemini_key:
+        os.environ.setdefault("GEMINI_API_KEY", gemini_key)
 
 
 if __name__ == "__main__":

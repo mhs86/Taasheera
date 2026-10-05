@@ -4,6 +4,7 @@ import { readNavigation } from './navigation'
 import Layout from './Layout'
 import Faq from './pages/Faq'
 import Home from './pages/Home'
+import Passport from './pages/Passport'
 import NotFound from './pages/NotFound'
 import ServerError from './pages/ServerError'
 
@@ -19,6 +20,8 @@ export const routes: RouteObject[] = [
         children: [
           { index: true, element: <Home /> },
           { path: 'faq', element: <Faq /> },
+          { path: 'passport', element: <Passport /> },
+          { path: 'passport/:uploadId', element: <Passport /> },
           { path: '*', element: <NotFound /> },
         ],
       },

@@ -10,7 +10,7 @@ from datetime import date
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Response, UploadFile
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 
 from .extraction import Extraction, MrzReader, extract_passport, read_mrz_lines
 from .images import MAX_UPLOAD_BYTES, InvalidImageError, normalize_image
@@ -26,15 +26,18 @@ class PassportUploadPublic(BaseModel):
 
 
 class PassportFields(BaseModel):
-    surname: str
-    given_names: str
-    document_number: str
-    nationality: str
-    issuing_country: str
+    model_config = ConfigDict(extra="forbid")
+
+    surname: str = Field(min_length=1, max_length=100)
+    # Empty is valid: some passports carry a single name and no given names (ICAO 9303).
+    given_names: str = Field(max_length=100)
+    document_number: str = Field(min_length=1, max_length=30)
+    nationality: str = Field(min_length=1, max_length=3)
+    issuing_country: str = Field(min_length=1, max_length=3)
     birth_date: date | None
     sex: Literal["M", "F", "X"]
     expiry_date: date | None
-    personal_number: str
+    personal_number: str = Field(max_length=30)
 
 
 class ExtractionPublic(BaseModel):
@@ -79,6 +82,7 @@ def create_passport_router(
     *,
     reader: MrzReader = read_mrz_lines,
     record_event=None,
+    uploads_enabled: bool = True,
 ) -> APIRouter:
     router = APIRouter(prefix="/passports", tags=["passports"])
     TravelerId = Annotated[int, Depends(current_traveler_id)]
@@ -92,6 +96,8 @@ def create_passport_router(
 
     @router.post("", response_model=PassportUploadPublic, status_code=201)
     def upload_passport(file: UploadFile, traveler_id: TravelerId):
+        if not uploads_enabled:
+            raise HTTPException(status_code=503, detail="Passport uploads are not available on this deployment.")
         # Read one byte past the limit so oversized files are detected without reading them fully.
         data = file.file.read(MAX_UPLOAD_BYTES + 1)
         try:
@@ -117,5 +123,23 @@ def create_passport_router(
         if record_event:
             record_event(traveler_id, "passport_extraction", result.status)
         return result
+
+    @router.get("/{upload_id}/review", response_model=PassportFields)
+    def get_review(upload_id: str, response: Response, traveler_id: TravelerId):
+        load_owned(traveler_id, upload_id)
+        fields = storage.load_review(traveler_id, upload_id)
+        if fields is None:
+            raise HTTPException(status_code=404, detail="Passport review not found.")
+        response.headers["Cache-Control"] = "private, no-store"
+        return fields
+
+    @router.put("/{upload_id}/review", response_model=PassportFields)
+    def save_review(upload_id: str, fields: PassportFields, response: Response, traveler_id: TravelerId):
+        load_owned(traveler_id, upload_id)
+        storage.save_review(traveler_id, upload_id, fields.model_dump(mode="json"))
+        if record_event:
+            record_event(traveler_id, "passport_review", "success")
+        response.headers["Cache-Control"] = "private, no-store"
+        return fields
 
     return router

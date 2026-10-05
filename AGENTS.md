@@ -76,12 +76,12 @@ replace by team agreement and then update this table.
 | Database | SQLite in local dev; PostgreSQL driver and Alembic migrations | migration code in use; managed PostgreSQL pending | `migrate.py upgrade` versions the current schema; local bootstrap still uses `create_all` |
 | File storage | Owner-scoped local folder in dev; private S3-compatible bucket before production | local in use; bucket proposed | Passports must never sit in a public folder or on an ephemeral server disk |
 | Passport OCR | Tesseract via pytesseract, MRZ located and repaired by our code (`backend/app/passport/`); vision LLM fallback when check digits fail | in use (vision fallback proposed) | MRZ check digits let us verify a read instead of trusting it |
-| LLM | Anthropic Claude via the official Python SDK, called only from the backend; native tool use for agent features | proposed | Keys never reach the browser; plain SDK over a framework (e.g. LangChain) keeps the agent loop small and debuggable |
+| LLM | Google Gemini (`gemini-3.5-flash-lite`, free tier) via the official `google-genai` SDK, called only from the backend (`backend/app/assistant.py`); tool use later | in use (assistant); tool use proposed | Free for the course; keys never reach the browser; the provider sits behind one adapter function, so it can change without touching the endpoint |
 | Frontend routing, toasts | React Router (data router: routes, 404, error boundaries), sonner (toasts via `src/api.ts`) | in use | Page crashes and failed API calls show a page or a toast instead of a blank screen |
 | Frontend styling | Plain CSS with custom properties (`src/index.css` tokens); DM Sans + Space Grotesk, layout modelled on Migraide (simple, no pricing) | in use | Small site, no extra build tooling; auth screens use the same site font and scoped form styles. Tailwind not adopted (see decision 6) |
 | Frontend data fetching | TanStack Query (loading/error states) | proposed | Adopt once pages load real data |
-| Backend hosting | Non-root container with Tesseract and health checks (`backend/Dockerfile`) | image in use; host pending | The image is tested without choosing a hosting provider |
-| Frontend hosting | Vercel static hosting (`frontend/vercel.json`, see `frontend/DEPLOY.md`) | SPA fallback configured; API proxy pending | Proxy `/auth`, `/passports`, and `/activity` through the browser origin before deployment so cookies stay first-party |
+| Backend hosting | Non-root container with Tesseract and health checks (`backend/Dockerfile`); free Render demo blueprint (`render.yaml`) | image and blueprint in use; live host pending | Free Render can demo auth; its expiring database and ephemeral files are unsuitable for real passport storage |
+| Frontend hosting | Netlify static hosting (`netlify.toml`, see `docs/NETLIFY.md`); Vercel config retained | Netlify build and SPA fallback in use; API proxy needs backend URL | Build `frontend/dist`; proxy `/auth`, `/passports`, and `/activity` through the browser origin so cookies stay first-party |
 | Domain | One public frontend origin with an API proxy | proposed | Auth cookies work on the browser origin; production proxy and HTTPS are not configured yet |
 | CI/CD, observability | GitHub Actions CI and JSON request logs with request IDs; deployment job, Sentry, uptime check | CI/request logs in use; deployment and monitoring proposed | CI runs tests, lint, build, PostgreSQL migration, and container smoke checks without deployment credentials |
 | User activity logging | SQLModel `ActivityEvent` plus private per-traveler JSONL mirrors in `backend/storage/activity-logs/` | in use | Auth and passport actions are recorded on the backend; allowlisted frontend page/control events use authenticated `/activity/events` |
@@ -96,8 +96,8 @@ create `.venv`, install `requirements-dev.lock`, run `python dev.py setup` once,
 `python dev.py run` to load the ignored local JWT secret and public Google client ID and
 serve on port 8000. From `frontend/`, run `npm ci` and `npm run dev` on port 5173.
 Check with backend `python -m pytest -q` and frontend `npm test`, `npm run lint`,
-`npm run build`. The authenticated API proxies `/auth`, `/passports`, and `/activity` through Vite;
-the standalone passport demo is separate. OCR needs system Tesseract on `PATH`.
+`npm run build`. The authenticated API proxies `/auth`, `/passports`, `/activity`, and `/assistant` through Vite;
+the standalone passport demo is separate. OCR needs system Tesseract on `PATH`. The assistant needs `GEMINI_API_KEY` (free from Google AI Studio): locally as a line in Git-ignored `backend/.env.local`, which `dev.py run` loads; on Render in the dashboard (`render.yaml` names it with `sync: false`). **Never commit the key: this repository is public.** Without it `/assistant/messages` returns 503 and everything else works.
 Local `dev.py run` still creates missing tables; deployment uses `python migrate.py upgrade`
 before starting the API with `APP_ENV=production` and `SCHEMA_AUTO_CREATE=false`.
 
@@ -157,6 +157,27 @@ What we decided, why, and what we rejected. Newest at the bottom. Add an entry w
     JSON request logs contain a server-generated request ID, route template, status, and duration;
     request bodies and values are omitted. Production hosting, durable private storage, API rewrites, secrets, and release automation
     remain deployment decisions.
+11. **Netlify frontend build.** Build the existing Vite app from `frontend/` and publish `dist/`.
+    A generated `_redirects` file serves SPA paths and, when `BACKEND_URL` is set, proxies API
+    paths to an HTTPS FastAPI host. Passport review now saves owner-scoped corrected fields beside
+    the private image. Netlify only hosts the frontend; backend hosting and durable storage remain required.
+12. **Free auth demo backend.** `render.yaml` deploys the existing API and a temporary PostgreSQL
+    database on Render. The Render startup command runs Alembic migrations because its free plan
+    has no pre-deploy command. Free instances lose local files and the free database expires after
+    30 days, so passport uploads are disabled there; durable storage is still needed for production.
+13. **Passport review UI (US 6–8).** One page at `/passport/:uploadId`: drag-and-drop or camera upload, then a
+    review form where each field shows how far the machine could verify it (check failed / auto-corrected /
+    passed check / confirm manually); editing a field marks it "Edited". Only confirmed fields are saved.
+    Field rules live in `frontend/src/passport/fields.ts`, separate from the components.
+14. **Passport assistant (US 23-lite).** `POST /assistant/messages` makes one Gemini call per question. The
+    server, not the browser, adds context: the traveler's latest *confirmed* passport and the current step;
+    request bodies forbid extra fields, so a client cannot supply its own "passport". Days until expiry are
+    computed in Python and handed to the model. Safety blocks become a polite reply, a 20 s timeout with
+    one retry, a per-traveler in-memory rate limit (20 per 10 minutes), and logs never include prompt text.
+    Chat history lives only in the page. **Free-tier caveat:** Google may use free-tier prompts (which include
+    the confirmed passport fields) to improve its products, with human review, so the free tier is for demos
+    with specimen or test data only; real travelers need a paid tier or another provider (a one-function change
+    in `gemini_ask`). *Rejected: a framework (LangChain) or tools, which Sprint 1 doesn't need.*
 
 ## Personal instructions
 

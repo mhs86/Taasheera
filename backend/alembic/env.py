@@ -6,7 +6,7 @@ from alembic import context
 from sqlmodel import SQLModel
 
 from app import models  # noqa: F401 - register table models in metadata
-from app.database import DEFAULT_DATABASE_URL, build_engine
+from app.database import DEFAULT_DATABASE_URL, build_engine, normalize_database_url
 
 
 config = context.config
@@ -15,7 +15,7 @@ target_metadata = SQLModel.metadata
 
 def run_migrations_offline() -> None:
     context.configure(
-        url=os.environ.get("DATABASE_URL", DEFAULT_DATABASE_URL),
+        url=normalize_database_url(os.environ.get("DATABASE_URL", DEFAULT_DATABASE_URL)),
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},

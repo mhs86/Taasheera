@@ -1,4 +1,5 @@
 import { submitPasswordReset } from './passwordReset.ts'
+import { apiFetch } from './api.ts'
 
 export type Traveler = { id: number; name: string; email: string }
 
@@ -8,6 +9,22 @@ let accessToken: string | null = null
 let restoring: Promise<Traveler | null> | null = null
 
 export function hasAccessToken(): boolean { return accessToken !== null }
+
+// Options are apiFetch's, so a caller can pass `silent: true` and show its own error instead of a toast.
+export async function protectedFetch(path: string, options: Parameters<typeof apiFetch>[1] = {}): Promise<Response> {
+  if (!accessToken && !(await restoreSession())) throw new Error('Please sign in to continue.')
+  const send = () => apiFetch(path, {
+    ...options,
+    headers: { ...Object.fromEntries(new Headers(options.headers)), Authorization: `Bearer ${accessToken}` },
+  })
+  let response = await send()
+  if (response.status === 401) {
+    const renewed = await sessionOperation(refresh)
+    if (!renewed) throw new Error('Your session expired. Please sign in again.')
+    response = await send()
+  }
+  return response
+}
 
 async function request(path: string, options: RequestInit = {}) {
   return fetch(`/auth/${path}`, {

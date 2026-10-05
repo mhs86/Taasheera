@@ -102,6 +102,38 @@ def test_owner_can_fetch_the_stored_image(client):
     assert response.headers["cache-control"] == "private, no-store"
 
 
+def test_review_is_saved_and_owner_scoped(client):
+    upload_id = upload(client).json()["id"]
+    fields = client.post(f"/passports/{upload_id}/extract", headers={"X-Traveler": "1"}).json()["fields"]
+    fields["surname"] = "CORRECTED"
+    url = f"/passports/{upload_id}/review"
+
+    assert client.get(url, headers={"X-Traveler": "1"}).status_code == 404
+    assert client.put(url, json=fields, headers={"X-Traveler": "1"}).status_code == 200
+    saved = client.get(url, headers={"X-Traveler": "1"})
+    assert saved.json()["surname"] == "CORRECTED"
+    assert saved.headers["cache-control"] == "private, no-store"
+    assert client.get(url, headers={"X-Traveler": "2"}).status_code == 404
+    assert client.put(url, json=fields, headers={"X-Traveler": "2"}).status_code == 404
+
+
+def test_review_rejects_extra_fields(client):
+    upload_id = upload(client).json()["id"]
+    fields = client.post(f"/passports/{upload_id}/extract", headers={"X-Traveler": "1"}).json()["fields"]
+    fields["traveler_id"] = 2
+    assert client.put(f"/passports/{upload_id}/review", json=fields,
+                      headers={"X-Traveler": "1"}).status_code == 422
+
+
+def test_uploads_can_be_disabled_on_a_host_without_durable_storage(tmp_path):
+    app = FastAPI()
+    app.include_router(create_passport_router(PassportImageStorage(tmp_path), fake_traveler_id,
+                                              uploads_enabled=False))
+    response = upload(TestClient(app))
+    assert response.status_code == 503
+    assert not list(tmp_path.iterdir())
+
+
 def test_file_name_is_ignored_and_content_is_checked(client):
     response = upload(client, data=b"#!/bin/sh\necho not an image", name="passport.jpg")
 
@@ -119,3 +151,14 @@ def test_repaired_document_number_is_reported(tmp_path):
     assert body["status"] == "verified"
     assert body["fields"]["document_number"] == "L898902C3"
     assert body["corrected_fields"] == ["document_number"]
+
+
+def test_review_accepts_a_passport_without_given_names(client):
+    upload_id = upload(client).json()["id"]
+    fields = client.post(f"/passports/{upload_id}/extract", headers={"X-Traveler": "1"}).json()["fields"]
+    fields["given_names"] = ""
+
+    response = client.put(f"/passports/{upload_id}/review", json=fields, headers={"X-Traveler": "1"})
+
+    assert response.status_code == 200
+    assert response.json()["given_names"] == ""
