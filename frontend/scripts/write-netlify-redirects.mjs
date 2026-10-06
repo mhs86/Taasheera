@@ -9,7 +9,7 @@ export function redirectRules(rawBackendUrl = '') {
     if (parsed.protocol !== 'https:' || parsed.username || parsed.password || parsed.pathname !== '/' || parsed.search || parsed.hash) {
       throw new Error('BACKEND_URL must be a bare HTTPS origin, such as https://api.example.com')
     }
-    for (const route of ['auth', 'passports', 'activity']) {
+    for (const route of ['auth', 'passports', 'activity', 'assistant']) {
       rules.push(`/${route} ${parsed.origin}/${route} 200`)
       rules.push(`/${route}/* ${parsed.origin}/${route}/:splat 200`)
     }

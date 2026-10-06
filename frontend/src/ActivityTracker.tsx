@@ -9,6 +9,8 @@ const controls = new Set([
   'forgot-password-link', 'create-account-link', 'sign-in-link', 'submit-login',
   'submit-registration', 'logout-button', 'google-retry', 'google-cancel',
   'faq-question', 'reset-request', 'reset-submit', 'reset-link',
+  'passport-choose-file', 'passport-take-photo', 'passport-replace', 'passport-confirm',
+  'assistant-open', 'assistant-close', 'assistant-send', 'assistant-suggestion', 'passport-link',
 ])
 
 export default function ActivityTracker() {

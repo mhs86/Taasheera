@@ -29,7 +29,8 @@ class PassportFields(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     surname: str = Field(min_length=1, max_length=100)
-    given_names: str = Field(min_length=1, max_length=100)
+    # Empty is valid: some passports carry a single name and no given names (ICAO 9303).
+    given_names: str = Field(max_length=100)
     document_number: str = Field(min_length=1, max_length=30)
     nationality: str = Field(min_length=1, max_length=3)
     issuing_country: str = Field(min_length=1, max_length=3)

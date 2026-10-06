@@ -8,6 +8,7 @@ import bcrypt
 from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from google import genai
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import text as sql_text
 from sqlalchemy.exc import SQLAlchemyError
@@ -15,6 +16,7 @@ from sqlmodel import Session, SQLModel, select
 
 from .database import build_engine
 from .activity import activity_directory_from_environment, create_activity_router, record_activity
+from .assistant import DEFAULT_MODEL, create_assistant_router, gemini_ask
 from .auth import create_auth_router, create_current_traveler
 from .google_auth import create_google_auth_router
 from .config import AuthSettings, RuntimeSettings
@@ -96,6 +98,23 @@ def create_app(database_url: str | None = None, *, reset_sender: ResetSender | N
     app.include_router(create_passport_router(
         passport_storage, current_traveler_id, record_event=record_passport_activity,
         uploads_enabled=uploads_setting == "true",
+    ))
+
+    def record_assistant_activity(traveler_id: int, event_type: str, outcome: str):
+        with Session(engine) as session:
+            record_activity(session, app.state.activity_directory, traveler_id,
+                            event_type, "assistant", outcome)
+
+    # Without a key the assistant answers 503 and the rest of the app works as normal.
+    assistant_key = os.environ.get("GEMINI_API_KEY", "").strip()
+    assistant_ask = gemini_ask(
+        # 20 s per attempt, 2 attempts at most: the browser gives up after 45 s.
+        genai.Client(api_key=assistant_key, http_options={"timeout": 20_000, "retry_options": {"attempts": 2}}),
+        os.environ.get("ASSISTANT_MODEL", DEFAULT_MODEL),
+    ) if assistant_key else None
+    app.include_router(create_assistant_router(
+        current_traveler_id, passport_storage.latest_review, assistant_ask,
+        record_event=record_assistant_activity,
     ))
 
     @app.exception_handler(RequestValidationError)

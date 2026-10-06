@@ -64,3 +64,16 @@ class PassportImageStorage:
         if not review_path.is_file():
             return None
         return json.loads(review_path.read_text(encoding="utf-8"))
+
+    def latest_review(self, owner_id: int) -> dict | None:
+        """The traveler's most recently confirmed passport details, or None.
+
+        Only confirmed reviews count: the assistant must never answer from an
+        unreviewed OCR guess.
+        """
+        folder = self.root / str(int(owner_id))
+        reviews = [path for path in folder.glob("*.json") if _UPLOAD_ID.fullmatch(path.stem)] if folder.is_dir() else []
+        if not reviews:
+            return None
+        newest = max(reviews, key=lambda path: path.stat().st_mtime_ns)
+        return json.loads(newest.read_text(encoding="utf-8"))

@@ -131,6 +131,19 @@
   font-weight: 600;
 }
 
+/* Log out sits where Log in was, so the button borrows the link's look. */
+.logout-button {
+  border: 0;
+  background: none;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.logout-button:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
 .header-cta {
   display: inline-flex;
   align-items: center;
@@ -193,15 +206,19 @@
   box-shadow: 0 8px 24px #0f1f1c14;
 }
 
-.mobile-menu a:not(.header-cta) {
+.mobile-menu a:not(.header-cta),
+.mobile-menu .logout-button {
   padding: 12px 14px;
   border-radius: 8px;
   color: var(--fg);
+  font-size: inherit;
   font-weight: 500;
+  text-align: left;
   text-decoration: none;
 }
 
 .mobile-menu a:not(.header-cta):hover,
+.mobile-menu .logout-button:hover,
 .mobile-menu a.active {
   background: var(--brand-muted);
   color: var(--brand);
@@ -752,8 +769,8 @@
   }
 }
 
-/* Too narrow for the header buttons; both are in the menu, and the hero has Get started. */
-@media (max-width: 420px) {
+/* Too narrow for the header buttons (signed in, they need about 456px); both are in the menu. */
+@media (max-width: 460px) {
   .nav-right > .login-link,
   .nav-right > .header-cta {
     display: none;

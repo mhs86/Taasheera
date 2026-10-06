@@ -17,6 +17,14 @@
   letter-spacing: -0.8px;
 }
 
+.brand-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: inherit;
+  text-decoration: none;
+}
+
 .brand-mark {
   display: grid;
   place-items: center;

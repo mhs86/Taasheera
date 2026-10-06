@@ -58,8 +58,11 @@ function App({ initialNavigation, googleClientId = import.meta.env?.VITE_GOOGLE_
   return (
     <main className="sign-in-page">
       <header className="brand">
-        <span className="brand-mark" aria-hidden="true">T</span>
-        Taasheera
+        {/* The sign-in screens sit outside the site layout, so this is their only way home. */}
+        <a href="/" className="brand-link" aria-label="Taasheera home" data-activity-id="home-link">
+          <span className="brand-mark" aria-hidden="true">T</span>
+          Taasheera
+        </a>
       </header>
 
       {isResetPage ? <SetNewPassword

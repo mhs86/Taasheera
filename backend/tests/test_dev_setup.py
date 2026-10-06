@@ -42,3 +42,26 @@ def test_dev_launcher_loads_files_and_preserves_explicit_environment(tmp_path, m
     assert settings.jwt_secret == "p" * 48
     assert settings.google_client_id == "override.apps.googleusercontent.com"
     assert settings.cookie_secure is True
+
+
+def test_dev_launcher_loads_the_optional_assistant_key(tmp_path, monkeypatch):
+    private = tmp_path / ".env.local"
+    public = tmp_path / ".env.development"
+    public.write_text("GOOGLE_CLIENT_ID=dev-client.apps.googleusercontent.com\n", encoding="utf-8")
+    monkeypatch.setattr(dev, "PRIVATE_CONFIG", private)
+    monkeypatch.setattr(dev, "PUBLIC_CONFIG", public)
+    monkeypatch.delenv("JWT_SECRET", raising=False)
+
+    # Without the line, the launcher still starts and leaves the assistant switched off.
+    private.write_text("JWT_SECRET=" + "s" * 48 + "\n", encoding="utf-8")
+    dev.configure_environment()
+    assert "GEMINI_API_KEY" not in dev.os.environ
+
+    private.write_text("JWT_SECRET=" + "s" * 48 + "\nGEMINI_API_KEY=test-key\n", encoding="utf-8")
+    dev.configure_environment()
+    assert dev.os.environ["GEMINI_API_KEY"] == "test-key"
+
+    # An exported key still wins over the file.
+    monkeypatch.setenv("GEMINI_API_KEY", "exported-key")
+    dev.configure_environment()
+    assert dev.os.environ["GEMINI_API_KEY"] == "exported-key"
