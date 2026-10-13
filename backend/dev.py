@@ -63,6 +63,8 @@ if __name__ == "__main__":
         setup()
     elif sys.argv[1:] == ["run"]:
         configure_environment()
+        from migrate import upgrade
+        upgrade()
         import uvicorn
 
         uvicorn.run("app.main:app", host="127.0.0.1", port=8000, reload=True, access_log=False)

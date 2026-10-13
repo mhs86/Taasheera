@@ -21,6 +21,12 @@ On every later start, run from `backend/`:
 
 `dev.py setup` creates `backend/.env.local` once with a private JWT signing secret; it never prints or replaces that secret. To use the passport assistant locally, add a line `GEMINI_API_KEY=<key>` to that same file (get a free key at https://aistudio.google.com, or ask the team for the shared test key privately). Never put the key in a tracked file: this repository is public. `dev.py run` automatically reads it and the public `GOOGLE_CLIENT_ID` in the tracked `backend/.env.development`, then starts Uvicorn on `http://127.0.0.1:8000` with local HTTP cookies. No virtual environment activation or PowerShell execution-policy change is needed. If `py` is unavailable, use the full path to your installed Python for the first command.
 
+`dev.py run` runs Alembic migrations before starting the server. Back up existing
+local databases before the first run after a schema update. The SSO migration adds
+nullable `traveler.sso_email`, preserves contact emails/password hashes, and
+backfills the original verified email for existing Google identities. Later
+Google sign-ins update this field from verified claims; it is never a login key.
+
 The local secret stays stable across restarts and is Git-ignored. The development launcher loads only these local settings; production startup still reads environment variables and must receive its own `JWT_SECRET`, `GOOGLE_CLIENT_ID`, and secure-cookie settings from deployment configuration. Never commit a production secret or Google Client Secret. Changing the JWT secret invalidates existing access JWTs; persisted refresh sessions still work until revoked or expired.
 
 Open http://127.0.0.1:8000/docs to try registration. Stop the server with Ctrl+C. For a run-only environment, install `requirements.lock` instead of `requirements-dev.lock`.
@@ -122,13 +128,28 @@ The backend uses `google.oauth2.id_token.verify_oauth2_token` from the supported
 | Result | Response |
 | --- | --- |
 | First Google sign-in with an unused email | Creates a traveler and a Google identity, then returns `200` with `access_token`, `token_type: bearer`, and `expires_in`; sets the existing refresh cookie. |
-| Returning linked Google identity | Resolves by stable `sub`, then returns the same session response. Changed Google email/name claims do not overwrite the local profile or select another account. |
+| Returning linked Google identity | Resolves by stable `sub`, then returns the same session response. Verified provider email updates `sso_email`; the contact email/name and account identity stay unchanged. |
 | Email already belongs to an account not linked to this `sub` | `409`, with `detail.code: google_link_required` and a message to use the existing sign-in method. No identity is linked and no session is issued. |
 | Invalid/expired token, invalid subject, or unverified email | `401`: `Invalid Google ID token or unverified email.` |
 | Google sign-in unconfigured / Google unavailable | `503`; no account or session is created. |
 | Malformed JSON fields / untrusted Origin | Existing `422` validation / `403` Origin protection. Submitted token values are omitted from validation errors. |
 
-Google sign-in reuses the existing JWT, refresh rotation, cookie, `/auth/me`, and logout implementation. Replacing the current browser session revokes the prior session; logout revokes its access and refresh tokens. Other device sessions remain independent. There is no automatic account-linking endpoint in this increment.
+Google sign-in reuses the existing JWT, refresh rotation, cookie, `/auth/me`, and logout implementation. Replacing the current browser session revokes the prior session; logout revokes its access and refresh tokens. Other device sessions remain independent. Account linking is explicit, never automatic by matching email.
+
+`GET /auth/config` publicly returns only `google_client_id`, with `Cache-Control:
+no-store`. The frontend uses this AWS/backend setting instead of a separately
+compiled client ID. JWT signing secrets, client secrets, and provider keys are
+never included.
+
+`POST /auth/google/link` requires a valid bearer session, an allowed origin,
+the current application password, a Google ID token, and `expected_traveler_id`
+matching the authenticated owner. The last field guards against another browser
+tab changing the cookie account during session refresh; it does not select the
+link target. The verified Google subject may belong to only one traveler, and
+an existing different Google identity cannot be replaced. Repeated linking of
+the same identity is safe. The response is the owner's public profile, including
+`sso_email`; contact email and password remain unchanged. The server records only
+an owner-scoped `account_link` audit event, excluding token, password and email.
 
 Google-only travelers have an empty password hash, explicitly disabling email/password sign-in. Forgot-password still returns its generic `202`, but sends no email and creates no reset token for them. Reset completion also refuses Google-only accounts, even if a stray reset-token row exists. Re-registering that email cannot enable a password.
 

@@ -1,7 +1,41 @@
 import { submitPasswordReset } from './passwordReset.ts'
 import { apiFetch } from './api.ts'
 
-export type Traveler = { id: number; name: string; email: string }
+export type Traveler = { id: number; name: string; email: string; sso_email?: string | null }
+
+let configurationRequest: Promise<string> | null = null
+
+export function loadGoogleClientId(): Promise<string> {
+  // Share StrictMode's simultaneous requests, but refresh on later route visits.
+  if (!configurationRequest) configurationRequest = request('config').then(async response => {
+    if (!response.ok) throw new Error('Google sign-in configuration could not load.')
+    const config = await response.json()
+    if (config.google_client_id === null) return ''
+    if (typeof config.google_client_id !== 'string' ||
+        !/^[A-Za-z0-9._-]+\.apps\.googleusercontent\.com$/.test(config.google_client_id)) {
+      throw new Error('Google sign-in configuration could not load.')
+    }
+    return config.google_client_id
+  }).finally(() => { configurationRequest = null })
+  return configurationRequest
+}
+
+export async function connectGoogle(idToken: string, password: string, expectedTravelerId: number): Promise<Traveler> {
+  const response = await protectedFetch('/auth/google/link', {
+    method: 'POST', silent: true, cache: 'no-store',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id_token: idToken, password, expected_traveler_id: expectedTravelerId }),
+  })
+  if (response.status === 403) throw new Error('Check your current password and try again.')
+  if (response.status === 409) {
+    const detail = await response.json().catch(() => ({}))
+    if (detail.detail?.code === 'account_changed') throw new Error('Your signed-in account changed. Reload before connecting Google.')
+    throw new Error('That Google account is already connected to another account, or you have a different Google account connected.')
+  }
+  if (response.status === 401 || response.status === 422) throw new Error('Google sign-in could not be verified. Try again.')
+  if (!response.ok) throw new Error('Could not connect Google. Please try again.')
+  return response.json()
+}
 
 // Access tokens live only in this module's memory. The browser manages the
 // HttpOnly refresh cookie; no token is written to browser storage.

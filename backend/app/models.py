@@ -10,6 +10,8 @@ class Traveler(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     name: str = Field(max_length=100)
     email: str = Field(max_length=254, unique=True, index=True)
+    # Latest verified Google email; identities authenticate by Google subject.
+    sso_email: str | None = Field(default=None, max_length=254, index=True)
     # Empty means password authentication is disabled (Google-only account).
     # Preserve the existing NOT NULL column for compatibility with local DBs.
     password_hash: str = Field(max_length=60, repr=False)
@@ -62,12 +64,23 @@ class RegisterRequest(PasswordInput):
         return value.lower()
 
 
+class GoogleLinkRequest(PasswordInput):
+    model_config = ConfigDict(extra="forbid")
+    id_token: SecretStr = SchemaField(min_length=1, max_length=8192)
+    expected_traveler_id: int = SchemaField(gt=0)
+
+
+class AuthConfigurationPublic(BaseModel):
+    google_client_id: str | None
+
+
 class TravelerPublic(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
     name: str
     email: str
+    sso_email: str | None = None
 
 
 class LoginRequest(BaseModel):

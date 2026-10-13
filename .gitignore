@@ -4,6 +4,7 @@ CLAUDE.local.md
 .env.*
 !.env.example
 .DS_Store
+.aws-deploy-state/
 
 # Python
 .venv/

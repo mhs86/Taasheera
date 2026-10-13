@@ -142,7 +142,7 @@ What we decided, why, and what we rejected. Newest at the bottom. Add an entry w
    private bucket storage.
 8. **Local auth setup.** `backend/dev.py setup` creates an ignored, persistent JWT secret;
    `dev.py run` loads it with the public development Google client ID and local HTTP cookie
-   setting. The frontend reads the same public client ID from `.env.development`. Registration
+   setting. The frontend reads the public client ID from `/auth/config`. Registration
    returns to the sign-in form with a success message, and the create-account password can be shown
    or hidden. These settings are for local development; production supplies its own environment.
 9. **Activity audit.** Server timestamps and authenticated traveler IDs own every event. Frontend
@@ -183,6 +183,11 @@ What we decided, why, and what we rejected. Newest at the bottom. Add an entry w
     image-based Lambda on main backend changes. AWS OIDC, ECR, Lambda, database, and API Gateway setup
     remain external prerequisites (see `docs/AWS_LAMBDA.md`). Passport uploads stay disabled until private
     durable storage and a suitable upload path exist.
+16. **Google SSO configuration and linking.** `/auth/config` serves only the public backend client ID.
+    Existing password users explicitly connect Google with bearer authentication and current-password
+    confirmation. `traveler.sso_email` records the verified provider email; identity still uses Google `sub`.
+    Alembic migrates the column without replacing accounts. Local `dev.py run` migrates before startup;
+    AWS deployment backs up SQLite privately before migration. Functional changes stay off `main`.
 
 ## Personal instructions
 

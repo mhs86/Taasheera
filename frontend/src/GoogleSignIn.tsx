@@ -6,9 +6,12 @@ type Props = {
   disabled: boolean
   onCredential: (credential: string) => void
   onMessage: (message: string) => void
+  configurationStatus?: 'loading' | 'ready' | 'failed'
+  onConfigurationRetry?: () => void
 }
 
-export default function GoogleSignIn({ clientId, disabled, onCredential, onMessage }: Props) {
+export default function GoogleSignIn({ clientId, disabled, onCredential, onMessage,
+  configurationStatus = 'ready', onConfigurationRetry }: Props) {
   const host = useRef<HTMLDivElement>(null)
   const accepting = useRef(false)
   const [attempt, setAttempt] = useState(0)
@@ -48,6 +51,11 @@ export default function GoogleSignIn({ clientId, disabled, onCredential, onMessa
     }
   }, [clientId, attempt, onCredential, onMessage])
 
+  if (configurationStatus === 'loading') return <p role="status">Loading Google sign-in configuration…</p>
+  if (configurationStatus === 'failed') return <>
+    <p role="alert">Google sign-in configuration could not load. Email sign-in is still available.</p>
+    <button type="button" disabled={disabled} onClick={onConfigurationRetry}>Retry Google configuration</button>
+  </>
   if (!clientId) return <p className="password-help">Google sign-in is unavailable. Use your email and password.</p>
 
   return <div className="google-sign-in">
