@@ -125,6 +125,9 @@ AI provider remains Gemini. Enter a Gemini key privately in
 Gemini with real passport data. Configure SMTP privately for password-reset
 delivery, using **mhs86@mail.aub.edu** for any required account email. Do not
 invent a mailbox or claim SMTP works without a delivery check.
+When no SMTP host is configured, bootstrap omits `RESET_FRONTEND_URL` so email
+reset remains disabled and the API starts. With SMTP configured, it preserves
+an existing reset URL or defaults to the CloudFront site's `/reset-password`.
 
 After a private settings change, run `docker compose -f
 /opt/taasheera/deploy/aws/compose.yaml up -d --force-recreate api` on the host.
