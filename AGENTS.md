@@ -71,9 +71,9 @@ replace by team agreement and then update this table.
 | Area | Choice | Status | Why |
 |---|---|---|---|
 | Backend | Python, FastAPI, SQLModel, Pydantic v2, uvicorn | in use | Typed validation, auto OpenAPI docs; Python is where the OCR/AI libraries are |
-| Auth | bcrypt, PyJWT access tokens in memory, rotating HttpOnly refresh cookies, google-auth | in use | See `backend/app/auth.py`, `google_auth.py` |
+| Auth | bcrypt, PyJWT access tokens in memory, rotating HttpOnly refresh cookies, google-auth; roles stored on the traveler row | in use | See `backend/app/auth.py`, `google_auth.py`; `/admin` gate in `admin.py` |
 | Frontend | React 19, TypeScript, Vite, ESLint | in use | Mainstream, fast dev loop, types catch API mistakes |
-| Database | SQLite in local dev; PostgreSQL driver and Alembic migrations | migration code in use; managed PostgreSQL pending | `migrate.py upgrade` versions the current schema; local bootstrap still uses `create_all` |
+| Database | SQLite in local dev; PostgreSQL driver and Alembic migrations | migration code in use; managed PostgreSQL pending | `migrate.py upgrade` runs before the API locally (`dev.py run`) and in deployment; only tests use `create_all` |
 | File storage | Owner-scoped local folder in dev; private S3-compatible bucket before production | local in use; bucket proposed | Passports must never sit in a public folder or on an ephemeral server disk |
 | Passport OCR | Tesseract via pytesseract, MRZ located and repaired by our code (`backend/app/passport/`); vision LLM fallback when check digits fail | in use (vision fallback proposed) | MRZ check digits let us verify a read instead of trusting it |
 | LLM | Google Gemini (`gemini-3.5-flash-lite`, free tier) via the official `google-genai` SDK, called only from the backend (`backend/app/assistant.py`); tool use later | in use (assistant); tool use proposed | Free for the course; keys never reach the browser; the provider sits behind one adapter function, so it can change without touching the endpoint |
@@ -88,18 +88,20 @@ replace by team agreement and then update this table.
 | Later sprints | Playwright (Python) for L2/L3 portal filling; pypdf for L1 PDF forms; a job queue (e.g. arq + Redis) for long agent runs; Telegram Bot API; transactional email | proposed | Not needed in Sprint 1 |
 
 Layout: `backend/app/` (router factories included by `main.py`), `backend/alembic/`
-(schema revisions), `backend/scripts/` (passport demo), `backend/tests/`,
+(schema revisions), `backend/manage.py` (operator commands such as `set-role`),
+`backend/scripts/` (passport demo), `backend/tests/`,
 `frontend/src/`, `frontend/tests/`. Deployment plan: `docs/DEPLOYMENT_PLAN.md`.
 
 Local Windows setup is in `backend/README.md` and `frontend/README.md`. From `backend/`,
 create `.venv`, install `requirements-dev.lock`, run `python dev.py setup` once, then
-`python dev.py run` to load the ignored local JWT secret and public Google client ID and
-serve on port 8000. From `frontend/`, run `npm ci` and `npm run dev` on port 5173.
+`python dev.py run` to apply database migrations, load the ignored local JWT secret and
+public Google client ID, and serve on port 8000. From `frontend/`, run `npm ci` and `npm run dev` on port 5173.
 Check with backend `python -m pytest -q` and frontend `npm test`, `npm run lint`,
 `npm run build`. The authenticated API proxies `/auth`, `/passports`, `/activity`, and `/assistant` through Vite;
 the standalone passport demo is separate. OCR needs system Tesseract on `PATH`. The assistant needs `GEMINI_API_KEY` (free from Google AI Studio): locally as a line in Git-ignored `backend/.env.local`, which `dev.py run` loads; on Render in the dashboard (`render.yaml` names it with `sync: false`). **Never commit the key: this repository is public.** Without it `/assistant/messages` returns 503 and everything else works.
-Local `dev.py run` still creates missing tables; deployment uses `python migrate.py upgrade`
-before starting the API with `APP_ENV=production` and `SCHEMA_AUTO_CREATE=false`.
+`dev.py run` and deployments both run `python migrate.py upgrade` before the API starts; deployments
+set `APP_ENV=production` and `SCHEMA_AUTO_CREATE=false`. Give an existing account a role with
+`python manage.py set-role --email <email> --role admin`.
 
 ## Conventions
 
@@ -178,6 +180,17 @@ What we decided, why, and what we rejected. Newest at the bottom. Add an entry w
     the confirmed passport fields) to improve its products, with human review, so the free tier is for demos
     with specimen or test data only; real travelers need a paid tier or another provider (a one-function change
     in `gemini_ask`). *Rejected: a framework (LangChain) or tools, which Sprint 1 doesn't need.*
+15. **Roles and admin access (US 131).** `traveler.role` (traveler / support / admin) and `traveler.status`
+    (active / suspended) are strings with named CHECK constraints and server defaults, so existing accounts
+    became active travelers. Every `/admin` route comes from `create_admin_router`, whose router-level
+    dependency checks the role and status of the traveler row loaded for that request; access tokens carry
+    no role, so demotion or suspension applies on the next request, and admin responses are `no-store`.
+    Support is refused like travelers until a route opts it in with `require_role`. No sign-up path accepts
+    a role: the first admin signs up normally and an operator runs `python manage.py set-role`, which
+    records a `role_change` event. `dev.py run` now runs `migrate.py upgrade` first, which also adopts an
+    unversioned Sprint 1 database that exactly matches the initial revision. *Rejected: database enum types
+    (PostgreSQL type migrations, nothing on SQLite), a role claim in the JWT (stale until expiry), an admin
+    sign-up endpoint or seeded admin password.*
 
 ## Personal instructions
 

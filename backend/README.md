@@ -1,6 +1,6 @@
 # Taasheera backend — traveler authentication
 
-The backend supports traveler registration, email/password and Google sign-in, a protected profile, refresh, logout, password reset, and authenticated passport upload and extraction. The frontend connects the authentication flows and traveler profile. There is no admin registration.
+The backend supports traveler registration, email/password and Google sign-in, a protected profile, refresh, logout, password reset, and authenticated passport upload and extraction. The frontend connects the authentication flows and traveler profile. Sign-up always creates an active traveler; an operator gives an existing account the admin role with `manage.py set-role` (see Roles and admin access).
 
 ## Windows setup and run
 
@@ -19,7 +19,7 @@ On every later start, run from `backend/`:
 .\.venv\Scripts\python.exe dev.py run
 ```
 
-`dev.py setup` creates `backend/.env.local` once with a private JWT signing secret; it never prints or replaces that secret. To use the passport assistant locally, add a line `GEMINI_API_KEY=<key>` to that same file (get a free key at https://aistudio.google.com, or ask the team for the shared test key privately). Never put the key in a tracked file: this repository is public. `dev.py run` automatically reads it and the public `GOOGLE_CLIENT_ID` in the tracked `backend/.env.development`, then starts Uvicorn on `http://127.0.0.1:8000` with local HTTP cookies. No virtual environment activation or PowerShell execution-policy change is needed. If `py` is unavailable, use the full path to your installed Python for the first command.
+`dev.py setup` creates `backend/.env.local` once with a private JWT signing secret; it never prints or replaces that secret. To use the passport assistant locally, add a line `GEMINI_API_KEY=<key>` to that same file (get a free key at https://aistudio.google.com, or ask the team for the shared test key privately). Never put the key in a tracked file: this repository is public. `dev.py run` automatically reads it and the public `GOOGLE_CLIENT_ID` in the tracked `backend/.env.development`, applies database migrations, then starts Uvicorn on `http://127.0.0.1:8000` with local HTTP cookies. No virtual environment activation or PowerShell execution-policy change is needed. If `py` is unavailable, use the full path to your installed Python for the first command.
 
 The local secret stays stable across restarts and is Git-ignored. The development launcher loads only these local settings; production startup still reads environment variables and must receive its own `JWT_SECRET`, `GOOGLE_CLIENT_ID`, and secure-cookie settings from deployment configuration. Never commit a production secret or Google Client Secret. Changing the JWT secret invalidates existing access JWTs; persisted refresh sessions still work until revoked or expired.
 
@@ -36,14 +36,19 @@ They generate their own signing secrets and require no developer secrets.
 
 ## Migration and container checks
 
-Local `dev.py run` keeps `SCHEMA_AUTO_CREATE=true` so existing developer databases continue to
-work. A deployed process defaults to `SCHEMA_AUTO_CREATE=false` and refuses to start until the
+Local `dev.py run` runs `python migrate.py upgrade` and then starts the API with
+`SCHEMA_AUTO_CREATE=false`, like a deployment; only the tests build schemas with `create_all`.
+A deployed process defaults to `SCHEMA_AUTO_CREATE=false` and refuses to start until the
 Alembic schema revision is current. Before starting a new image, run `python migrate.py upgrade`
 against its `DATABASE_URL`; `python migrate.py status` reports the current and required revisions.
-The upgrade command creates a fresh schema. It can also stamp an unversioned database only when
-its schema exactly matches the committed models; it refuses mismatched schemas and never discards
-traveler data. Back up an existing database before its first migration. Do not run migrations
-independently in every API replica.
+The upgrade command creates a fresh schema. An unversioned database is stamped at the current
+revision only when its schema exactly matches the current models, including CHECK constraints and
+server defaults; on SQLite, one that exactly matches the Sprint 1 schema is stamped at the initial
+revision and then upgraded. Anything else is refused, and traveler data is never discarded. On
+SQLite the role revision rebuilds the traveler table and copies all of its rows; an interrupted
+upgrade rolls back completely. Back up a deployed database before its first migration. `dev.py run`
+migrates the local database automatically, so copy `backend/taasheera.db` first if you want a
+backup. Do not run migrations independently in every API replica.
 
 From the repository root, build the image with `docker build -t taasheera-backend backend`.
 It includes Tesseract and a font, runs as a non-root user, and has a Docker health check. Its
@@ -76,7 +81,8 @@ The free Render blueprint does this; it runs the existing API for registration a
 
 `ActivityEvent` links each server-timestamped event to a traveler. The backend records successful
 registration, known-account email/password sign-in successes and failures, verified Google sign-ins,
-logout, and passport upload/extraction outcomes. `POST /activity/events` accepts only a bearer token,
+logout, passport upload/extraction outcomes, and role changes made with `manage.py set-role`
+(`role_change`, identifier `cli:<old>-><new>`). `POST /activity/events` accepts only a bearer token,
 an allowlisted `page_visit` or `click`, a fixed page/control identifier, and a matching outcome;
 the traveler ID comes from the token, not the request body. It returns `204` and rejects extra fields.
 No request bodies, URLs, passport IDs, OCR results, email addresses, credentials, or free text enter
@@ -88,11 +94,12 @@ served by FastAPI. Set `ACTIVITY_LOG_DIR` to an absolute private directory to mo
 requests owner-only permissions where supported. If the JSONL mirror cannot be written, the database
 event remains and the server emits a generic error line; the completed traveler action is not undone.
 Back up and restrict both the database and JSONL directory in deployment. The initial Alembic
-revision includes this table; local development still uses `create_all` for convenience.
+revision includes this table; `dev.py run` applies the same migrations.
 
 Anonymous clicks, duplicate-email registration attempts, unknown-email sign-in failures, invalid
 Google credentials, and failed Google account collisions have no verified traveler owner, so they are
-not stored. Browser activity requests are best effort; failed delivery is not queued for later retry.
+not stored. Refused `/admin` requests are not stored either; the request log keeps their route and
+`403`. Browser activity requests are best effort; failed delivery is not queued for later retry.
 
 ## Login and session API
 
@@ -112,6 +119,43 @@ A session expires seven days after login; rotation does not extend that deadline
 Cookie-changing endpoints check an incoming `Origin` against `AUTH_ALLOWED_ORIGINS`, a comma-separated exact allowlist. Defaults are `http://127.0.0.1:5173,http://127.0.0.1:8000`. Requests without an Origin are accepted for API clients unless marked cross-site by `Sec-Fetch-Site`. Configure exact HTTPS origins for deployment. This is CSRF protection, not a CORS allowance; no CORS middleware was added. The Vite development proxy forwards `/auth` to the backend on the same browser origin.
 
 For a manual backend check, open http://127.0.0.1:8000/docs after starting with the environment above. Register a traveler, call login, copy only the returned access token into **Authorize**, then call `/auth/me`. Swagger/browser keeps the refresh cookie for refresh and logout. After logout, the old access token must return `401`. See `frontend/README.md` for the browser sign-in checklist.
+
+## Roles and admin access
+
+Every account has a `role` (`traveler`, `support` or `admin`) and a `status` (`active` or
+`suspended`), stored on the traveler row. New accounts, and accounts that existed before roles,
+are active travelers. Named database CHECK constraints reject any other value, including
+different capitalization.
+
+| Endpoint | Input | Success |
+| --- | --- | --- |
+| `GET /admin/me` | `Authorization: Bearer <access_token>` of an active admin | `200`: `id`, `name`, `email`, `role` |
+
+Without a valid access token, `/admin` routes return `401` like `/auth/me`. Every other account,
+including support staff and suspended admins, gets the same `403` with `Admin access required.`
+Every response under `/admin`, including `401`, `403`, `404`, `405` and redirects, uses
+`Cache-Control: no-store`, also behind a path prefix.
+Access tokens carry no role: the role and status
+are read from the database on every request, so a change applies to the next request. Suspension
+only affects `/admin` until US 133 adds sign-in enforcement.
+
+No sign-up path accepts a role. To create the first admin, the person signs up normally; confirm
+with them that they control that account (password-account emails are not verified, so prefer a
+Google account). Then run from `backend/`:
+
+```powershell
+.\.venv\Scripts\python.exe manage.py set-role --email <email> --role admin
+```
+
+The command changes only the role of an existing account, never handles passwords, and records a
+`role_change` activity event in the same transaction. It prints the account ID and sign-in method,
+never the email, and refuses a SQLite path that does not exist instead of creating an empty
+database. The same command sets `traveler` or `support`. Against a deployed database, run it as a
+one-off task from the backend image (which contains `manage.py`) with that environment's
+`DATABASE_URL`, and mount the API's storage volume so the JSONL mirror joins its activity logs:
+`docker run --rm --env-file <env file> -v <storage volume>:/app/storage --entrypoint python <image> manage.py set-role --email <email> --role admin`.
+Without the mount only the database event is kept. The free Render database refuses outside
+connections.
 
 ## Google sign-in
 
@@ -156,7 +200,7 @@ Run focused tests with `.\.venv\Scripts\python.exe -m pytest tests/test_google_a
 
 After the team configures its Console project, use the frontend Google button to send a freshly obtained ID token to `/auth/google`, then check `/auth/me`, refresh, and logout. Test a new Google traveler, a repeat sign-in, and a collision with a password account (expect `409`). Do not put ID tokens in URL queries, shell history, logs, or committed fixtures.
 
-Existing local databases are preserved: local development startup creates missing tables, including `googleidentity`, without dropping/rebuilding the traveler table or changing existing password hashes. The original non-null password column remains compatible; only newly created Google-only accounts use the disabled empty value. Deployment uses the Alembic migration step above.
+Existing local databases are preserved: `dev.py run` migrates them in place, keeping every account and leaving existing password hashes unchanged. The original non-null password column remains compatible; only newly created Google-only accounts use the disabled empty value. Deployment uses the Alembic migration step above.
 
 ## Forgotten-password reset
 
@@ -228,9 +272,9 @@ SMTP implementation reference: [Python smtplib](https://docs.python.org/3/librar
 
 ## Database configuration
 
-Password reset adds `passwordresettoken` and `resetratelimit` tables without changing existing traveler columns. Local development creates missing tables at startup; deployment uses Alembic.
+Password reset adds `passwordresettoken` and `resetratelimit` tables without changing existing traveler columns. Local development applies Alembic migrations at startup; deployment uses Alembic.
 
-The local default is `backend/taasheera.db`, regardless of the working directory. Local development creates missing tables at startup. To change the database, set `DATABASE_URL` before starting the server:
+The local default is `backend/taasheera.db`, regardless of the working directory. Local development applies Alembic migrations at startup. To change the database, set `DATABASE_URL` before starting the server:
 
 ```powershell
 $env:DATABASE_URL = "sqlite:///./another-local.db"
@@ -251,11 +295,11 @@ Send JSON with `name`, `email`, and `password`:
 - `409`: email already registered. A database unique constraint also protects against concurrent duplicates.
 - `422`: invalid input. Validation responses omit submitted values so passwords are not echoed.
 
-Names are trimmed and must contain 1–100 characters. Emails are validated, trimmed, and lowercased for case-insensitive account identity. Passwords require at least 8 characters and at most 72 UTF-8 bytes; they are never trimmed or silently truncated. Passwords are hashed with bcrypt, a fresh salt, and cost 12. Only the hash is persisted; it is excluded from the response. Extra fields such as `role` or `id` are rejected. Password confirmation belongs to the frontend and is not part of this API.
+Names are trimmed and must contain 1–100 characters. Emails are validated, trimmed, and lowercased for case-insensitive account identity. Passwords require at least 8 characters and at most 72 UTF-8 bytes; they are never trimmed or silently truncated. Passwords are hashed with bcrypt, a fresh salt, and cost 12. Only the hash is persisted; it is excluded from the response. Extra fields such as `role` or `id` are rejected. New accounts are always active travelers. Password confirmation belongs to the frontend and is not part of this API.
 
 ## Team decisions
 
-- Choose the managed PostgreSQL service and private storage before deployment. The driver and initial Alembic revision are in the repository; `create_all` is for local development only.
+- Choose the managed PostgreSQL service and private storage before deployment. The driver and Alembic revisions are in the repository; `create_all` is for tests only.
 - Agree on the password minimum and bcrypt cost for the target server. The 72-byte limit is a bcrypt constraint, including for non-ASCII passwords.
 - Confirm case-insensitive email identity and the explicit duplicate-email response. Email ownership verification is not implemented in this increment.
 - Before deployment, agree on token lifetimes, secret management, HTTPS origins, login rate limiting, and a cleanup job for expired sessions and their retained refresh hashes. The initial migration includes the auth tables without changing existing traveler columns.

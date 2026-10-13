@@ -6,7 +6,7 @@ This branch prepares repeatable checks and a deployable backend image. It does n
 
 1. Run backend tests (including synthetic OCR and disposable PostgreSQL migration tests), frontend tests, lint, and build in GitHub Actions on branch pushes and PRs into `dev` or `main`. Build and smoke-test the backend image there too.
 2. Build the FastAPI image from `backend/Dockerfile` with Tesseract and a font. The process runs as a non-root user and exposes `/health/live` and `/health/ready`.
-3. Version the current SQLModel schema with Alembic. `python migrate.py upgrade` initializes an empty database or stamps an existing, exact local schema without deleting records. A schema mismatch stops startup in deployment mode.
+3. Version the current SQLModel schema with Alembic. `python migrate.py upgrade` initializes an empty database or stamps an existing, exact local schema (current models, or the Sprint 1 initial schema, which it then upgrades) without deleting records. A schema mismatch stops startup in deployment mode.
 4. Pin backend runtime and test dependencies in `requirements.lock` and `requirements-dev.lock`; the frontend already uses `package-lock.json`.
 5. Reject unsafe production startup settings, including local HTTP cookie settings, missing database URL, and non-HTTPS browser origins.
 6. Emit JSON request metadata with server-generated request IDs, route templates, status, and duration, without logging URLs, submitted values, or credentials.
