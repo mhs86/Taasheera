@@ -2,6 +2,11 @@
 
 This branch prepares repeatable checks and a deployable backend image. It does not publish the app.
 
+An AWS single-host configuration is available in `deploy/aws/README.md`. It uses
+the existing SQLite support and persistent encrypted EBS for database and passport
+storage, with CloudFront viewer HTTPS. It requires authenticated AWS provisioning
+and verification of the account's temporary Free Tier credits before deployment.
+
 ## Code completed now
 
 1. Run backend tests (including synthetic OCR and disposable PostgreSQL migration tests), frontend tests, lint, and build in GitHub Actions on branch pushes and PRs into `dev` or `main`. Build and smoke-test the backend image there too.

@@ -186,5 +186,12 @@ What we decided, why, and what we rejected. Newest at the bottom. Add an entry w
 
 ## Personal instructions
 
+AWS deployment configuration lives in `deploy/aws/`: a single-host alternative with
+CloudFront HTTPS, persistent SQLite/passport storage, and manual OIDC redeployment.
+It is prepared configuration; verify AWS resources and HTTPS behavior before claiming deployment.
+Owner/account email is `mhs86@mail.aub.edu`. Only configuration, CI/CD, infrastructure,
+and deployment changes are permitted on `main`; functional changes follow the `dev` workflow.
+AWS credits are temporary: verify remaining credit and eligibility before provisioning.
+
 Personal preferences go in a local, gitignored file, never in this one. Claude Code uses
 `CLAUDE.local.md` at the repo root (already in `.gitignore`). Other tools have their own local equivalents.

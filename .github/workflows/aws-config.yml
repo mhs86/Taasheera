@@ -1,0 +1,32 @@
+name: Validate AWS deployment configuration
+on:
+  push:
+    paths: ['deploy/aws/**', '.github/workflows/*aws*.yml', '.dockerignore', 'backend/Dockerfile']
+  pull_request:
+    paths: ['deploy/aws/**', '.github/workflows/*aws*.yml', '.dockerignore', 'backend/Dockerfile']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Validate CloudFormation and shell configuration
+        run: |
+          python -m pip install cfn-lint==1.57.2
+          cfn-lint deploy/aws/stack.yaml deploy/aws/github-role.yaml
+          bash -n deploy/aws/*.sh
+      - name: Check workflow syntax with verified actionlint
+        run: |
+          cd "$RUNNER_TEMP"
+          curl --fail --location https://github.com/rhysd/actionlint/releases/download/v1.7.7/actionlint_1.7.7_linux_amd64.tar.gz -o actionlint.tar.gz
+          printf '%s  actionlint.tar.gz\n' 023070a287cd8cccd71515fedc843f1985bf96c436b7effaecce67290e7e0757 | sha256sum -c -
+          tar -xzf actionlint.tar.gz actionlint
+          ./actionlint "$GITHUB_WORKSPACE/.github/workflows/aws-config.yml" "$GITHUB_WORKSPACE/.github/workflows/deploy-full-aws.yml"
+      - name: Build frontend serving image
+        run: docker build -f deploy/aws/Dockerfile.web -t taasheera-web-ci .

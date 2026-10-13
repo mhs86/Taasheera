@@ -1,0 +1,43 @@
+name: taasheera
+services:
+  migrate:
+    build:
+      context: ../../backend
+    env_file: ${TAASHEERA_ENV_FILE:-/etc/taasheera/app.env}
+    volumes:
+      - ${TAASHEERA_DATA_DIR:-/srv/taasheera}:/app/storage
+    command: [python, migrate.py, upgrade]
+    restart: "no"
+  api:
+    build:
+      context: ../../backend
+    env_file: ${TAASHEERA_ENV_FILE:-/etc/taasheera/app.env}
+    volumes:
+      - ${TAASHEERA_DATA_DIR:-/srv/taasheera}:/app/storage
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: 5m
+        max-file: "2"
+  web:
+    env_file: ${TAASHEERA_ENV_FILE:-/etc/taasheera/app.env}
+    environment:
+      NGINX_ENVSUBST_FILTER: ORIGIN_TOKEN
+    build:
+      context: ../..
+      dockerfile: deploy/aws/Dockerfile.web
+    ports:
+      - "80:80"
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: 5m
+        max-file: "2"
