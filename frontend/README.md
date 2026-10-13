@@ -44,6 +44,19 @@ Automated session-module tests cover correct/wrong passwords, protected profile 
 
 ## Configure Google sign-in locally
 
+The browser loads the public Google client ID from `/auth/config`. Configure
+`GOOGLE_CLIENT_ID` on the backend; AWS changes take effect after API restart and
+do not require rebuilding the frontend. Loading/configuration errors keep email
+sign-in available and provide a retry button. Tokens remain in memory and
+HttpOnly cookies; Google credentials and passwords are never stored in browser storage.
+
+For an existing password account, sign in normally, open the account view at
+`/sign-in`, enter the current application password under **Connect Google**,
+and use the official Google button. After successful linking the account view
+shows the verified SSO email. Log out and use Google sign-in to return to that
+same traveler account. An email collision on the signed-out flow still asks
+the user to sign in with their existing method and link explicitly.
+
 In Google Cloud Console / Google Auth Platform, configure branding, audience and test users (while the app is in Testing). Create an OAuth client of type **Web application**. Configure the authorized JavaScript origin `http://127.0.0.1:5173` for this repository's Vite server, and the actual HTTPS frontend origin for production. Origins must match the browser's scheme, hostname and port, with no path. If using localhost, Google recommends registering both `http://localhost` and `http://localhost:5173`; also change the Vite host and backend origin allowlist consistently. Use the existing 127.0.0.1 setup for the steps below.
 
 The integration uses Google's official rendered button in popup mode with a JavaScript credential callback. It needs no authorized redirect URI, client secret, Google API access token or One Tap. Do not configure `/auth/google` as a Google redirect/form-post URL. See Google's [setup guide](https://developers.google.com/identity/gsi/web/guides/get-google-api-clientid) and [button guide](https://developers.google.com/identity/gsi/web/guides/display-button).

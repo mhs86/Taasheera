@@ -26,11 +26,21 @@ def upgrade() -> None:
                 # revision marker. Stamp only when they match the committed model.
                 differences = compare_metadata(MigrationContext.configure(connection), SQLModel.metadata)
                 if differences:
-                    raise RuntimeError(
-                        "Existing unversioned schema differs from the initial migration. "
-                        "Back it up, update it to the current local schema, then retry."
-                    )
-                command.stamp(config, "head")
+                    # The known pre-SSO baseline can be adopted and upgraded.
+                    # Any unrelated drift still prevents stamping or data changes.
+                    expected_column = any(d[0] == "add_column" and d[2] == "traveler"
+                                          and d[3].name == "sso_email" for d in differences)
+                    expected_index = any(d[0] == "add_index" and d[1].name == "ix_traveler_sso_email"
+                                         for d in differences)
+                    if len(differences) != 2 or not expected_column or not expected_index:
+                        raise RuntimeError(
+                            "Existing unversioned schema differs from the initial migration. "
+                            "Back it up, update it to the current local schema, then retry."
+                        )
+                    command.stamp(config, "aeccbbace2e6")
+                    command.upgrade(config, "head")
+                else:
+                    command.stamp(config, "head")
                 print("Adopted existing schema at the current revision.")
             else:
                 command.upgrade(config, "head")

@@ -1,0 +1,164 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Taasheera single-host deployment, persistent SQLite and HTTPS. Free eligibility must be checked before creation.
+Parameters:
+  OwnerEmail:
+    Type: String
+    Default: mhs86@mail.aub.edu
+    AllowedValues: [mhs86@mail.aub.edu]
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+  SubnetId:
+    Type: AWS::EC2::Subnet::Id
+    Description: Public subnet in VpcId with an Internet Gateway route.
+  CloudFrontPrefixListId:
+    Type: String
+    AllowedPattern: 'pl-[a-z0-9]+'
+    Description: Regional managed prefix list com.amazonaws.global.cloudfront.origin-facing.
+  AmiId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64
+  InstanceType:
+    Type: String
+    Default: t3.micro
+    AllowedValues: [t3.micro, t3.small]
+  DataVolumeGiB:
+    Type: Number
+    Default: 8
+    MinValue: 8
+    MaxValue: 30
+  OriginToken:
+    Type: String
+    NoEcho: true
+    MinLength: 32
+    AllowedPattern: '[a-f0-9]{64}'
+    Description: Random 32-byte hex origin token; pass from a private local parameter file.
+Conditions:
+  UsEast1: !Equals [!Ref 'AWS::Region', us-east-1]
+Resources:
+  HostRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: {Service: ec2.amazonaws.com}
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub arn:${AWS::Partition}:iam::aws:policy/AmazonSSMManagedInstanceCore
+  HostProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles: [!Ref HostRole]
+  HostSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: HTTP from CloudFront only; administration through SSM, no SSH.
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          SourcePrefixListId: !Ref CloudFrontPrefixListId
+  Host:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !Ref AmiId
+      InstanceType: !Ref InstanceType
+      IamInstanceProfile: !Ref HostProfile
+      CreditSpecification:
+        CPUCredits: standard
+      MetadataOptions:
+        HttpTokens: required
+        HttpEndpoint: enabled
+      NetworkInterfaces:
+        - DeviceIndex: '0'
+          AssociatePublicIpAddress: true
+          SubnetId: !Ref SubnetId
+          GroupSet: [!Ref HostSecurityGroup]
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            VolumeSize: 8
+            VolumeType: gp3
+            Encrypted: true
+            DeleteOnTermination: true
+      Tags:
+        - {Key: Name, Value: taasheera}
+        - {Key: OwnerEmail, Value: !Ref OwnerEmail}
+      UserData:
+        Fn::Base64: |
+          #!/bin/bash
+          set -euo pipefail
+          dnf install -y docker git python3
+          systemctl enable --now docker
+  DataVolume:
+    Type: AWS::EC2::Volume
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      AvailabilityZone: !GetAtt Host.AvailabilityZone
+      Size: !Ref DataVolumeGiB
+      VolumeType: gp3
+      Encrypted: true
+      Tags:
+        - {Key: Name, Value: taasheera-data}
+        - {Key: OwnerEmail, Value: !Ref OwnerEmail}
+  DataAttachment:
+    Type: AWS::EC2::VolumeAttachment
+    Properties:
+      Device: /dev/sdf
+      InstanceId: !Ref Host
+      VolumeId: !Ref DataVolume
+  Address:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+  AddressAssociation:
+    Type: AWS::EC2::EIPAssociation
+    Properties:
+      AllocationId: !GetAtt Address.AllocationId
+      InstanceId: !Ref Host
+  Distribution:
+    Type: AWS::CloudFront::Distribution
+    DependsOn: AddressAssociation
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        HttpVersion: http2
+        PriceClass: PriceClass_100
+        IPV6Enabled: true
+        Origins:
+          - Id: host
+            DomainName: !Join
+              - '.'
+              - - !Join ['-', [ec2, !Join ['-', !Split ['.', !Ref Address]]]]
+                - !If [UsEast1, compute-1.amazonaws.com, !Sub '${AWS::Region}.compute.amazonaws.com']
+            OriginCustomHeaders:
+              - HeaderName: X-Taasheera-Origin
+                HeaderValue: !Ref OriginToken
+            CustomOriginConfig:
+              HTTPPort: 80
+              OriginProtocolPolicy: http-only
+        DefaultCacheBehavior:
+          TargetOriginId: host
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods: [GET, HEAD, OPTIONS, PUT, PATCH, POST, DELETE]
+          CachedMethods: [GET, HEAD]
+          Compress: true
+          # Managed CachingDisabled and AllViewerExceptHostHeader policies.
+          CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad
+          OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac
+        ViewerCertificate:
+          CloudFrontDefaultCertificate: true
+      Tags:
+        - {Key: OwnerEmail, Value: !Ref OwnerEmail}
+Outputs:
+  InstanceId:
+    Value: !Ref Host
+  DataVolumeId:
+    Value: !Ref DataVolume
+  SiteUrl:
+    Value: !Sub https://${Distribution.DomainName}
+  DistributionId:
+    Value: !Ref Distribution

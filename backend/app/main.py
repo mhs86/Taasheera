@@ -78,7 +78,7 @@ def create_app(database_url: str | None = None, *, reset_sender: ResetSender | N
     current_traveler = create_current_traveler(get_session)
     app.include_router(create_activity_router(get_session, current_traveler))
     app.include_router(create_auth_router(get_session, current_traveler))
-    app.include_router(create_google_auth_router(get_session))
+    app.include_router(create_google_auth_router(get_session, current_traveler))
     app.include_router(create_password_reset_router(get_session))
     passport_storage = PassportImageStorage(
         os.environ.get("PASSPORT_STORAGE_DIR", str(Path(__file__).resolve().parents[1] / "storage" / "passports"))
