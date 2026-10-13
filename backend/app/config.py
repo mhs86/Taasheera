@@ -5,8 +5,8 @@ from urllib.parse import urlsplit
 
 @dataclass(frozen=True)
 class RuntimeSettings:
-    # Local development/tests may still bootstrap with create_all. Deployed
-    # processes require a completed Alembic revision before accepting traffic.
+    # Tests may still bootstrap with create_all. Local development (dev.py run) and
+    # deployed processes require a completed Alembic revision before accepting traffic.
     schema_auto_create: bool = False
     require_tesseract: bool = False
     environment: str = "development"

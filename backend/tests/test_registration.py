@@ -26,8 +26,10 @@ def test_registration_persists_only_bcrypt_hash_and_returns_public_details(api):
 
     assert response.status_code == 201
     assert response.json() == {"id": 1, "name": "Maya Haddad", "email": "maya@example.com"}
+    assert set(response.json()) == {"id", "name", "email"}  # No role or status on traveler endpoints.
     with Session(engine) as session:
         traveler = session.exec(select(Traveler)).one()
+        assert (traveler.role, traveler.status) == ("traveler", "active")
         assert traveler.password_hash != registration()["password"]
         assert bcrypt.checkpw(registration()["password"].encode(), traveler.password_hash.encode())
         assert not bcrypt.checkpw(b"wrong-password", traveler.password_hash.encode())
@@ -67,6 +69,11 @@ def test_database_enforces_unique_email(api):
     {"password": "é" * 37},
     {"password": None},
     {"role": "admin"},
+    {"role": "traveler"},
+    {"role": "Admin"},
+    {"status": "active"},
+    {"is_admin": True},
+    {"roles": ["admin"]},
     {"id": 99},
 ])
 def test_invalid_input_is_rejected_without_echoing_password_or_saving_user(api, changes):

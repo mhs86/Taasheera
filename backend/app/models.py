@@ -1,18 +1,35 @@
 from datetime import datetime, timezone
-from typing import Annotated, Literal
+from typing import Annotated, Literal, get_args
 
 from pydantic import BaseModel, ConfigDict, EmailStr, SecretStr, StringConstraints, field_validator
 from pydantic import Field as SchemaField
+from sqlalchemy import CheckConstraint
 from sqlmodel import Field, SQLModel
 
 
+# Stored as plain strings guarded by named CHECK constraints (portable; no database enum types).
+Role = Literal["traveler", "support", "admin"]
+Status = Literal["active", "suspended"]
+ROLES: tuple[str, ...] = get_args(Role)
+STATUSES: tuple[str, ...] = get_args(Status)
+
+
 class Traveler(SQLModel, table=True):
+    __table_args__ = (
+        CheckConstraint("role IN ('traveler', 'support', 'admin')", name="ck_traveler_role"),
+        CheckConstraint("status IN ('active', 'suspended')", name="ck_traveler_status"),
+    )
+
     id: int | None = Field(default=None, primary_key=True)
     name: str = Field(max_length=100)
     email: str = Field(max_length=254, unique=True, index=True)
     # Empty means password authentication is disabled (Google-only account).
     # Preserve the existing NOT NULL column for compatibility with local DBs.
     password_hash: str = Field(max_length=60, repr=False)
+    # Never taken from a request body: sign-up always creates an active traveler.
+    # Only manage.py set-role (and, later, admins) change these.
+    role: str = Field(default="traveler", max_length=20, sa_column_kwargs={"server_default": "traveler"})
+    status: str = Field(default="active", max_length=20, sa_column_kwargs={"server_default": "active"})
 
 
 class ActivityEvent(SQLModel, table=True):

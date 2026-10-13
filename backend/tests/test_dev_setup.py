@@ -1,5 +1,12 @@
+import pytest
+import uvicorn
+from sqlalchemy import inspect
+
 import dev
+import migrate
 from app.config import AuthSettings
+from app.database import build_engine
+from app.schema import schema_revision
 
 
 def test_setup_creates_private_secret_once_without_printing_it(tmp_path, monkeypatch, capsys):
@@ -32,7 +39,7 @@ def test_dev_launcher_loads_files_and_preserves_explicit_environment(tmp_path, m
     assert settings.jwt_secret == "s" * 48
     assert settings.google_client_id == "dev-client.apps.googleusercontent.com"
     assert settings.cookie_secure is False
-    assert dev.os.environ["SCHEMA_AUTO_CREATE"] == "true"
+    assert dev.os.environ["SCHEMA_AUTO_CREATE"] == "false"
 
     monkeypatch.setenv("JWT_SECRET", "p" * 48)
     monkeypatch.setenv("GOOGLE_CLIENT_ID", "override.apps.googleusercontent.com")
@@ -65,3 +72,42 @@ def test_dev_launcher_loads_the_optional_assistant_key(tmp_path, monkeypatch):
     monkeypatch.setenv("GEMINI_API_KEY", "exported-key")
     dev.configure_environment()
     assert dev.os.environ["GEMINI_API_KEY"] == "exported-key"
+
+
+def test_dev_run_migrates_before_serving(monkeypatch):
+    calls = []
+    monkeypatch.setattr(dev, "configure_environment", lambda: calls.append("configure"))
+    monkeypatch.setattr(migrate, "upgrade", lambda: calls.append("migrate"))
+    monkeypatch.setattr(uvicorn, "run", lambda *args, **kwargs: calls.append(("serve", args, kwargs)))
+
+    dev.run()
+    assert calls == ["configure", "migrate", ("serve", ("app.main:app",), {
+        "host": "127.0.0.1", "port": 8000, "reload": True, "access_log": False,
+    })]
+
+
+def test_dev_run_does_not_serve_when_migration_is_refused(monkeypatch):
+    def refuse():
+        raise RuntimeError("Existing unversioned schema differs from the current models.")
+
+    served = []
+    monkeypatch.setattr(dev, "configure_environment", lambda: None)
+    monkeypatch.setattr(migrate, "upgrade", refuse)
+    monkeypatch.setattr(uvicorn, "run", lambda *args, **kwargs: served.append(args))
+    with pytest.raises(SystemExit, match="differs"):
+        dev.run()
+    assert served == []
+
+
+def test_dev_run_upgrades_a_sprint1_database(sprint1_database, monkeypatch):
+    monkeypatch.setattr(dev, "configure_environment", lambda: None)
+    monkeypatch.setattr(uvicorn, "run", lambda *args, **kwargs: None)
+
+    dev.run()
+    engine = build_engine(sprint1_database)
+    try:
+        current, head = schema_revision(engine)
+        assert current == head
+        assert "role" in {column["name"] for column in inspect(engine).get_columns("traveler")}
+    finally:
+        engine.dispose()
