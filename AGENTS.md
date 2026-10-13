@@ -83,7 +83,7 @@ replace by team agreement and then update this table.
 | Backend hosting | Non-root container with Tesseract and health checks (`backend/Dockerfile`); free Render demo blueprint (`render.yaml`) | image and blueprint in use; live host pending | Free Render can demo auth; its expiring database and ephemeral files are unsuitable for real passport storage |
 | Frontend hosting | Netlify static hosting (`netlify.toml`, see `docs/NETLIFY.md`); Vercel config retained | Netlify build and SPA fallback in use; API proxy needs backend URL | Build `frontend/dist`; proxy `/auth`, `/passports`, and `/activity` through the browser origin so cookies stay first-party |
 | Domain | One public frontend origin with an API proxy | proposed | Auth cookies work on the browser origin; production proxy and HTTPS are not configured yet |
-| CI/CD, observability | GitHub Actions CI and JSON request logs with request IDs; deployment job, Sentry, uptime check | CI/request logs in use; deployment and monitoring proposed | CI runs tests, lint, build, PostgreSQL migration, and container smoke checks without deployment credentials |
+| CI/CD, observability | GitHub Actions CI, Lambda image deployment workflow, JSON request logs; Sentry, uptime check | CI/logs in use; Lambda workflow awaits AWS setup; monitoring proposed | CI builds both backend images; `deploy-backend.yml` pushes the Lambda image on main backend changes after OIDC setup |
 | User activity logging | SQLModel `ActivityEvent` plus private per-traveler JSONL mirrors in `backend/storage/activity-logs/` | in use | Auth and passport actions are recorded on the backend; allowlisted frontend page/control events use authenticated `/activity/events` |
 | Later sprints | Playwright (Python) for L2/L3 portal filling; pypdf for L1 PDF forms; a job queue (e.g. arq + Redis) for long agent runs; Telegram Bot API; transactional email | proposed | Not needed in Sprint 1 |
 
@@ -178,6 +178,11 @@ What we decided, why, and what we rejected. Newest at the bottom. Add an entry w
     the confirmed passport fields) to improve its products, with human review, so the free tier is for demos
     with specimen or test data only; real travelers need a paid tier or another provider (a one-function change
     in `gemini_ask`). *Rejected: a framework (LangChain) or tools, which Sprint 1 doesn't need.*
+15. **Lambda deployment path.** `backend/Dockerfile.lambda` packages FastAPI and Tesseract with the AWS
+    Lambda Web Adapter; `.github/workflows/deploy-backend.yml` publishes the image to ECR and updates an
+    image-based Lambda on main backend changes. AWS OIDC, ECR, Lambda, database, and API Gateway setup
+    remain external prerequisites (see `docs/AWS_LAMBDA.md`). Passport uploads stay disabled until private
+    durable storage and a suitable upload path exist.
 
 ## Personal instructions
 

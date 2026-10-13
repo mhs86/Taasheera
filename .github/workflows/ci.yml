@@ -75,6 +75,8 @@ jobs:
       - uses: actions/checkout@v7
       - name: Build backend image
         run: docker build -t taasheera-backend-ci backend
+      - name: Build Lambda image
+        run: docker build --platform linux/amd64 -f backend/Dockerfile.lambda -t taasheera-lambda-ci backend
       - name: Migrate and smoke-test backend image
         run: |
           docker volume create taasheera-ci-data

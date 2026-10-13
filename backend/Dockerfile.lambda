@@ -1,0 +1,33 @@
+FROM python:3.12-slim-bookworm
+
+# The adapter turns API Gateway events into HTTP requests for the existing FastAPI app.
+COPY --from=public.ecr.aws/awsguru/aws-lambda-adapter:1.1.0 /lambda-adapter /opt/extensions/lambda-adapter
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    APP_ENV=production \
+    SCHEMA_AUTO_CREATE=false \
+    REQUIRE_TESSERACT=true \
+    PASSPORT_UPLOADS_ENABLED=false \
+    ACTIVITY_LOG_DIR=/tmp/taasheera-activity \
+    AWS_LWA_PORT=8000 \
+    AWS_LWA_READINESS_CHECK_PATH=/health/ready \
+    AWS_LWA_READINESS_CHECK_HEALTHY_STATUS=200-299 \
+    AWS_LWA_READINESS_CHECK_TIMEOUT_SECONDS=10
+
+RUN apt-get update \
+    && apt-get install --no-install-recommends -y tesseract-ocr fonts-dejavu-core \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --system taasheera \
+    && useradd --system --gid taasheera --home-dir /app taasheera
+
+WORKDIR /app
+COPY requirements.lock ./
+RUN python -m pip install --no-cache-dir -r requirements.lock
+
+COPY app/ ./app/
+COPY alembic/ ./alembic/
+COPY alembic.ini migrate.py ./
+
+USER taasheera
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--no-access-log"]
