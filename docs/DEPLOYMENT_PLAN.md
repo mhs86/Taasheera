@@ -1,11 +1,13 @@
 # Deployment preparation plan
 
-This branch prepares repeatable checks and a deployable backend image. It does not publish the app.
+Repeatable checks and deployment images are implemented. The AWS demo is live at
+`https://d3vh2ppjrlwxee.cloudfront.net`; configuration changes remain in PR #6.
 
 An AWS single-host configuration is available in `deploy/aws/README.md`. It uses
 the existing SQLite support and persistent encrypted EBS for database and passport
-storage, with CloudFront viewer HTTPS. It requires authenticated AWS provisioning
-and verification of the account's temporary Free Tier credits before deployment.
+storage, with CloudFront viewer HTTPS. Initial provisioning and recovery succeeded
+through authenticated AWS CloudShell; public-site checks passed in GitHub Actions.
+Verify the account's remaining temporary credits before additional provisioning.
 
 ## Code completed now
 
