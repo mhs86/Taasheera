@@ -20,19 +20,40 @@ phase='wait for host initialization'
 printf 'Setup: %s\n' "$phase"
 cloud-init status --wait
 systemctl enable --now docker
+task_tmp=$(mktemp -d)
+trap 'rm -rf "$task_tmp"' EXIT
 phase='install verified Docker Compose'
 if ! docker compose version >/dev/null 2>&1; then
-  task_tmp=$(mktemp -d)
-  trap 'rm -rf "$task_tmp"' EXIT
   compose_version=v2.40.3
   compose_binary=docker-compose-linux-x86_64
   compose_base="https://github.com/docker/compose/releases/download/$compose_version"
-  curl --fail --location "$compose_base/$compose_binary" -o "$task_tmp/$compose_binary"
-  curl --fail --location "$compose_base/checksums.txt" -o "$task_tmp/checksums.txt"
+  curl --fail --silent --show-error --location "$compose_base/$compose_binary" -o "$task_tmp/$compose_binary"
+  curl --fail --silent --show-error --location "$compose_base/checksums.txt" -o "$task_tmp/checksums.txt"
   (cd "$task_tmp" && awk -v name="$compose_binary" '$2 == name || $2 == "*" name {print}' checksums.txt > selected-checksum.txt
     test -s selected-checksum.txt && sha256sum -c selected-checksum.txt)
   install -D -m 755 "$task_tmp/$compose_binary" /usr/local/lib/docker/cli-plugins/docker-compose
 fi
+
+phase='install compatible verified Docker Buildx'
+printf 'Setup: %s\n' "$phase"
+buildx_version=$(docker buildx version 2>/dev/null || true)
+if ! python3 - "$buildx_version" <<'PY'
+import re, sys
+match = re.search(r'\bv(\d+)\.(\d+)\.(\d+)\b', sys.argv[1])
+sys.exit(0 if match and tuple(map(int, match.groups())) >= (0, 17, 0) else 1)
+PY
+then
+  buildx_release=v0.31.0
+  buildx_binary="buildx-$buildx_release.linux-amd64"
+  buildx_base="https://github.com/docker/buildx/releases/download/$buildx_release"
+  curl --fail --silent --show-error --location "$buildx_base/$buildx_binary" -o "$task_tmp/$buildx_binary"
+  curl --fail --silent --show-error --location "$buildx_base/checksums.txt" -o "$task_tmp/buildx-checksums.txt"
+  (cd "$task_tmp" && awk -v name="$buildx_binary" '$2 == name || $2 == "*" name {print}' buildx-checksums.txt > selected-buildx-checksum.txt
+    test -s selected-buildx-checksum.txt && sha256sum -c selected-buildx-checksum.txt)
+  install -D -m 755 "$task_tmp/$buildx_binary" /usr/local/lib/docker/cli-plugins/docker-buildx
+fi
+docker buildx version
+docker compose version
 
 phase='locate persistent data disk'
 printf 'Setup: %s\n' "$phase"

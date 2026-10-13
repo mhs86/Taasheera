@@ -32,8 +32,14 @@ with open(os.environ['TAASHEERA_SSM_FILE'],'w') as f:
     json.dump({'commands':[command],'executionTimeout':['1800']}, f)
 PY
 command_id=$(aws ssm send-command --instance-ids "$TAASHEERA_INSTANCE_ID" --document-name AWS-RunShellScript --parameters "file://$TAASHEERA_SSM_FILE" --query Command.CommandId --output text)
+printf 'Application setup started on the existing host (SSM command %s). Builds can take several minutes.\n' "$command_id"
+last_status=''
 for attempt in $(seq 1 180); do
   status=$(aws ssm list-command-invocations --command-id "$command_id" --query 'CommandInvocations[0].Status' --output text)
+  if [ "$status" != "$last_status" ] || (( attempt % 6 == 0 )); then
+    printf 'Application setup status: %s\n' "$status"
+    last_status=$status
+  fi
   case "$status" in
     Success) break;;
     Failed|Cancelled|TimedOut)

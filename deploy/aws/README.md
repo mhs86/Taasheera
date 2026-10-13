@@ -80,6 +80,21 @@ URL. JWT signing material is generated privately on the data volume and retained
 across redeployments. No secret is committed or printed.
 Setup reports its current step. On failure the scripts retrieve the SSM exit
 code and error output, excluding the private command parameters.
+Amazon Linux's Docker package does not guarantee a compatible Buildx plugin.
+Bootstrap installs checksum-verified Buildx v0.31.0 if the existing plugin is
+missing or older than Compose's minimum v0.17.0, retaining compatible installations.
+
+If infrastructure creation succeeded and application setup failed, fix the
+reported prerequisite, pull the published fix, and retry application setup only:
+
+```bash
+git pull --ff-only
+bash deploy/aws/redeploy.sh
+```
+
+This reuses the existing host, mounted data volume, and private settings; it does
+not run CloudFormation resource creation. The initial setup must have written
+`/srv/taasheera/private/app.env` before this recovery command can read its origin token.
 
 ## Manual GitHub Actions redeployment
 
