@@ -56,6 +56,9 @@ bash deploy/aws/deploy.sh
 ```
 
 The first run prepares a CloudFormation change set without executing it.
+The scripts disable AWS CLI paging and interactive prompts. If an older script
+shows a `:` or `(END)` after the change list, press `q` to close the pager and let
+that deployment continue; do not restart it while the stack is being created.
 Review it in CloudFormation, then either execute that change set there and rerun
 the script, or run:
 

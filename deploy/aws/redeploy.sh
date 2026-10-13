@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Update application containers on an existing stack; this creates no AWS resources.
 set -euo pipefail
+export AWS_PAGER=""
+export AWS_CLI_AUTO_PROMPT=off
 export AWS_REGION=${AWS_REGION:-us-east-1}
 export AWS_DEFAULT_REGION=$AWS_REGION
 stack=${TAASHEERA_STACK:-taasheera}

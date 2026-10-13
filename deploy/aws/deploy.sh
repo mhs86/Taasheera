@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Run from a configured AWS CloudShell or an authenticated workstation.
 set -euo pipefail
+export AWS_PAGER=""
+export AWS_CLI_AUTO_PROMPT=off
 : "${AWS_FREE_ELIGIBILITY_CONFIRMED:?Set to yes only after verifying AWS plan, credits, and service eligibility}"
 test "$AWS_FREE_ELIGIBILITY_CONFIRMED" = yes
 export AWS_REGION=${AWS_REGION:-us-east-1}
