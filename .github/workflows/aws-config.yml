@@ -14,9 +14,11 @@ jobs:
     steps:
       - name: Set validation paths
         run: |
-          printf 'TAASHEERA_ENV_FILE=%s/taasheera/app.env\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
-          printf 'TAASHEERA_WEB_ENV_FILE=%s/taasheera/web.env\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
-          printf 'TAASHEERA_DATA_DIR=%s/taasheera/data\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
+          {
+            printf 'TAASHEERA_ENV_FILE=%s/taasheera/app.env\n' "$RUNNER_TEMP"
+            printf 'TAASHEERA_WEB_ENV_FILE=%s/taasheera/web.env\n' "$RUNNER_TEMP"
+            printf 'TAASHEERA_DATA_DIR=%s/taasheera/data\n' "$RUNNER_TEMP"
+          } >> "$GITHUB_ENV"
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
@@ -68,7 +70,13 @@ jobs:
           PY
       - name: Capture startup errors
         if: failure()
-        run: docker compose -f deploy/aws/compose.yaml logs --no-color --tail 50 api migrate
+        run: |
+          if [ -f "$TAASHEERA_ENV_FILE" ] && [ -f "$TAASHEERA_WEB_ENV_FILE" ]; then
+            docker compose -f deploy/aws/compose.yaml logs --no-color --tail 50 api migrate
+          fi
       - name: Stop validation containers
         if: always()
-        run: docker compose -f deploy/aws/compose.yaml down
+        run: |
+          if [ -f "$TAASHEERA_ENV_FILE" ] && [ -f "$TAASHEERA_WEB_ENV_FILE" ]; then
+            docker compose -f deploy/aws/compose.yaml down
+          fi
