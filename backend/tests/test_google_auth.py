@@ -262,3 +262,17 @@ def test_sprint1_database_keeps_password_and_google_sign_in_after_migration(spri
             travelers = session.exec(select(Traveler)).all()
             assert len(travelers) == 2
             assert {(traveler.role, traveler.status) for traveler in travelers} == {("traveler", "active")}
+
+
+def test_role_like_google_claims_are_ignored(api, google):
+    client, app, _ = api
+    google.return_value = {**google.return_value, "role": "admin", "roles": ["admin"], "is_admin": True,
+                           "status": "suspended", "https://taasheera/role": "admin"}
+    response = sign_in(client)
+    assert response.status_code == 200
+    with Session(app.state.engine) as session:
+        traveler = session.exec(select(Traveler)).one()
+        assert (traveler.role, traveler.status) == ("traveler", "active")
+    refused = client.get("/admin/me", headers=bearer(response))
+    assert refused.status_code == 403
+    assert refused.json() == {"detail": "Admin access required."}
