@@ -1,0 +1,15 @@
+.git
+**/.venv
+**/node_modules
+**/dist
+**/__pycache__
+**/.pytest_cache
+**/.env
+**/.env.local
+**/.env.*
+!**/.env.development
+!**/.env.example
+.aws-deploy-state
+**/storage
+**/*.db
+**/*.db-*

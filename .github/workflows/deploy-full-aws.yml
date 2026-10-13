@@ -1,0 +1,30 @@
+name: Deploy full app to existing AWS host
+on:
+  workflow_dispatch:
+    inputs:
+      free_eligibility_confirmed:
+        description: Account has active credits/Free Tier for the resources and usage
+        type: boolean
+        required: true
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: deploy-full-aws
+  cancel-in-progress: false
+jobs:
+  deploy:
+    if: ${{ inputs.free_eligibility_confirmed && vars.AWS_FULL_DEPLOY_ROLE_ARN != '' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_FULL_DEPLOY_ROLE_ARN }}
+          aws-region: us-east-1
+      - name: Redeploy on the existing host and check HTTPS readiness
+        run: bash deploy/aws/redeploy.sh

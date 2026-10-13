@@ -73,16 +73,16 @@ replace by team agreement and then update this table.
 | Backend | Python, FastAPI, SQLModel, Pydantic v2, uvicorn | in use | Typed validation, auto OpenAPI docs; Python is where the OCR/AI libraries are |
 | Auth | bcrypt, PyJWT access tokens in memory, rotating HttpOnly refresh cookies, google-auth | in use | See `backend/app/auth.py`, `google_auth.py` |
 | Frontend | React 19, TypeScript, Vite, ESLint | in use | Mainstream, fast dev loop, types catch API mistakes |
-| Database | SQLite in local dev; PostgreSQL driver and Alembic migrations | migration code in use; managed PostgreSQL pending | `migrate.py upgrade` versions the current schema; local bootstrap still uses `create_all` |
-| File storage | Owner-scoped local folder in dev; private S3-compatible bucket before production | local in use; bucket proposed | Passports must never sit in a public folder or on an ephemeral server disk |
+| Database | SQLite in local dev and on the deployed EC2 host; PostgreSQL driver and Alembic migrations retained | SQLite and migrations in use; managed PostgreSQL optional | AWS startup runs migrations against persistent EBS before the API starts; local bootstrap still uses `create_all` |
+| File storage | Owner-scoped folders on persistent encrypted EBS for the AWS demo; private S3-compatible bucket proposed | local/EBS in use; bucket proposed | Private passport files survive container recreation; backups and host replacement require explicit recovery |
 | Passport OCR | Tesseract via pytesseract, MRZ located and repaired by our code (`backend/app/passport/`); vision LLM fallback when check digits fail | in use (vision fallback proposed) | MRZ check digits let us verify a read instead of trusting it |
 | LLM | Google Gemini (`gemini-3.5-flash-lite`, free tier) via the official `google-genai` SDK, called only from the backend (`backend/app/assistant.py`); tool use later | in use (assistant); tool use proposed | Free for the course; keys never reach the browser; the provider sits behind one adapter function, so it can change without touching the endpoint |
 | Frontend routing, toasts | React Router (data router: routes, 404, error boundaries), sonner (toasts via `src/api.ts`) | in use | Page crashes and failed API calls show a page or a toast instead of a blank screen |
 | Frontend styling | Plain CSS with custom properties (`src/index.css` tokens); DM Sans + Space Grotesk, layout modelled on Migraide (simple, no pricing) | in use | Small site, no extra build tooling; auth screens use the same site font and scoped form styles. Tailwind not adopted (see decision 6) |
 | Frontend data fetching | TanStack Query (loading/error states) | proposed | Adopt once pages load real data |
-| Backend hosting | Non-root container with Tesseract and health checks (`backend/Dockerfile`); free Render demo blueprint (`render.yaml`) | image and blueprint in use; live host pending | Free Render can demo auth; its expiring database and ephemeral files are unsuitable for real passport storage |
-| Frontend hosting | Netlify static hosting (`netlify.toml`, see `docs/NETLIFY.md`); Vercel config retained | Netlify build and SPA fallback in use; API proxy needs backend URL | Build `frontend/dist`; proxy `/auth`, `/passports`, and `/activity` through the browser origin so cookies stay first-party |
-| Domain | One public frontend origin with an API proxy | proposed | Auth cookies work on the browser origin; production proxy and HTTPS are not configured yet |
+| Backend hosting | Single EC2 host running the non-root FastAPI/Tesseract container (`deploy/aws/`); Render/Lambda configurations retained | EC2 demo deployed | CloudShell setup and public readiness passed; AWS credits are temporary and private storage is on EBS |
+| Frontend hosting | Nginx serves the Vite build behind CloudFront; Netlify/Vercel configurations retained | AWS deployed | Frontend assets and same-origin API routing passed live checks; Google OAuth origin authorization remains external |
+| Domain | `d3vh2ppjrlwxee.cloudfront.net`, one HTTPS browser origin with API proxy | in use | CloudFront supplies viewer HTTPS; origin traffic is HTTP, as documented for this demo |
 | CI/CD, observability | GitHub Actions CI, Lambda image deployment workflow, JSON request logs; Sentry, uptime check | CI/logs in use; Lambda workflow awaits AWS setup; monitoring proposed | CI builds both backend images; `deploy-backend.yml` pushes the Lambda image on main backend changes after OIDC setup |
 | User activity logging | SQLModel `ActivityEvent` plus private per-traveler JSONL mirrors in `backend/storage/activity-logs/` | in use | Auth and passport actions are recorded on the backend; allowlisted frontend page/control events use authenticated `/activity/events` |
 | Later sprints | Playwright (Python) for L2/L3 portal filling; pypdf for L1 PDF forms; a job queue (e.g. arq + Redis) for long agent runs; Telegram Bot API; transactional email | proposed | Not needed in Sprint 1 |
@@ -185,6 +185,15 @@ What we decided, why, and what we rejected. Newest at the bottom. Add an entry w
     durable storage and a suitable upload path exist.
 
 ## Personal instructions
+
+AWS deployment configuration lives in `deploy/aws/`: a single-host alternative with
+CloudFront HTTPS, persistent SQLite/passport storage, and manual OIDC redeployment.
+The deployed site is `https://d3vh2ppjrlwxee.cloudfront.net`; CloudShell setup and
+GitHub live HTTPS/frontend/API checks passed. Google OAuth origin authorization,
+Gemini access and SMTP delivery still require external settings and verification.
+Owner/account email is `mhs86@mail.aub.edu`. Only configuration, CI/CD, infrastructure,
+and deployment changes are permitted on `main`; functional changes follow the `dev` workflow.
+AWS credits are temporary: verify remaining credit and eligibility before provisioning.
 
 Personal preferences go in a local, gitignored file, never in this one. Claude Code uses
 `CLAUDE.local.md` at the repo root (already in `.gitignore`). Other tools have their own local equivalents.

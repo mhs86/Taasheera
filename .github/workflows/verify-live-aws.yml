@@ -1,0 +1,54 @@
+name: Verify deployed AWS site
+on:
+  push:
+    paths: ['.github/workflows/verify-live-aws.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Check public HTTPS frontend and API without creating accounts
+        run: |
+          python3 - <<'PY'
+          import json, re, urllib.error, urllib.parse, urllib.request
+
+          site = 'https://d3vh2ppjrlwxee.cloudfront.net'
+
+          def request(path, expected, *, body=None):
+              headers = {'Origin': site}
+              if body is not None:
+                  headers['Content-Type'] = 'application/json'
+              req = urllib.request.Request(site + path, data=body, headers=headers)
+              try:
+                  response = urllib.request.urlopen(req, timeout=30)
+              except urllib.error.HTTPError as exc:
+                  response = exc
+              with response:
+                  data = response.read()
+                  assert response.status == expected, f'{path}: expected {expected}, got {response.status}'
+                  return data, response.headers
+
+          payload, _ = request('/health/ready', 200)
+          assert json.loads(payload) == {'status': 'ok'}
+          html, headers = request('/', 200)
+          assert 'text/html' in headers.get('Content-Type', '')
+          assert b'id="root"' in html
+          assets = re.findall(r'(?:src|href)="(/assets/[^"?]+\.(?:js|css))"', html.decode())
+          assert any(path.endswith('.js') for path in assets) and any(path.endswith('.css') for path in assets)
+          for path in assets:
+              data, headers = request(path, 200)
+              assert data and b'<html' not in data[:200].lower(), f'Asset returned HTML: {path}'
+              content_type = headers.get('Content-Type', '')
+              assert ('javascript' in content_type if path.endswith('.js') else 'text/css' in content_type)
+          routed, _ = request('/sign-in', 200)
+          assert b'id="root"' in routed
+          request('/auth/me', 401)
+          payload, _ = request('/auth/login', 422, body=b'{}')
+          assert 'detail' in json.loads(payload)
+          request('/auth/refresh', 401, body=b'{}')
+          print('PASS: public HTTPS readiness, SPA routes, JavaScript/CSS assets, unauthenticated API access, login validation and refresh proxy.')
+          print('Verified site: ' + site)
+          PY

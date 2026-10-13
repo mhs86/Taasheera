@@ -1,0 +1,82 @@
+name: Validate AWS deployment configuration
+on:
+  push:
+    paths: ['deploy/aws/**', '.github/workflows/*aws*.yml', '.dockerignore', 'backend/Dockerfile']
+  pull_request:
+    paths: ['deploy/aws/**', '.github/workflows/*aws*.yml', '.dockerignore', 'backend/Dockerfile']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Set validation paths
+        run: |
+          {
+            printf 'TAASHEERA_ENV_FILE=%s/taasheera/app.env\n' "$RUNNER_TEMP"
+            printf 'TAASHEERA_WEB_ENV_FILE=%s/taasheera/web.env\n' "$RUNNER_TEMP"
+            printf 'TAASHEERA_DATA_DIR=%s/taasheera/data\n' "$RUNNER_TEMP"
+          } >> "$GITHUB_ENV"
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Validate CloudFormation and shell configuration
+        run: |
+          python -m pip install cfn-lint==1.57.2
+          cfn-lint deploy/aws/stack.yaml deploy/aws/github-role.yaml
+          bash -n deploy/aws/*.sh
+      - name: Check workflow syntax with verified actionlint
+        run: |
+          cd "$RUNNER_TEMP"
+          curl --fail --location https://github.com/rhysd/actionlint/releases/download/v1.7.7/actionlint_1.7.7_linux_amd64.tar.gz -o actionlint.tar.gz
+          printf '%s  actionlint.tar.gz\n' 023070a287cd8cccd71515fedc843f1985bf96c436b7effaecce67290e7e0757 | sha256sum -c -
+          tar -xzf actionlint.tar.gz actionlint
+          ./actionlint "$GITHUB_WORKSPACE/.github/workflows/aws-config.yml" "$GITHUB_WORKSPACE/.github/workflows/deploy-full-aws.yml"
+      - name: Generate the actual bootstrap configuration without SMTP
+        run: |
+          python - <<'PY'
+          import os, re, secrets
+          from pathlib import Path
+          path = Path(os.environ['TAASHEERA_ENV_FILE'])
+          path.parent.mkdir(parents=True, exist_ok=True)
+          Path(os.environ['TAASHEERA_DATA_DIR']).mkdir()
+          path.write_text('JWT_SECRET=' + secrets.token_urlsafe(48) + '\nRESET_FRONTEND_URL=https://test.cloudfront.net/reset-password\n')
+          path.chmod(0o600)
+          os.environ['TAASHEERA_SITE_URL'] = 'https://test.cloudfront.net'
+          os.environ['TAASHEERA_ORIGIN_TOKEN'] = secrets.token_hex(32)
+          blocks = re.findall(r"python3 - <<'PY'\n(.*?)\nPY", Path('deploy/aws/bootstrap.sh').read_text(), re.S)
+          block = next(b for b in blocks if 'settings.update({' in b)
+          exec(compile(block.replace('/srv/taasheera/private/app.env', str(path)), 'bootstrap-config', 'exec'), {})
+          PY
+      - name: Build and start the production containers
+        run: |
+          docker compose --parallel 1 -f deploy/aws/compose.yaml build
+          docker compose -f deploy/aws/compose.yaml run --rm --no-deps --user 0 --entrypoint sh migrate \
+            -c 'chown "$(id -u taasheera):$(id -g taasheera)" /app/storage'
+          docker compose -f deploy/aws/compose.yaml up -d --wait --wait-timeout 180
+      - name: Check readiness through the frontend proxy
+        run: |
+          python - <<'PY'
+          import json, os, urllib.request
+          from pathlib import Path
+          settings = dict(line.split('=', 1) for line in Path(os.environ['TAASHEERA_WEB_ENV_FILE']).read_text().splitlines())
+          request = urllib.request.Request('http://127.0.0.1/health/ready', headers={'X-Taasheera-Origin': settings['ORIGIN_TOKEN']})
+          with urllib.request.urlopen(request, timeout=10) as response:
+              assert response.status == 200 and json.load(response) == {'status': 'ok'}
+          print('Production readiness passed with generated configuration and no SMTP.')
+          PY
+      - name: Capture startup errors
+        if: failure()
+        run: |
+          if [ -f "$TAASHEERA_ENV_FILE" ] && [ -f "$TAASHEERA_WEB_ENV_FILE" ]; then
+            docker compose -f deploy/aws/compose.yaml logs --no-color --tail 50 api migrate
+          fi
+      - name: Stop validation containers
+        if: always()
+        run: |
+          if [ -f "$TAASHEERA_ENV_FILE" ] && [ -f "$TAASHEERA_WEB_ENV_FILE" ]; then
+            docker compose -f deploy/aws/compose.yaml down
+          fi
