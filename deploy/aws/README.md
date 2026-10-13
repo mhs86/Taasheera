@@ -6,6 +6,18 @@ associated workflow are deployment configuration. Application source is unchange
 Only configuration, infrastructure, CI/CD, and deployment files may be pushed to
 `main`; functional changes belong on a feature branch and go through `dev`.
 
+## Current deployment
+
+The app is deployed at **https://d3vh2ppjrlwxee.cloudfront.net**. The authenticated
+CloudShell setup completed successfully and returned public API readiness.
+GitHub Actions independently verified HTTPS readiness, SPA routing, JavaScript
+and CSS assets, unauthenticated profile/refresh responses, and login validation.
+The deployment uses the existing application code with persistent SQLite on EBS.
+Public account creation, real Google sign-in, Gemini responses, and SMTP delivery
+were not exercised by these read-only live checks. Authentication and specimen
+passport OCR/persistence were exercised in local production-container checks.
+The configuration remains in PR #6; `main` was not changed by deployment.
+
 ## What this deploys
 
 A single EC2 host runs the existing FastAPI image, Tesseract, and an Nginx image
@@ -42,8 +54,8 @@ and [account-plan documentation](https://docs.aws.amazon.com/awsaccountbilling/l
 
 ## Initial deployment in AWS CloudShell
 
-These are real AWS operations, not validated against an account until credentials
-are available. Use the AWS account registered with **mhs86@mail.aub.edu**; do not
+These are real AWS operations. Initial deployment and recovery succeeded through
+the user's authenticated CloudShell. Use the AWS account registered with **mhs86@mail.aub.edu**; do not
 create another account. First publish/merge these configuration files so the
 host can fetch the exact Git commit. A clean Git checkout is required.
 

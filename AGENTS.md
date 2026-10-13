@@ -188,7 +188,9 @@ What we decided, why, and what we rejected. Newest at the bottom. Add an entry w
 
 AWS deployment configuration lives in `deploy/aws/`: a single-host alternative with
 CloudFront HTTPS, persistent SQLite/passport storage, and manual OIDC redeployment.
-It is prepared configuration; verify AWS resources and HTTPS behavior before claiming deployment.
+The deployed site is `https://d3vh2ppjrlwxee.cloudfront.net`; CloudShell setup and
+GitHub live HTTPS/frontend/API checks passed. Google OAuth origin authorization,
+Gemini access and SMTP delivery still require external settings and verification.
 Owner/account email is `mhs86@mail.aub.edu`. Only configuration, CI/CD, infrastructure,
 and deployment changes are permitted on `main`; functional changes follow the `dev` workflow.
 AWS credits are temporary: verify remaining credit and eligibility before provisioning.
