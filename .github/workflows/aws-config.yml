@@ -11,11 +11,12 @@ jobs:
   validate:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
-    env:
-      TAASHEERA_ENV_FILE: ${{ runner.temp }}/taasheera/app.env
-      TAASHEERA_WEB_ENV_FILE: ${{ runner.temp }}/taasheera/web.env
-      TAASHEERA_DATA_DIR: ${{ runner.temp }}/taasheera/data
     steps:
+      - name: Set validation paths
+        run: |
+          printf 'TAASHEERA_ENV_FILE=%s/taasheera/app.env\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
+          printf 'TAASHEERA_WEB_ENV_FILE=%s/taasheera/web.env\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
+          printf 'TAASHEERA_DATA_DIR=%s/taasheera/data\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
