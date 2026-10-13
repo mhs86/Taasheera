@@ -41,7 +41,7 @@ Resources:
                 Action: cloudformation:DescribeStacks
                 Resource: !Sub 'arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${AppStackName}/*'
               - Effect: Allow
-                Action: ssm:ListCommandInvocations
+                Action: [ssm:ListCommandInvocations, ssm:GetCommandInvocation]
                 Resource: '*'
               - Effect: Allow
                 Action: ssm:SendCommand

@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # Called through AWS Systems Manager, as root. No application source changes.
-set -euo pipefail
+set -Eeuo pipefail
+phase='validate startup settings'
+# Report the step and exit status without exposing command arguments or secrets.
+trap 'result=$?; printf "Setup failed during %s (line %s, exit %s).\n" "$phase" "$LINENO" "$result" >&2; exit "$result"' ERR
 test "$(id -u)" = 0
 : "${TAASHEERA_REVISION:?Full Git commit required}"
 : "${TAASHEERA_SITE_URL:?HTTPS CloudFront origin required}"
@@ -13,8 +16,11 @@ test "$(id -u)" = 0
 umask 077
 
 # cloud-init installs the packages and starts Docker.
+phase='wait for host initialization'
+printf 'Setup: %s\n' "$phase"
 cloud-init status --wait
 systemctl enable --now docker
+phase='install verified Docker Compose'
 if ! docker compose version >/dev/null 2>&1; then
   task_tmp=$(mktemp -d)
   trap 'rm -rf "$task_tmp"' EXIT
@@ -28,6 +34,8 @@ if ! docker compose version >/dev/null 2>&1; then
   install -D -m 755 "$task_tmp/$compose_binary" /usr/local/lib/docker/cli-plugins/docker-compose
 fi
 
+phase='locate persistent data disk'
+printf 'Setup: %s\n' "$phase"
 volume_serial=${TAASHEERA_VOLUME_ID//-/}
 disk=""
 for attempt in $(seq 1 60); do
@@ -36,6 +44,8 @@ for attempt in $(seq 1 60); do
   sleep 2
 done
 test -b "$disk"
+phase='prepare persistent data filesystem'
+printf 'Setup: %s\n' "$phase"
 filesystem=$(lsblk -dn -o FSTYPE "$disk")
 if [ -z "$filesystem" ]; then
   # Format only the exact newly provisioned, blank data volume, never the root disk.
@@ -44,8 +54,11 @@ if [ -z "$filesystem" ]; then
   mkfs.xfs "$disk"
 fi
 mkdir -p /srv/taasheera
+phase='read data filesystem UUID'
 disk_uuid=$(blkid -s UUID -o value "$disk")
 test -n "$disk_uuid"
+phase='mount persistent data disk'
+printf 'Setup: %s\n' "$phase"
 if mountpoint -q /srv/taasheera; then
   test "$(findmnt -n -o UUID --target /srv/taasheera)" = "$disk_uuid"
 else
@@ -53,6 +66,8 @@ else
 fi
 grep -q "UUID=$disk_uuid " /etc/fstab || printf 'UUID=%s /srv/taasheera xfs defaults,nofail 0 2\n' "$disk_uuid" >> /etc/fstab
 
+phase='fetch selected Git commit'
+printf 'Setup: %s\n' "$phase"
 if [ ! -d /opt/taasheera/.git ]; then
   git clone https://github.com/mhs86/Taasheera.git /opt/taasheera
 fi
@@ -63,6 +78,8 @@ git checkout --detach "$TAASHEERA_REVISION"
 test -f deploy/aws/compose.yaml
 
 # Preserve JWT across redeployments and host replacement on the retained data disk.
+phase='prepare private application configuration'
+printf 'Setup: %s\n' "$phase"
 mkdir -p /srv/taasheera/private /etc/taasheera
 if [ ! -f /srv/taasheera/private/app.env ]; then
   python3 - <<'PY'
@@ -101,7 +118,10 @@ ln -sfn /srv/taasheera/private/app.env /etc/taasheera/app.env
 ln -sfn /srv/taasheera/private/web.env /etc/taasheera/web.env
 
 # Resolve the image's user rather than relying on a distribution-specific UID.
+phase='build application images'
+printf 'Setup: %s\n' "$phase"
 docker compose --parallel 1 -f deploy/aws/compose.yaml build
+phase='assign application storage ownership'
 api_image=$(docker compose -f deploy/aws/compose.yaml images -q api)
 if [ -z "$api_image" ]; then
   api_image=taasheera-api
@@ -111,6 +131,9 @@ api_gid=$(docker run --rm --entrypoint id "$api_image" -g)
 chown "$api_uid:$api_gid" /srv/taasheera
 # Optional settings remain private; the API account cannot read the secret directory.
 chmod 700 /srv/taasheera/private
+phase='migrate database and start application containers'
+printf 'Setup: %s\n' "$phase"
 docker compose -f deploy/aws/compose.yaml up -d --wait --wait-timeout 180
 # Print only readiness status, never request credentials or environment settings.
+phase='check API readiness through origin'
 curl --fail --silent -H "X-Taasheera-Origin: $TAASHEERA_ORIGIN_TOKEN" http://127.0.0.1/health/ready

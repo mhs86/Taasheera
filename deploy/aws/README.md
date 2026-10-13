@@ -78,6 +78,8 @@ The script mounts only the stack's data volume, builds images sequentially,
 migrates the database before starting the API, and checks the public readiness
 URL. JWT signing material is generated privately on the data volume and retained
 across redeployments. No secret is committed or printed.
+Setup reports its current step. On failure the scripts retrieve the SSM exit
+code and error output, excluding the private command parameters.
 
 ## Manual GitHub Actions redeployment
 

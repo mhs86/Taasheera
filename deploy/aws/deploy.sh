@@ -91,7 +91,14 @@ PY
 command_id=$(aws ssm send-command --instance-ids "$TAASHEERA_INSTANCE_ID" --document-name AWS-RunShellScript --parameters "file://$TAASHEERA_SSM_FILE" --query Command.CommandId --output text)
 for attempt in $(seq 1 180); do
   status=$(aws ssm list-command-invocations --command-id "$command_id" --query 'CommandInvocations[0].Status' --output text)
-  case "$status" in Success) break;; Failed|Cancelled|TimedOut) echo "Deployment failed: inspect SSM command $command_id privately."; exit 1;; esac
+  case "$status" in
+    Success) break;;
+    Failed|Cancelled|TimedOut)
+      echo "Application setup failed (SSM command $command_id)."
+      aws ssm get-command-invocation --command-id "$command_id" --instance-id "$TAASHEERA_INSTANCE_ID" \
+        --query '{Status:Status,ExitCode:ResponseCode,Error:StandardErrorContent}' --output json
+      exit 1;;
+  esac
   sleep 10
 done
 test "$status" = Success
