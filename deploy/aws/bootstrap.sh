@@ -93,8 +93,12 @@ tmp = path.with_suffix('.tmp')
 tmp.write_text(''.join(f'{k}={v}\n' for k,v in settings.items()))
 tmp.chmod(0o600)
 tmp.replace(path)
+web = path.with_name('web.env')
+web.write_text('ORIGIN_TOKEN=' + settings['ORIGIN_TOKEN'] + '\n')
+web.chmod(0o600)
 PY
 ln -sfn /srv/taasheera/private/app.env /etc/taasheera/app.env
+ln -sfn /srv/taasheera/private/web.env /etc/taasheera/web.env
 
 # Resolve the image's user rather than relying on a distribution-specific UID.
 docker compose --parallel 1 -f deploy/aws/compose.yaml build
