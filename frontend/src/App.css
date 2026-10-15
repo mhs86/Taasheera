@@ -66,6 +66,37 @@
   color: #60716e;
 }
 
+.sign-in-methods {
+  margin-bottom: 24px;
+}
+
+.sign-in-methods h2 {
+  margin: 0 0 12px;
+  font-size: 18px;
+}
+
+.sign-in-methods ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sign-in-methods li {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 4px 12px;
+  padding: 10px 0;
+  border-top: 1px solid #dfe7e2;
+  font-size: 14px;
+}
+
+.sign-in-method-email {
+  width: 100%;
+  color: #60716e;
+  overflow-wrap: anywhere;
+}
+
 .availability-note {
   margin: 0 0 24px;
   padding: 12px;

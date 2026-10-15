@@ -6,7 +6,7 @@ import { createRoot } from 'react-dom/client'
 const { default: ConnectGoogle } = await import('../src/ConnectGoogle.tsx')
 const { signIn } = await import('../src/auth.ts')
 
-const owner = { id: 1, name: 'Owner', email: 'mhs86@mail.aub.edu', sso_email: null }
+const owner = { id: 1, name: 'Owner', email: 'mhs86@mail.aub.edu', sso_email: null, password_enabled: true }
 let root, callback, button, options, calls, replies, connected
 beforeEach(async () => {
   calls = []; connected = []; replies = [
@@ -51,6 +51,41 @@ async function selectGoogle() {
   await act(async () => button.click())
   await act(async () => callback({ credential: 'synthetic-google-credential', state: options.state }))
 }
+
+async function showMethods(traveler) {
+  await act(async () => root.render(createElement(ConnectGoogle, {
+    traveler, clientId: 'runtime.apps.googleusercontent.com', configurationStatus: 'ready',
+    onConnected: profile => connected.push(profile),
+  })))
+  const rows = [...document.querySelectorAll('.sign-in-methods li')]
+  assert.equal(document.getElementById('sign-in-methods-heading').textContent, 'Sign-in methods')
+  return rows.map(row => [
+    row.querySelector('span').textContent,
+    row.querySelector('strong').textContent,
+    row.querySelector('.sign-in-method-email')?.textContent ?? null,
+  ])
+}
+
+test('account shows both email/password and Google when both are linked', async () => {
+  assert.deepEqual(await showMethods({ ...owner, password_enabled: true, sso_email: 'google@example.com' }), [
+    ['Email and password', 'Linked', null], ['Google', 'Linked', 'google@example.com'],
+  ])
+  assert.equal(document.getElementById('connect-google-password'), null)
+})
+
+test('account shows only email/password as linked', async () => {
+  assert.deepEqual(await showMethods({ ...owner, password_enabled: true }), [
+    ['Email and password', 'Linked', null], ['Google', 'Not linked', null],
+  ])
+  assert.ok(document.getElementById('connect-google-password'))
+})
+
+test('account shows only Google as linked', async () => {
+  assert.deepEqual(await showMethods({ ...owner, password_enabled: false, sso_email: 'google@example.com' }), [
+    ['Email and password', 'Not linked', null], ['Google', 'Linked', 'google@example.com'],
+  ])
+  assert.equal(document.getElementById('connect-google-password'), null)
+})
 
 test('Connect Google requires current password and sends an owner-authenticated request', async () => {
   assert.equal(document.querySelector('.google-button-host').hasAttribute('inert'), true)
