@@ -105,53 +105,24 @@ Frontend Google tests cover callback success, collision, invalid credentials, se
 
 Requests time out after 15 seconds. A connection failure can occur after the server creates an account; the message explains that retrying may therefore report a duplicate email. Passwords are not written to storage or logs. The API returns public user details without a password hash.
 
-## Test password reset with Mailpit on Windows
+## Test email OTP recovery
 
-These are manual instructions; Mailpit is not installed or started by the frontend tests. With Docker already available, use three PowerShell terminals. The backend virtual environment and frontend npm dependencies must already be installed.
+Use a private SMTP catcher for local testing or the verified SES sender on AWS
+(see [authentication operations](../docs/AUTH_OTP_AWS.md)).
 
-Terminal 1, local email capture (this command downloads the Mailpit image if absent; run it only when ready to set up Mailpit):
+1. Register a password account, then open **Sign in → Forgot your password?**.
+2. Submit its email, read the six-digit code, and enter it in **Code from your email**.
+3. Verify the code, then choose and confirm a new password within five minutes.
+4. Confirm the old password and all prior sessions fail; the new password signs in.
+5. Repeat a used/expired/wrong code, duplicate submissions, and a resend after one
+   minute. Resending invalidates the older code and reset grant. Five incorrect
+   guesses lock that challenge. Google-only and unknown emails show the same generic
+   confirmation but receive no OTP.
 
-```powershell
-docker run --rm --name taasheera-mailpit -p 127.0.0.1:1025:1025 -p 127.0.0.1:8025:8025 axllent/mailpit
-```
-
-Terminal 2, from the repository root (stop any earlier backend server first):
-
-```powershell
-cd backend
-$env:SMTP_HOST = "127.0.0.1"
-$env:SMTP_PORT = "1025"
-$env:SMTP_SECURITY = "none"
-$env:SMTP_FROM = "no-reply@example.com"
-$env:SMTP_USERNAME = ""
-$env:SMTP_PASSWORD = ""
-$env:SMTP_TIMEOUT_SECONDS = "10"
-$env:RESET_FRONTEND_URL = "http://127.0.0.1:5173/reset-password"
-.\.venv\Scripts\python.exe dev.py run
-```
-
-Terminal 3, from the repository root:
-
-```powershell
-cd frontend
-npm.cmd run dev
-```
-
-1. Open http://127.0.0.1:5173/sign-in#create-account. Register a new traveler with a unique test email and password; then follow **Sign in → Forgot your password?**.
-2. Enter that email and submit. While sending, the input and button are disabled; repeated clicks must produce only one POST to `/auth/forgot-password`. Expect exactly: `If an account exists for that email, a password reset email will be sent.` Repeat with an unknown email: the confirmation must be identical.
-3. Open http://127.0.0.1:8025. Only the registered email should have a captured message. Open its link: its format is `http://127.0.0.1:5173/reset-password#token=...`. Expect **Set new password** and the address bar to change to `/reset-password#set-new-password` without the token. No token should appear in localStorage/sessionStorage or console logs. The link works even when the browser already has a signed-in session.
-4. Enter mismatching passwords, then a too-short password, then 37 `é` characters (74 UTF-8 bytes). Each must block submission. Enter matching valid passwords and submit. Expect one POST to `/auth/reset-password` containing only `token` and `password`; the button stays disabled during the request.
-5. Expect `204`, cleared password inputs, a success message, and a **Sign in** link. Follow it. The old password must fail; the new password must succeed. Reload the signed-in view and test **Log out** to confirm the existing session flow still works. Any session from before reset must fail protected access/refresh.
-6. Reopen the original email link and submit valid passwords: expect the invalid/expired/already-used message and **Request a new reset link**. Open http://127.0.0.1:5173/reset-password without a token: expect a missing-link message and the same recovery link. Reload a freshly opened reset page after the token has been scrubbed: expect this missing-link state; reopen the email to continue.
-7. To test expiration, request a fresh link after the 60-second cooldown, leave it unused for over 30 minutes, then open it and submit valid passwords. Expect the expired-link message. Expired/reused status is checked on submission; there is no separate token-validation endpoint.
-8. For network errors, load each form first, switch developer tools to **Offline**, then submit. Expect a clear connection error, re-enabled controls, and cleared password fields on the reset form. Restore connectivity and retry. A timeout can happen after a reset succeeded; the message explains signing in with the new password or requesting another link.
-9. For server errors, stop FastAPI and submit from either loaded form. Expect an unavailable/error message rather than success. Restart FastAPI. For SMTP failure, stop Mailpit and request a link after the cooldown: the generic confirmation remains unchanged by design, no email arrives, and the backend invalidates the failed-delivery token.
-
-The backend suppresses repeated email requests (one per email per minute, five per email per hour, 20 per client IP per hour) without changing the generic confirmation. Reset submission returns `429` after 60 attempts per IP per hour; the form shows a wait message and allows later retry. Do not hammer the local service to test this manually; automated tests cover that UI state.
-
-Use the exact configured reset URL above locally. Production hosting must serve the SPA at `/reset-password` and proxy `/auth` to FastAPI. Do not configure a fragment or query in `RESET_FRONTEND_URL`: the backend adds `#token=...`. The token is held only in memory; navigation away, success, or an invalid-link response clears the active reset flow. Password reset never signs the traveler in automatically.
-
-Frontend tests exercise the real React forms under StrictMode in jsdom with mocked HTTP: generic confirmation, duplicate submission, missing/malformed/expired/reused links, history cleanup, validation, success, server/network errors, retries, signed-in reset access, and existing registration/sign-in navigation. SMTP delivery and database behavior are covered by the full backend suite. These tests do not replace a real-browser Mailpit check.
+Codes expire in ten minutes. No recovery secret belongs in a URL, console output,
+localStorage, or sessionStorage. Automated tests cover API failures, retries,
+duplicate/stale callbacks, form validation and success; a real provider/browser
+check remains separate from mocked HTTP tests.
 
 ## Checks
 
@@ -168,3 +139,6 @@ From `backend/`:
 ```powershell
 .\.venv\Scripts\python.exe -m pytest -q
 ```
+
+The recovery screen requests an emailed six-digit OTP, verifies it, then accepts a new
+password. Google-only users recover through Google. See [authentication operations](../docs/AUTH_OTP_AWS.md).

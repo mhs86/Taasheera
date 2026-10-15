@@ -66,7 +66,7 @@ def test_login_me_cookie_and_hashed_refresh_storage(api):
         assert auth_session.refresh_hash == stored.token_hash
     profile = client.get("/auth/me", headers=bearer(response))
     assert profile.status_code == 200
-    assert profile.json() == {"id": 1, "name": "Maya", "email": "maya@example.com", "sso_email": None}
+    assert profile.json() == {"id": 1, "name": "Maya", "email": "maya@example.com", "sso_email": None, "auth_type": "email_password", "password_enabled": True, "last_login_method": "email_password"}
     assert profile.headers["cache-control"] == "no-store"
 
 

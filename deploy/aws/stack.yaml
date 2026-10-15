@@ -71,6 +71,7 @@ Resources:
       MetadataOptions:
         HttpTokens: required
         HttpEndpoint: enabled
+        HttpPutResponseHopLimit: 2
       NetworkInterfaces:
         - DeviceIndex: '0'
           AssociatePublicIpAddress: true

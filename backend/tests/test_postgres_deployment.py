@@ -33,3 +33,37 @@ def test_migration_and_authenticated_request_on_postgres(monkeypatch):
         assert client.post("/activity/events", headers=headers, json={
             "event_type": "page_visit", "page": "home", "outcome": "visited",
         }).status_code == 204
+
+
+@pytest.mark.skipif(not os.environ.get('TEST_POSTGRES_URL'), reason='needs disposable PostgreSQL')
+def test_postgres_otp_updates_account_and_revokes_sessions(monkeypatch):
+    from unittest.mock import Mock
+    from sqlalchemy import text
+    from sqlmodel import Session
+    monkeypatch.setenv('DATABASE_URL', os.environ['TEST_POSTGRES_URL'])
+    monkeypatch.setenv('SCHEMA_AUTO_CREATE', 'false')
+    monkeypatch.setenv('RESET_MAIL_PROVIDER', 'ses')
+    monkeypatch.setenv('SES_FROM_EMAIL', 'sharafm032@gmail.com')
+    migrate.upgrade()
+    sender = Mock()
+    email = f'otp-{uuid4().hex}@example.com'
+    app = create_app(reset_sender=sender)
+    with TestClient(app) as client:
+        registered = client.post('/auth/register', json={'name': 'OTP specimen', 'email': email, 'password': 'Original-test-password'})
+        assert registered.status_code == 201
+        owner = registered.json()['id']
+        access = client.post('/auth/login', json={'email': email, 'password': 'Original-test-password'}).json()['access_token']
+        assert client.post('/auth/forgot-password', json={'email': email}).status_code == 202
+        code = sender.send_reset.call_args.args[1]
+        assert len(code) == 6 and code.isdigit()
+        verified = client.post('/auth/verify-reset-code', json={'email': email, 'code': code})
+        assert verified.status_code == 200
+        grant = verified.json()['reset_token']
+        assert client.post('/auth/verify-reset-code', json={'email': email, 'code': code}).status_code == 400
+        assert client.post('/auth/reset-password', json={'token': grant, 'password': 'Replacement-test-password'}).status_code == 204
+        assert client.get('/auth/me', headers={'Authorization': 'Bearer ' + access}).status_code == 401
+        assert client.post('/auth/login', json={'email': email, 'password': 'Original-test-password'}).status_code == 401
+        assert client.post('/auth/login', json={'email': email, 'password': 'Replacement-test-password'}).status_code == 200
+        with Session(app.state.engine) as session:
+            report = session.execute(text('SELECT auth_type,password_enabled FROM admin_user_auth WHERE id=:id'), {'id': owner}).one()
+            assert tuple(report) == ('email_password', 1)

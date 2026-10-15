@@ -10,7 +10,7 @@ from pydantic import TypeAdapter, EmailStr
 
 
 class ResetSender(Protocol):
-    def send_reset(self, recipient: str, link: str) -> None: ...
+    def send_reset(self, recipient: str, code: str) -> None: ...
 
 
 @dataclass(frozen=True)
@@ -23,9 +23,23 @@ class MailSettings:
     username: str = field(default="", repr=False)
     password: str = field(default="", repr=False)
     timeout: int = 10
+    provider: str = "smtp"
+    region: str = "us-east-1"
 
     @classmethod
     def from_environment(cls):
+        provider = os.environ.get("RESET_MAIL_PROVIDER", "smtp").lower()
+        if provider not in {"smtp", "ses"}:
+            raise RuntimeError("RESET_MAIL_PROVIDER must be smtp or ses.")
+        if provider == "ses":
+            try:
+                sender = str(TypeAdapter(EmailStr).validate_python(os.environ.get("SES_FROM_EMAIL", "")))
+            except ValueError:
+                raise RuntimeError("Set SES_FROM_EMAIL to a verified SES sender.") from None
+            region = os.environ.get("SES_REGION", "us-east-1")
+            if region != "us-east-1":
+                raise RuntimeError("This deployment's SES_REGION must be us-east-1.")
+            return cls("", "", sender, provider="ses", region=region)
         frontend = os.environ.get("RESET_FRONTEND_URL", "")
         host = os.environ.get("SMTP_HOST", "")
         if not frontend and not host:
@@ -63,17 +77,13 @@ class SmtpResetSender:
     def __init__(self, settings: MailSettings):
         self.settings = settings
 
-    def send_reset(self, recipient: str, link: str) -> None:
+    def send_reset(self, recipient: str, code: str) -> None:
         settings = self.settings
         message = EmailMessage()
         message["From"] = settings.from_email
         message["To"] = recipient
         message["Subject"] = "Reset your Taasheera password"
-        message.set_content(
-            "Use this link to choose a new password for your traveler account:\n\n"
-            f"{link}\n\nThis link expires in 30 minutes and can be used once.\n"
-            "If you did not request this, ignore this email.\n"
-        )
+        message.set_content(otp_message(code))
         context = ssl.create_default_context()
         if settings.security == "ssl":
             connection = smtplib.SMTP_SSL(settings.host, settings.port, timeout=settings.timeout, context=context)
@@ -89,3 +99,37 @@ class SmtpResetSender:
                 smtp.login(settings.username, settings.password)
             if smtp.send_message(message):
                 raise smtplib.SMTPException("Reset email was not accepted.")
+
+
+def otp_message(code: str) -> str:
+    return (
+        f"Your Taasheera password-reset code is: {code}\n\n"
+        "Enter this code in the app. It expires in 10 minutes and can be used once.\n"
+        "Never share this code. If you did not request it, ignore this email.\n"
+        "Google-only accounts recover access through Google.\n"
+    )
+
+
+class SesResetSender:
+    def __init__(self, settings: MailSettings):
+        self.settings = settings
+
+    def send_reset(self, recipient: str, code: str) -> None:
+        import boto3
+        from botocore.config import Config
+        # Uses the EC2 instance role, including IMDSv2. No long-lived access keys.
+        # Bounded timeouts; no automatic retries that could duplicate OTP emails.
+        client = boto3.client("sesv2", region_name=self.settings.region,
+                              config=Config(connect_timeout=3, read_timeout=10,
+                                            retries={"total_max_attempts": 1}))
+        try:
+            client.send_email(
+                FromEmailAddress=self.settings.from_email,
+                Destination={"ToAddresses": [recipient]},
+                Content={"Simple": {
+                    "Subject": {"Data": "Your Taasheera password-reset code", "Charset": "UTF-8"},
+                    "Body": {"Text": {"Data": otp_message(code), "Charset": "UTF-8"}},
+                }},
+            )
+        finally:
+            client.close()

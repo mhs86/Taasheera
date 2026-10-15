@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: GitHub OIDC role for manual redeployment to an existing Taasheera host.
+Description: GitHub OIDC role for manual dev redeployment to an existing Taasheera host.
 Parameters:
   AppStackName:
     Type: String
@@ -31,7 +31,7 @@ Resources:
             Condition:
               StringEquals:
                 token.actions.githubusercontent.com:aud: sts.amazonaws.com
-                token.actions.githubusercontent.com:sub: repo:mhs86/Taasheera:ref:refs/heads/main
+                token.actions.githubusercontent.com:sub: repo:mhs86/Taasheera:ref:refs/heads/dev
       Policies:
         - PolicyName: RedeployExistingHost
           PolicyDocument:

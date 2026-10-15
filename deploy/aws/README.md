@@ -122,24 +122,21 @@ aws cloudformation describe-stacks --stack-name taasheera-github-role \
 If the GitHub OIDC provider already exists, pass
 `--parameter-overrides CreateOidcProvider=false`.
 Set repository variable `AWS_FULL_DEPLOY_ROLE_ARN` to the resulting role ARN
-(an ARN is not a credential). The role trusts only this repository's `main`
-branch and allows redeployment only to the tagged stack host. Run **Deploy full
-app to existing AWS host** manually after verifying remaining credits.
+(an ARN is not a credential). The role trusts only this repository's `dev`
+branch and allows redeployment only to the tagged stack host. Run **Deploy dev to existing AWS host** manually after verifying remaining credits.
 It creates no infrastructure and preserves private local configuration.
 
 ## External features and checks
 
-The checked-in Google client ID does not establish authorization for the new
-CloudFront hostname. Add that HTTPS origin in its Google OAuth client settings.
-Google/Gemini are existing external dependencies; hosting is AWS, but the app's
-AI provider remains Gemini. Enter a Gemini key privately in
-`/srv/taasheera/private/app.env` if the assistant is needed; do not use free-tier
-Gemini with real passport data. Configure SMTP privately for password-reset
-delivery, using **mhs86@mail.aub.edu** for any required account email. Do not
-invent a mailbox or claim SMTP works without a delivery check.
-When no SMTP host is configured, bootstrap omits `RESET_FRONTEND_URL` so email
-reset remains disabled and the API starts. With SMTP configured, it preserves
-an existing reset URL or defaults to the CloudFront site's `/reset-password`.
+Google SSO and email OTP recovery use the configuration described in
+[authentication operations](../../docs/AUTH_OTP_AWS.md). Google OAuth administration
+and SES sending use `sharafm032@gmail.com` only; AWS/GitHub ownership stays
+`mhs86@mail.aub.edu`. SES is sandboxed, so recipients must be verified until
+production access is granted. Apply `configure-auth.sh` once from CloudShell
+before deploying `dev`; no real provider delivery is claimed by local tests.
+
+Gemini remains an external dependency. Enter its key privately in
+`/srv/taasheera/private/app.env` if needed; use specimen data with the free tier.
 
 After a private settings change, run `docker compose -f
 /opt/taasheera/deploy/aws/compose.yaml up -d --force-recreate api` on the host.

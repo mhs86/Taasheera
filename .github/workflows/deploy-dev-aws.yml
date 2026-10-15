@@ -1,0 +1,26 @@
+name: Deploy dev to existing AWS host
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: taasheera-existing-aws-host
+  cancel-in-progress: false
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/dev'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - name: Require configured deployment role
+        env:
+          DEPLOY_ROLE: ${{ vars.AWS_FULL_DEPLOY_ROLE_ARN }}
+        run: test -n "$DEPLOY_ROLE"
+      - uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: ${{ vars.AWS_FULL_DEPLOY_ROLE_ARN }}
+          aws-region: us-east-1
+          allowed-account-ids: '632630731308'
+      - name: Deploy selected dev commit
+        run: bash deploy/aws/redeploy.sh

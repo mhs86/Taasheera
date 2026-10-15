@@ -74,7 +74,7 @@ def test_first_sign_in_creates_identity_and_uses_existing_session_contract(api, 
     assert args[0] == TOKEN and callable(args[1])
     assert kwargs["audience"] == CLIENT_ID
     profile = client.get("/auth/me", headers=bearer(response))
-    assert profile.json() == {"id": 1, "name": "Maya Haddad", "email": EMAIL, "sso_email": EMAIL}
+    assert profile.json() == {"id": 1, "name": "Maya Haddad", "email": EMAIL, "sso_email": EMAIL, "auth_type": "google", "password_enabled": False, "last_login_method": "google"}
     assert client.get("/auth/me").status_code == 401  # Cookie alone is insufficient.
     with Session(app.state.engine) as session:
         traveler = session.exec(select(Traveler)).one()
@@ -94,7 +94,7 @@ def test_returning_identity_uses_sub_even_when_email_changes(api, google):
     second = sign_in(client)
     assert second.status_code == 200
     assert client.get("/auth/me", headers=bearer(second)).json() == {
-        "id": 1, "name": "Maya Haddad", "email": EMAIL, "sso_email": "changed@example.com",
+        "id": 1, "name": "Maya Haddad", "email": EMAIL, "sso_email": "changed@example.com", "auth_type": "google", "password_enabled": False, "last_login_method": "google",
     }
     assert client.get("/auth/me", headers=bearer(first)).status_code == 401
     with Session(app.state.engine) as session:

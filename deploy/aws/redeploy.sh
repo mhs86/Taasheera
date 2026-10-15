@@ -7,7 +7,8 @@ export AWS_REGION=${AWS_REGION:-us-east-1}
 export AWS_DEFAULT_REGION=$AWS_REGION
 stack=${TAASHEERA_STACK:-taasheera}
 cd "$(dirname "$0")/../.."
-export TAASHEERA_REVISION=$(git rev-parse --verify HEAD)
+TAASHEERA_REVISION=$(git rev-parse --verify HEAD)
+export TAASHEERA_REVISION
 if [ -n "${TAASHEERA_GOOGLE_CLIENT_ID:-}" ]; then
   [[ "$TAASHEERA_GOOGLE_CLIENT_ID" =~ ^[A-Za-z0-9._-]+\.apps\.googleusercontent\.com$ ]]
   export TAASHEERA_GOOGLE_CLIENT_ID
@@ -19,9 +20,12 @@ task_tmp=$(mktemp -d)
 trap 'rm -rf "$task_tmp"' EXIT
 umask 077
 output() { aws cloudformation describe-stacks --stack-name "$stack" --query "Stacks[0].Outputs[?OutputKey=='$1'].OutputValue | [0]" --output text; }
-export TAASHEERA_INSTANCE_ID=$(output InstanceId)
-export TAASHEERA_SITE_URL=$(output SiteUrl)
-export TAASHEERA_VOLUME_ID=$(output DataVolumeId)
+TAASHEERA_INSTANCE_ID=$(output InstanceId)
+export TAASHEERA_INSTANCE_ID
+TAASHEERA_SITE_URL=$(output SiteUrl)
+export TAASHEERA_SITE_URL
+TAASHEERA_VOLUME_ID=$(output DataVolumeId)
+export TAASHEERA_VOLUME_ID
 export TAASHEERA_SSM_FILE="$task_tmp/ssm.json"
 python3 - <<'PY'
 import base64, json, os, shlex

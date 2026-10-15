@@ -65,15 +65,14 @@ Git:
 
 ## Tech stack
 
-Status key: **in use** = already in the code · **proposed** = tentative recommendation, adopt or
-replace by team agreement and then update this table.
+Status key: **in use** = already in the code · **proposed** = tentative recommendation.
 
 | Area | Choice | Status | Why |
 |---|---|---|---|
 | Backend | Python, FastAPI, SQLModel, Pydantic v2, uvicorn | in use | Typed validation, auto OpenAPI docs; Python is where the OCR/AI libraries are |
 | Auth | bcrypt, PyJWT access tokens in memory, rotating HttpOnly refresh cookies, google-auth | in use | See `backend/app/auth.py`, `google_auth.py` |
 | Frontend | React 19, TypeScript, Vite, ESLint | in use | Mainstream, fast dev loop, types catch API mistakes |
-| Database | SQLite in local dev; PostgreSQL driver and Alembic migrations | migration code in use; managed PostgreSQL pending | `migrate.py upgrade` versions the current schema; local bootstrap still uses `create_all` |
+| Database | SQLite on persistent AWS EBS; PostgreSQL driver and Alembic migrations | in use | `migrate.py upgrade` versions the current schema; local startup runs migrations |
 | File storage | Owner-scoped local folder in dev; private S3-compatible bucket before production | local in use; bucket proposed | Passports must never sit in a public folder or on an ephemeral server disk |
 | Passport OCR | Tesseract via pytesseract, MRZ located and repaired by our code (`backend/app/passport/`); vision LLM fallback when check digits fail | in use (vision fallback proposed) | MRZ check digits let us verify a read instead of trusting it |
 | LLM | Google Gemini (`gemini-3.5-flash-lite`, free tier) via the official `google-genai` SDK, called only from the backend (`backend/app/assistant.py`); tool use later | in use (assistant); tool use proposed | Free for the course; keys never reach the browser; the provider sits behind one adapter function, so it can change without touching the endpoint |
@@ -98,7 +97,7 @@ serve on port 8000. From `frontend/`, run `npm ci` and `npm run dev` on port 517
 Check with backend `python -m pytest -q` and frontend `npm test`, `npm run lint`,
 `npm run build`. The authenticated API proxies `/auth`, `/passports`, `/activity`, and `/assistant` through Vite;
 the standalone passport demo is separate. OCR needs system Tesseract on `PATH`. The assistant needs `GEMINI_API_KEY` (free from Google AI Studio): locally as a line in Git-ignored `backend/.env.local`, which `dev.py run` loads; on Render in the dashboard (`render.yaml` names it with `sync: false`). **Never commit the key: this repository is public.** Without it `/assistant/messages` returns 503 and everything else works.
-Local `dev.py run` still creates missing tables; deployment uses `python migrate.py upgrade`
+Local `dev.py run` migrates the schema; deployment uses `python migrate.py upgrade`
 before starting the API with `APP_ENV=production` and `SCHEMA_AUTO_CREATE=false`.
 
 ## Conventions
@@ -188,6 +187,11 @@ What we decided, why, and what we rejected. Newest at the bottom. Add an entry w
     confirmation. `traveler.sso_email` records the verified provider email; identity still uses Google `sub`.
     Alembic migrates the column without replacing accounts. Local `dev.py run` migrates before startup;
     AWS deployment backs up SQLite privately before migration. Functional changes stay off `main`.
+17. **Email OTP recovery.** Ten-minute, five-attempt codes issue five-minute reset grants; reset
+    revokes all sessions and cannot enable Google-only passwords. DB-backed limits and metadata-only
+    security logs cover authentication. `admin_user_auth` reports both account types privately.
+    SES sender/OAuth administration use sharafm032@gmail.com only; owner remains mhs86@mail.aub.edu.
+    SES is sandboxed; see `docs/AUTH_OTP_AWS.md` for verified recipients and deployment prerequisites.
 
 ## Personal instructions
 

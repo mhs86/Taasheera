@@ -1,7 +1,8 @@
 # Google SSO on the deployed AWS app
 
-Owner/configuration email: **mhs86@mail.aub.edu**. The existing Google web client is
-`617048427211-936r56rn5cilng99qbd6u2o6oh8610i0.apps.googleusercontent.com`.
+Owner email: **mhs86@mail.aub.edu**. Google OAuth and SES sender administration use
+**sharafm032@gmail.com** for this feature only. The Google web client is
+`1019502864941-452hm5u85t8vcrejuh6aeq43dt85sb9p.apps.googleusercontent.com`.
 This is a public client ID, not a client secret. This GIS popup flow needs no
 Google client secret or service-account key.
 
@@ -18,7 +19,7 @@ Keep existing development origins. Do not append `/sign-in`, `/auth/google`,
 a query, or a trailing path. Google completes the popup and the browser POSTs
 its ID token to the API; this is not a redirect/form-post OAuth callback, so it
 does not require adding `/auth/google` as a redirect URI.
-Use **mhs86@mail.aub.edu** for account/support/developer email settings where
+Use **sharafm032@gmail.com** for Google account/support/developer email settings where
 required. If the project's audience is in Testing, add that account as a test
 user; allow other intended users or publish the consent configuration as
 appropriate. AWS cannot change Google's origin allowlist. The project owner
@@ -26,17 +27,9 @@ must save it in Google Console, then perform a real browser sign-in.
 
 ## AWS configuration and feature deployment
 
-Functional source is on `mhs86_google_sso_sprint1`, branched from `dev`, and must
-not be pushed to `main`. Deploy this branch to the existing host through CloudShell:
-
-```bash
-cd ~/Taasheera-aws
-git fetch origin
-git switch mhs86_google_sso_sprint1
-git pull --ff-only
-TAASHEERA_GOOGLE_CLIENT_ID=617048427211-936r56rn5cilng99qbd6u2o6oh8610i0.apps.googleusercontent.com \
-  bash deploy/aws/redeploy.sh
-```
+Google SSO is included in the OTP feature targeting `dev`. See
+[authentication rollout](AUTH_OTP_AWS.md) for the current configuration and deployment
+commands. Functional source must not be pushed to `main`.
 
 The public ID override updates only that setting in the private AWS-host
 configuration, preserving JWT and any configured provider/SMTP keys. The frontend

@@ -110,7 +110,9 @@ function App({ initialNavigation, googleClientId = import.meta.env?.VITE_GOOGLE_
           setSessionError('')
           setTraveler(profile)
         }} />}
-        {page === 'create-account' && <CreateAccount onCreated={() => {
+        {page === 'create-account' && <CreateAccount googleClientId={googleClientId}
+          googleConfigurationStatus={googleConfigurationStatus} onGoogleConfigurationRetry={onGoogleConfigurationRetry}
+          onSignedIn={profile => { setSessionError(''); setTraveler(profile) }} onCreated={() => {
           setRegistrationMessage('Your traveler account has been created. You can now sign in.')
           window.location.hash = 'sign-in'
         }} />}

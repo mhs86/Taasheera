@@ -55,7 +55,7 @@ def test_owner_explicitly_links_then_uses_google_and_password(api, caplog):
         original = session.get(Traveler, 1).password_hash
     response = link(client, headers)
     assert response.status_code == 200
-    assert response.json() == {"id": 1, "name": "Owner", "email": EMAIL, "sso_email": EMAIL}
+    assert response.json() == {"id": 1, "name": "Owner", "email": EMAIL, "sso_email": EMAIL, "auth_type": "email_password", "password_enabled": True, "last_login_method": "email_password"}
     assert response.headers["cache-control"] == "no-store"
     assert "set-cookie" not in response.headers
     assert TOKEN not in response.text and PASSWORD not in caplog.text and TOKEN not in caplog.text
@@ -73,8 +73,9 @@ def test_owner_explicitly_links_then_uses_google_and_password(api, caplog):
 def test_link_requires_authenticated_owner_and_password(api):
     client, app, headers, verifier = api
     assert link(client, {}).status_code == 401
-    assert link(client, headers, password="wrong-password-123").status_code == 403
     verifier.assert_not_called()
+    assert link(client, headers, password="wrong-password-123").status_code == 403
+    assert verifier.call_count == 1
     with Session(app.state.engine) as session:
         assert session.exec(select(GoogleIdentity)).all() == []
         assert session.get(Traveler, 1).sso_email is None
@@ -129,7 +130,7 @@ def test_google_link_stores_a_different_verified_email_without_changing_contact_
 def test_google_subject_already_owned_by_another_traveler_is_not_moved(api):
     client, app, headers, verifier = api
     with Session(app.state.engine) as session:
-        other = Traveler(name="Existing specimen", email="specimen@example.com", password_hash="")
+        other = Traveler(name="Existing specimen", email="specimen@example.com", password_hash="", auth_type="google")
         session.add(other); session.flush()
         session.add(GoogleIdentity(subject="subject-owner", traveler_id=other.id))
         session.commit()

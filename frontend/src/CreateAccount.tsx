@@ -1,4 +1,6 @@
-import { useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import GoogleSignIn from './GoogleSignIn'
+import { signInWithGoogle, type Traveler } from './auth'
 
 function validationMessage(body: unknown): string {
   const fallback = 'Please check your name, email, and password and try again.'
@@ -19,7 +21,10 @@ function validationMessage(body: unknown): string {
   return [...new Set(messages)].join(' ') || fallback
 }
 
-function CreateAccount({ onCreated }: { onCreated: () => void }) {
+function CreateAccount({ onCreated, googleClientId = '', googleConfigurationStatus = 'ready',
+  onGoogleConfigurationRetry, onSignedIn }: { onCreated: () => void; googleClientId?: string
+  googleConfigurationStatus?: 'loading' | 'ready' | 'failed'; onGoogleConfigurationRetry?: () => void
+  onSignedIn?: (traveler: Traveler) => void }) {
   const [message, setMessage] = useState('')
   const [hasError, setHasError] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -27,6 +32,29 @@ function CreateAccount({ onCreated }: { onCreated: () => void }) {
   const requestInProgress = useRef(false)
   const passwordRef = useRef<HTMLInputElement>(null)
   const confirmPasswordRef = useRef<HTMLInputElement>(null)
+  const mounted = useRef(false)
+  useEffect(() => {
+    mounted.current = true
+    return () => { mounted.current = false }
+  }, [])
+
+  const googleCredential = useCallback(async (credential: string) => {
+    if (requestInProgress.current || !mounted.current) return
+    requestInProgress.current = true
+    setIsSubmitting(true)
+    try {
+      const profile = await signInWithGoogle(credential)
+      if (mounted.current) onSignedIn?.(profile)
+    } catch (error) {
+      if (mounted.current) {
+        setHasError(true)
+        setMessage(error instanceof Error ? error.message : 'Could not continue with Google.')
+      }
+    } finally {
+      requestInProgress.current = false
+      if (mounted.current) setIsSubmitting(false)
+    }
+  }, [onSignedIn])
 
   // Use browser validation without keeping passwords in React state.
   function validatePasswords() {
@@ -86,6 +114,8 @@ function CreateAccount({ onCreated }: { onCreated: () => void }) {
               } else if (response.status === 422) {
                 const body: unknown = await response.json().catch(() => null)
                 setMessage(validationMessage(body))
+              } else if (response.status === 429) {
+                setMessage('Too many registration attempts. Please wait 15 minutes before trying again.')
               } else {
                 setMessage('Registration is temporarily unavailable. Check that the backend is running and try again.')
               }
@@ -180,6 +210,13 @@ function CreateAccount({ onCreated }: { onCreated: () => void }) {
           {isSubmitting ? 'Creating account…' : 'Create account'}
         </button>
       </form>
+
+      {onSignedIn && <>
+        <div className="divider"><span>or</span></div>
+        <GoogleSignIn clientId={googleClientId} disabled={isSubmitting}
+          configurationStatus={googleConfigurationStatus} onConfigurationRetry={onGoogleConfigurationRetry}
+          onMessage={setMessage} onCredential={googleCredential} />
+      </>}
 
       <p className="create-account">
         Already have an account? <a href="#sign-in" data-activity-id="sign-in-link">Sign in</a>

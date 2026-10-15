@@ -157,3 +157,18 @@ test('SDK render failure leaves password sign-in usable with retry', async () =>
   assert.equal(document.querySelector('input').disabled, false)
   assert.ok([...document.querySelectorAll('button')].some(button => button.textContent === 'Retry Google sign-in'))
 })
+
+test('create-account screen offers Google signup and uses the same verified exchange', async () => {
+  replies.push({ status: 401 })
+  root = createRoot(document.getElementById('root'))
+  await act(async () => root.render(createElement(App, {
+    initialNavigation: { page: 'create-account', resetToken: null }, googleClientId: 'public-test-client',
+  })))
+  assert.match(text(), /Create account/)
+  await click('Mock official Google button')
+  replies.push({ status: 200, body: { access_token: 'signup-access' } }, { status: 200, body: traveler })
+  await credential()
+  assert.equal(calls[1].url, '/auth/google')
+  assert.equal(calls[2].url, '/auth/me')
+  assert.match(text(), /Welcome, Google Traveler/)
+})

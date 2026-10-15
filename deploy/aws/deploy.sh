@@ -69,9 +69,12 @@ else
   [[ "$reason" == *"didn't contain changes"* || "$reason" == *"No updates"* ]] || { printf '%s\n' "$reason"; exit 1; }
 fi
 output() { aws cloudformation describe-stacks --stack-name "$stack" --query "Stacks[0].Outputs[?OutputKey=='$1'].OutputValue | [0]" --output text; }
-export TAASHEERA_INSTANCE_ID=$(output InstanceId)
-export TAASHEERA_SITE_URL=$(output SiteUrl)
-export TAASHEERA_VOLUME_ID=$(output DataVolumeId)
+TAASHEERA_INSTANCE_ID=$(output InstanceId)
+export TAASHEERA_INSTANCE_ID
+TAASHEERA_SITE_URL=$(output SiteUrl)
+export TAASHEERA_SITE_URL
+TAASHEERA_VOLUME_ID=$(output DataVolumeId)
+export TAASHEERA_VOLUME_ID
 export TAASHEERA_REVISION="$revision"
 for attempt in $(seq 1 60); do
   status=$(aws ssm describe-instance-information --filters "Key=InstanceIds,Values=$TAASHEERA_INSTANCE_ID" --query 'InstanceInformationList[0].PingStatus' --output text)

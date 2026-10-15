@@ -4,9 +4,15 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, ConfigDict, EmailStr, SecretStr, StringConstraints, field_validator
 from pydantic import Field as SchemaField
 from sqlmodel import Field, SQLModel
+from sqlalchemy import CheckConstraint
 
 
 class Traveler(SQLModel, table=True):
+    __table_args__ = (CheckConstraint(
+        "(auth_type = 'google' AND password_hash = '') OR "
+        "(auth_type = 'email_password' AND password_hash <> '')",
+        name="ck_traveler_auth_type",
+    ),)
     id: int | None = Field(default=None, primary_key=True)
     name: str = Field(max_length=100)
     email: str = Field(max_length=254, unique=True, index=True)
@@ -15,6 +21,13 @@ class Traveler(SQLModel, table=True):
     # Empty means password authentication is disabled (Google-only account).
     # Preserve the existing NOT NULL column for compatibility with local DBs.
     password_hash: str = Field(max_length=60, repr=False)
+    auth_type: str = Field(default="email_password", max_length=20, index=True)
+    last_login_method: str | None = Field(default=None, max_length=20)
+    last_login_at: int | None = None
+
+    @property
+    def password_enabled(self) -> bool:
+        return self.auth_type == "email_password" and bool(self.password_hash)
 
 
 class ActivityEvent(SQLModel, table=True):
@@ -81,6 +94,9 @@ class TravelerPublic(BaseModel):
     name: str
     email: str
     sso_email: str | None = None
+    auth_type: Literal["email_password", "google"] = "email_password"
+    password_enabled: bool = True
+    last_login_method: str | None = None
 
 
 class LoginRequest(BaseModel):
@@ -128,6 +144,31 @@ class PasswordResetRequest(BaseModel):
 class PasswordResetConfirm(PasswordInput):
     model_config = ConfigDict(extra="forbid")
     token: SecretStr = SchemaField(min_length=1, max_length=128)
+
+
+class PasswordResetVerify(PasswordResetRequest):
+    code: SecretStr = SchemaField(min_length=6, max_length=6)
+
+    @field_validator("code")
+    @classmethod
+    def ascii_digits(cls, value: SecretStr) -> SecretStr:
+        if not value.get_secret_value().isascii() or not value.get_secret_value().isdigit():
+            raise ValueError("Enter the six-digit code from your email.")
+        return value
+
+
+class PasswordResetGrant(BaseModel):
+    reset_token: str
+    expires_in: int
+
+
+class PasswordResetChallenge(SQLModel, table=True):
+    traveler_id: int = Field(primary_key=True, foreign_key="traveler.id")
+    nonce: str = Field(max_length=64, repr=False)
+    code_digest: str = Field(max_length=64, repr=False)
+    expires_at: int = Field(index=True)
+    attempts: int = 0
+    consumed: bool = False
 
 
 class PasswordResetToken(SQLModel, table=True):

@@ -1,7 +1,8 @@
 import { submitPasswordReset } from './passwordReset.ts'
 import { apiFetch } from './api.ts'
 
-export type Traveler = { id: number; name: string; email: string; sso_email?: string | null }
+export type Traveler = { id: number; name: string; email: string; sso_email?: string | null
+  auth_type?: 'email_password' | 'google'; password_enabled?: boolean; last_login_method?: string | null }
 
 let configurationRequest: Promise<string> | null = null
 
