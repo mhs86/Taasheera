@@ -1,6 +1,7 @@
 import time
 from typing import Annotated
 
+import bcrypt
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from google.auth import exceptions
 from google.auth.transport.requests import Request as GoogleRequest
@@ -13,7 +14,9 @@ from sqlmodel import Session, select
 
 from .auth import check_origin, start_session
 from .activity import record_activity
-from .models import AccessTokenPublic, GoogleIdentity, GoogleLoginRequest, Traveler
+from .security import audit, throttle
+from .models import (AccessTokenPublic, AuthConfigurationPublic, GoogleIdentity,
+                     GoogleLinkRequest, GoogleLoginRequest, Traveler, TravelerPublic)
 
 
 def invalid_token():
@@ -73,7 +76,8 @@ def google_traveler(session: Session, claims: dict) -> Traveler:
         try:
             # Both inserts roll back together on concurrent subject/email reuse.
             with session.begin_nested():
-                traveler = Traveler(name=claims["name"], email=claims["email"], password_hash="")
+                traveler = Traveler(name=claims["name"], email=claims["email"],
+                                    sso_email=claims["email"], password_hash="", auth_type="google")
                 session.add(traveler)
                 session.flush()
                 identity = GoogleIdentity(subject=claims["sub"], traveler_id=traveler.id)
@@ -90,22 +94,90 @@ def google_traveler(session: Session, claims: dict) -> Traveler:
     traveler = session.get(Traveler, identity.traveler_id)
     if traveler is None:
         raise invalid_token()
+    traveler.sso_email = claims["email"]
+    session.add(traveler)
     return traveler
 
 
-def create_google_auth_router(get_session):
+def create_google_auth_router(get_session, current_traveler):
     router = APIRouter(prefix="/auth", tags=["Authentication"])
     SessionDep = Annotated[Session, Depends(get_session)]
+    TravelerDep = Annotated[Traveler, Depends(current_traveler)]
 
-    @router.post("/google", response_model=AccessTokenPublic, dependencies=[Depends(check_origin)])
-    def google_login(data: GoogleLoginRequest, request: Request, response: Response, session: SessionDep):
+    @router.get("/config", response_model=AuthConfigurationPublic)
+    def auth_configuration(request: Request, response: Response):
+        response.headers["Cache-Control"] = "no-store"
+        # The client ID is public. Never serialize the full AuthSettings object.
+        return {"google_client_id": request.app.state.auth_settings.google_client_id}
+
+    @router.post("/google/link", response_model=TravelerPublic,
+                 dependencies=[Depends(check_origin)])
+    def link_google(data: GoogleLinkRequest, request: Request, response: Response,
+                    session: SessionDep, traveler: TravelerDep):
+        throttle(request, session, "google-link", account=str(traveler.id), account_limit=5)
+        # A different browser tab may have changed the refresh-cookie account.
+        # The target still comes from authentication; this hint prevents linking
+        # a different owner after the frontend's automatic session refresh.
+        if data.expected_traveler_id != traveler.id:
+            raise HTTPException(409, {"code": "account_changed"}, headers={"Cache-Control": "no-store"})
         client_id = request.app.state.auth_settings.google_client_id
         if not client_id:
             raise HTTPException(503, "Google sign-in is not configured.", headers={"Cache-Control": "no-store"})
         claims = verify_google_token(data.id_token.get_secret_value(), client_id)
-        new_account = session.get(GoogleIdentity, claims["sub"]) is None
-        traveler = google_traveler(session, claims)
-        result = start_session(traveler, request, response, session)
+        # Provider HTTPS happens before the lock; re-read the password afterwards
+        # so a concurrent reset cannot authorize linking with the old password.
+        session.execute(update(Traveler).where(Traveler.id == traveler.id)
+                        .values(password_hash=Traveler.password_hash))
+        session.refresh(traveler)
+        try:
+            correct = traveler.password_enabled and bcrypt.checkpw(
+                data.password.get_secret_value().encode("utf-8"), traveler.password_hash.encode("ascii"))
+        except (ValueError, UnicodeError):
+            correct = False
+        if not correct:
+            audit(request, "google-link", "password_rejected", traveler.id)
+            raise HTTPException(403, "Confirm your current password to connect Google.",
+                                headers={"Cache-Control": "no-store"})
+        # Unique identity constraints prevent linking a subject to two owners.
+        linked = session.exec(select(GoogleIdentity).where(GoogleIdentity.traveler_id == traveler.id)).first()
+        subject = session.get(GoogleIdentity, claims["sub"])
+        if (linked and linked.subject != claims["sub"]) or (subject and subject.traveler_id != traveler.id):
+            raise HTTPException(409, "That Google account cannot be connected to this traveler.",
+                                headers={"Cache-Control": "no-store"})
+        try:
+            with session.begin_nested():
+                if subject is None:
+                    session.add(GoogleIdentity(subject=claims["sub"], traveler_id=traveler.id))
+                traveler.sso_email = claims["email"]
+                session.add(traveler)
+                session.flush()
+            session.commit()
+        except IntegrityError:
+            session.rollback()
+            raise HTTPException(409, "That Google account cannot be connected to this traveler.",
+                                headers={"Cache-Control": "no-store"}) from None
+        session.refresh(traveler)
+        record_activity(session, request.app.state.activity_directory, traveler.id,
+                        "account_link", "google", "success")
+        response.headers["Cache-Control"] = "no-store"
+        audit(request, "google-link", "success", traveler.id)
+        return traveler
+
+    @router.post("/google", response_model=AccessTokenPublic, dependencies=[Depends(check_origin)])
+    def google_login(data: GoogleLoginRequest, request: Request, response: Response, session: SessionDep):
+        throttle(request, session, "google-login", ip_limit=30)
+        client_id = request.app.state.auth_settings.google_client_id
+        if not client_id:
+            raise HTTPException(503, "Google sign-in is not configured.", headers={"Cache-Control": "no-store"})
+        try:
+            claims = verify_google_token(data.id_token.get_secret_value(), client_id)
+            new_account = session.get(GoogleIdentity, claims["sub"]) is None
+            traveler = google_traveler(session, claims)
+        except HTTPException:
+            audit(request, "google-login", "rejected")
+            raise
+        result = start_session(traveler, request, response, session, method="google")
+        audit(request, "google-login", "success", traveler.id)
         if new_account:
             record_activity(session, request.app.state.activity_directory, traveler.id,
                             "registration", "google", "success")

@@ -4,6 +4,7 @@ from unittest.mock import Mock
 
 import bcrypt
 import pytest
+from alembic import command
 from fastapi.testclient import TestClient
 from google.auth import exceptions
 from sqlmodel import Session, select
@@ -12,6 +13,8 @@ from app.auth import COOKIE_NAME, token_hash
 from app.config import AuthSettings
 from app.main import create_app
 from app.models import AuthSession, GoogleIdentity, PasswordResetToken, RefreshToken, Traveler
+from app.schema import migration_config
+import migrate
 
 
 CLIENT_ID = "test-web-client.apps.googleusercontent.com"
@@ -71,12 +74,13 @@ def test_first_sign_in_creates_identity_and_uses_existing_session_contract(api, 
     assert args[0] == TOKEN and callable(args[1])
     assert kwargs["audience"] == CLIENT_ID
     profile = client.get("/auth/me", headers=bearer(response))
-    assert profile.json() == {"id": 1, "name": "Maya Haddad", "email": EMAIL}
+    assert profile.json() == {"id": 1, "name": "Maya Haddad", "email": EMAIL, "sso_email": EMAIL, "auth_type": "google", "password_enabled": False, "last_login_method": "google"}
     assert client.get("/auth/me").status_code == 401  # Cookie alone is insufficient.
     with Session(app.state.engine) as session:
         traveler = session.exec(select(Traveler)).one()
         identity = session.exec(select(GoogleIdentity)).one()
         assert traveler.password_hash == ""
+        assert traveler.sso_email == EMAIL
         assert identity.subject == "google-subject-123" and identity.traveler_id == traveler.id
         stored = session.exec(select(RefreshToken)).one()
         assert stored.token_hash == token_hash(client.cookies.get(COOKIE_NAME))
@@ -90,12 +94,13 @@ def test_returning_identity_uses_sub_even_when_email_changes(api, google):
     second = sign_in(client)
     assert second.status_code == 200
     assert client.get("/auth/me", headers=bearer(second)).json() == {
-        "id": 1, "name": "Maya Haddad", "email": EMAIL,
+        "id": 1, "name": "Maya Haddad", "email": EMAIL, "sso_email": "changed@example.com", "auth_type": "google", "password_enabled": False, "last_login_method": "google",
     }
     assert client.get("/auth/me", headers=bearer(first)).status_code == 401
     with Session(app.state.engine) as session:
         assert len(session.exec(select(Traveler)).all()) == 1
         assert len(session.exec(select(GoogleIdentity)).all()) == 1
+        assert session.get(Traveler, 1).sso_email == "changed@example.com"
 
 
 @pytest.mark.parametrize("failure", [ValueError("Invalid signature"), ValueError("Token expired"), exceptions.GoogleAuthError("Invalid issuer")])
@@ -241,12 +246,14 @@ def test_request_validation_omits_id_token(api, google):
     google.assert_not_called()
 
 
-def test_existing_local_traveler_table_and_accounts_survive_startup(tmp_path, google):
+def test_existing_local_traveler_table_and_accounts_survive_migrated_startup(tmp_path, google, monkeypatch):
     path = tmp_path / "legacy.db"
     original_hash = bcrypt.hashpw(PASSWORD.encode(), bcrypt.gensalt(rounds=12)).decode()
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{path.as_posix()}")
+    command.upgrade(migration_config(), "aeccbbace2e6")
     with sqlite3.connect(path) as connection:
-        connection.execute("CREATE TABLE traveler (id INTEGER PRIMARY KEY, name VARCHAR(100) NOT NULL, email VARCHAR(254) NOT NULL UNIQUE, password_hash VARCHAR(60) NOT NULL)")
         connection.execute("INSERT INTO traveler VALUES (?, ?, ?, ?)", (7, "Existing", "existing@example.com", original_hash))
+    migrate.upgrade()
     app = create_app(f"sqlite:///{path.as_posix()}")
     with TestClient(app) as client:
         assert sign_in(client).status_code == 200

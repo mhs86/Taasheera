@@ -5,7 +5,7 @@ import argparse
 from alembic import command
 from alembic.autogenerate import compare_metadata
 from alembic.runtime.migration import MigrationContext
-from sqlalchemy import inspect
+from sqlalchemy import inspect, text
 from sqlmodel import SQLModel
 
 from app import models  # noqa: F401 - register SQLModel tables
@@ -26,11 +26,37 @@ def upgrade() -> None:
                 # revision marker. Stamp only when they match the committed model.
                 differences = compare_metadata(MigrationContext.configure(connection), SQLModel.metadata)
                 if differences:
-                    raise RuntimeError(
-                        "Existing unversioned schema differs from the initial migration. "
-                        "Back it up, update it to the current local schema, then retry."
-                    )
-                command.stamp(config, "head")
+                    # Admit only complete known historical create_all schemas.
+                    signatures = set()
+                    for difference in differences:
+                        kind = difference[0] if isinstance(difference, tuple) else None
+                        if kind == "add_column":
+                            signatures.add((kind, difference[2], difference[3].name))
+                        elif kind == "add_index":
+                            signatures.add((kind, difference[1].name))
+                        elif kind == "add_table":
+                            signatures.add((kind, difference[1].name))
+                        else:
+                            raise RuntimeError("Existing unversioned schema differs from a known migration.")
+                    otp = {
+                        ("add_column", "traveler", "auth_type"),
+                        ("add_column", "traveler", "last_login_method"),
+                        ("add_column", "traveler", "last_login_at"),
+                        ("add_index", "ix_traveler_auth_type"),
+                        ("add_table", "passwordresetchallenge"),
+                        ("add_index", "ix_passwordresetchallenge_expires_at"),
+                    }
+                    sso = {("add_column", "traveler", "sso_email"),
+                           ("add_index", "ix_traveler_sso_email")}
+                    if len(signatures) != len(differences) or signatures not in (otp, otp | sso):
+                        raise RuntimeError("Existing unversioned schema differs from a known migration. Back it up before repair.")
+                    command.stamp(config, "b14c9f30e2a7" if signatures == otp else "aeccbbace2e6")
+                    command.upgrade(config, "head")
+                else:
+                    command.stamp(config, "head")
+                    if "admin_user_auth" not in inspect(connection).get_view_names():
+                        from app.admin_reporting import ADMIN_USER_VIEW
+                        connection.execute(text(ADMIN_USER_VIEW))
                 print("Adopted existing schema at the current revision.")
             else:
                 command.upgrade(config, "head")

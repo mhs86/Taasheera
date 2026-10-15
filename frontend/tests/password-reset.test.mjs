@@ -269,3 +269,54 @@ test('registration from the site path shows the password toggle and returns to s
   assert.equal(document.querySelector('h1').textContent, 'Welcome back')
   assert.match(text(), /Your traveler account has been created/)
 })
+
+test('email OTP verification opens the password form without placing secrets in the URL', async () => {
+  await mount('/sign-in#forgot-password')
+  replies.push({ status: 202, body: { detail: GENERIC } })
+  fill('email', 'maya@example.com')
+  await submit()
+  fill('code', '012345')
+  replies.push({ status: 200, body: { reset_token: TOKEN, expires_in: 300 } })
+  await act(async () => document.querySelector('[aria-label="Verify reset code"]').dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true })))
+  assert.deepEqual(JSON.parse(calls.at(-1).body), { email: 'maya@example.com', code: '012345' })
+  assert.equal(calls.at(-1).url, '/auth/verify-reset-code')
+  assert.doesNotMatch(window.location.href, new RegExp(TOKEN + '|012345'))
+  assert.match(text(), /five minutes/)
+  replies.push({ status: 204 })
+  passwords(); await submit()
+  assert.deepEqual(JSON.parse(calls.at(-1).body), { token: TOKEN, password: 'New-password-123' })
+  assert.match(text(), /password has been changed/)
+})
+
+for (const [status, pattern] of [[400, /invalid, expired/], [422, /six-digit/], [429, /15 minutes/], [500, /try again later/]]) {
+  test(`OTP HTTP ${status} keeps the code form retryable and hides backend diagnostics`, async () => {
+    await mount('/sign-in#forgot-password')
+    replies.push({ status: 202, body: { detail: GENERIC } })
+    fill('email', 'maya@example.com'); await submit()
+    fill('code', '123456')
+    replies.push({ status, body: { detail: 'sensitive-provider-diagnostic' } })
+    await act(async () => document.querySelector('[aria-label="Verify reset code"]').dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true })))
+    assert.match(text(), pattern)
+    assert.doesNotMatch(text(), /sensitive-provider-diagnostic/)
+    assert.equal(document.querySelector('[name="code"]').value, '')
+    assert.ok(document.querySelector('[name="code"]'))
+  })
+}
+
+test('duplicate OTP submits are suppressed and a late response after leaving cannot show a password form', async () => {
+  await mount('/sign-in#forgot-password')
+  replies.push({ status: 202, body: { detail: GENERIC } })
+  fill('email', 'maya@example.com'); await submit()
+  fill('code', '123456')
+  let resolve
+  replies.push(() => new Promise(done => { resolve = done }))
+  await act(async () => {
+    const form = document.querySelector('[aria-label="Verify reset code"]')
+    form.dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }))
+    form.dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }))
+  })
+  assert.equal(calls.filter(call => call.url === '/auth/verify-reset-code').length, 1)
+  await act(async () => root.unmount()); root = null
+  await act(async () => resolve(response({ status: 200, body: { reset_token: TOKEN, expires_in: 300 } })))
+  assert.equal(document.querySelector('[name="password"]'), null)
+})

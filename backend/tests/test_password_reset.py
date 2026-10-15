@@ -2,7 +2,6 @@ from concurrent.futures import ThreadPoolExecutor
 from threading import Barrier
 import json
 import time
-from urllib.parse import parse_qs, urlsplit
 
 import bcrypt
 import pytest
@@ -12,7 +11,7 @@ from sqlmodel import Session, select
 
 from app.auth import COOKIE_NAME, token_hash
 from app.main import create_app
-from app.models import AuthSession, PasswordResetToken, ResetRateLimit, Traveler
+from app.models import AuthSession, PasswordResetChallenge, PasswordResetToken, ResetRateLimit, Traveler
 
 
 OLD = "Original-password-123"
@@ -46,7 +45,10 @@ def api(tmp_path, monkeypatch):
 def issue(api):
     client, _, sender = api
     assert client.post("/auth/forgot-password", json={"email": EMAIL}).status_code == 202
-    return parse_qs(urlsplit(sender.messages[-1][1]).fragment)["token"][0]
+    code = sender.messages[-1][1]
+    verified = client.post("/auth/verify-reset-code", json={"email": EMAIL, "code": code})
+    assert verified.status_code == 200
+    return verified.json()["reset_token"]
 
 
 def reset(client, raw, password=NEW):
@@ -76,15 +78,16 @@ def test_known_unknown_and_limited_email_responses_match_and_only_hash_is_stored
     assert len(sender.messages) == 1
     recipient, link = sender.messages[0]
     assert recipient == EMAIL
-    assert link.startswith("http://127.0.0.1:5173/reset-password#token=")
-    raw = parse_qs(urlsplit(link).fragment)["token"][0]
-    assert len(raw) == 43
-    assert raw not in known.text and raw not in caplog.text and link not in caplog.text
+    assert len(link) == 6 and link.isascii() and link.isdigit()
+    assert link not in known.text and link not in caplog.text
     with Session(app.state.engine) as session:
-        stored = session.exec(select(PasswordResetToken)).one()
-        assert stored.token_hash == token_hash(raw) and stored.token_hash != raw
-        assert 1795 <= stored.expires_at - int(time.time()) <= 1800
-        assert not stored.used
+        stored = session.exec(select(PasswordResetChallenge)).one()
+        assert stored.code_digest != token_hash(link)  # Keyed digest defeats offline six-digit guessing.
+        assert stored.code_digest != link
+        assert 595 <= stored.expires_at - int(time.time()) <= 600
+        assert not stored.consumed and stored.attempts == 0
+        assert session.exec(select(PasswordResetToken)).all() == []
+
 
 
 def test_delivery_failure_is_generic_and_invalidates_link_without_logging(api, caplog):
@@ -95,7 +98,7 @@ def test_delivery_failure_is_generic_and_invalidates_link_without_logging(api, c
     assert failed.status_code == unknown.status_code == 202
     assert failed.json() == unknown.json()
     link = sender.messages[0][1]
-    raw = parse_qs(urlsplit(link).fragment)["token"][0]
+    raw = link
     assert link not in caplog.text and raw not in caplog.text
     with Session(app.state.engine) as session:
         assert session.exec(select(PasswordResetToken)).all() == []
@@ -160,7 +163,8 @@ def test_reset_revokes_all_links_and_all_device_sessions_requires_fresh_login(ap
         raw1 = issue(api)
         clear_limits(app)
         raw2 = issue(api)
-        response = reset(client, raw1)
+        assert reset(client, raw1).status_code == 400  # Resend invalidates older grants.
+        response = reset(client, raw2)
         assert response.status_code == 204 and response.content == b""
         assert client.cookies.get(COOKIE_NAME) is None
         assert reset(client, raw2).status_code == 400
@@ -233,7 +237,7 @@ def test_hourly_email_limit_survives_minute_cooldown_and_new_app(api):
     for _ in range(5):
         issue(api)
         with Session(app.state.engine) as session:
-            bucket = session.get(ResetRateLimit, f"email-minute:{token_hash(EMAIL)}")
+            bucket = next(b for b in session.exec(select(ResetRateLimit)).all() if b.key.startswith("email-minute:"))
             bucket.expires_at = int(time.time()) - 1
             session.add(bucket)
             session.commit()

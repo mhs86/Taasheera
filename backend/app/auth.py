@@ -15,6 +15,7 @@ from sqlmodel import Session, select
 from .config import AuthSettings
 from .activity import record_activity
 from .models import AccessTokenPublic, AuthSession, LoginRequest, RefreshToken, Traveler, TravelerPublic
+from .security import audit, throttle
 
 
 COOKIE_NAME = "taasheera_refresh"
@@ -69,9 +70,13 @@ def check_origin(request: Request):
         raise HTTPException(status_code=403, detail="Origin is not allowed.")
 
 
-def start_session(traveler: Traveler, request: Request, response: Response, session: Session):
+def start_session(traveler: Traveler, request: Request, response: Response, session: Session,
+                  *, method: str = "email_password"):
     """Common session issuance for password and verified Google sign-in."""
     settings = request.app.state.auth_settings
+    traveler.last_login_method = method
+    traveler.last_login_at = int(time.time())
+    session.add(traveler)
     previous = request.cookies.get(COOKIE_NAME)
     if previous:
         old = session.get(RefreshToken, token_hash(previous))
@@ -136,11 +141,12 @@ def create_auth_router(get_session, current_traveler=None):
 
     @router.post("/login", response_model=AccessTokenPublic, dependencies=[Depends(check_origin)])
     def login(data: LoginRequest, request: Request, response: Response, session: SessionDep):
+        throttle(request, session, "login", account=data.email)
         # Serialize login with password reset so an old-password login cannot
         # create a new session after reset has revoked existing sessions.
         session.execute(update(Traveler).where(Traveler.email == data.email).values(password_hash=Traveler.password_hash))
         traveler = session.exec(select(Traveler).where(Traveler.email == data.email)).first()
-        password_enabled = traveler is not None and bool(traveler.password_hash)
+        password_enabled = traveler is not None and traveler.password_enabled
         stored_hash = traveler.password_hash.encode("ascii") if password_enabled else DUMMY_HASH
         try:
             password = data.password.get_secret_value().encode("utf-8")
@@ -151,6 +157,7 @@ def create_auth_router(get_session, current_traveler=None):
             matches = False
             valid_length = False
         if not password_enabled or not valid_length or not matches:
+            audit(request, "login", "rejected", traveler.id if traveler else None)
             if traveler is not None:
                 record_activity(session, request.app.state.activity_directory, traveler.id,
                                 "sign_in", "email_password", "failure")
@@ -160,6 +167,7 @@ def create_auth_router(get_session, current_traveler=None):
             )
 
         result = start_session(traveler, request, response, session)
+        audit(request, "login", "success", traveler.id)
         record_activity(session, request.app.state.activity_directory, traveler.id,
                         "sign_in", "email_password", "success")
         return result

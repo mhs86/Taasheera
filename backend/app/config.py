@@ -59,6 +59,7 @@ class AuthSettings:
     access_seconds: int = 15 * 60
     refresh_seconds: int = 7 * 24 * 60 * 60
     google_client_id: str | None = None
+    trust_cloudfront_proxy: bool = False
 
     @classmethod
     def from_environment(cls):
@@ -72,6 +73,9 @@ class AuthSettings:
             "AUTH_ALLOWED_ORIGINS", "http://127.0.0.1:5173,http://127.0.0.1:8000"
         )
         google_client_id = os.environ.get("GOOGLE_CLIENT_ID", "").strip()
+        trusted_proxy = os.environ.get("AUTH_TRUST_CLOUDFRONT_PROXY", "false").lower()
+        if trusted_proxy not in {"true", "false"}:
+            raise RuntimeError("AUTH_TRUST_CLOUDFRONT_PROXY must be true or false.")
         if google_client_id and (
             not google_client_id.endswith(".apps.googleusercontent.com")
             or any(char.isspace() for char in google_client_id)
@@ -82,4 +86,5 @@ class AuthSettings:
             cookie_secure=secure == "true",
             allowed_origins=tuple(origin.strip() for origin in origins.split(",") if origin.strip()),
             google_client_id=google_client_id or None,
+            trust_cloudfront_proxy=trusted_proxy == "true",
         )
