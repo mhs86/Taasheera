@@ -108,12 +108,20 @@ not stored. Browser activity requests are best effort; failed delivery is not qu
 | `GET /auth/me` | `Authorization: Bearer <access_token>` | `200`: `id`, `name`, `email` |
 | `POST /auth/refresh` | Refresh cookie, no JSON body or access token required | `200`: new access token and rotated refresh cookie |
 | `POST /auth/logout` | Refresh cookie, no JSON body required | `204`: session revoked and cookie cleared; safe to repeat |
+| `POST /auth/change-password` | Bearer access token; JSON `current_password`, `new_password` | `204`: password changed; other sessions revoked, current session retained |
 
 Unknown emails and incorrect passwords return the same `401` message, `Invalid email or password.` Unknown emails still undergo bcrypt verification against a dummy hash. Request validation errors remain `422` and omit submitted values. Access tokens use HS256 with a fixed algorithm allowlist, issuer/audience checks, and required identity, session, issue-time and expiry claims. JWTs last at most 15 minutes. `/auth/me` accepts only a bearer access token, never just a cookie.
 
 Refresh tokens contain 32 random bytes and are stored only as SHA-256 hashes. Their host-only `taasheera_refresh` cookie has `HttpOnly`, `SameSite=Strict`, and `Path=/auth`. `Secure` defaults to true; set `AUTH_COOKIE_SECURE=false` only for local HTTP. Responses containing tokens or profile data use `Cache-Control: no-store`.
 
 A session expires seven days after login; rotation does not extend that deadline. Each refresh atomically replaces the current token. Reusing an older token revokes the entire session, including the replacement and all of its access tokens. Clients must serialize refresh requests, including across tabs: concurrent use of one cookie triggers this replay protection. Logout also immediately invalidates that session's access tokens through a database session check. Other independent device sessions remain valid. Re-login with an existing refresh cookie revokes the replaced browser session.
+
+Signed-in email/password travelers can change their password without signing out their current
+session. `POST /auth/change-password` requires the current password, a different new password
+of 8 characters to 72 UTF-8 bytes, a bearer token, and an allowed Origin. It rejects extra fields,
+Google-only accounts, and incorrect current passwords; attempts are rate-limited. On success,
+the current access and refresh tokens remain valid, while all other sessions for that traveler
+are revoked. The response contains no password or hash.
 
 Cookie-changing endpoints check an incoming `Origin` against `AUTH_ALLOWED_ORIGINS`, a comma-separated exact allowlist. Defaults are `http://127.0.0.1:5173,http://127.0.0.1:8000`. Requests without an Origin are accepted for API clients unless marked cross-site by `Sec-Fetch-Site`. Configure exact HTTPS origins for deployment. This is CSRF protection, not a CORS allowance; no CORS middleware was added. The Vite development proxy forwards `/auth` to the backend on the same browser origin.
 

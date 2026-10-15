@@ -97,6 +97,15 @@
   overflow-wrap: anywhere;
 }
 
+.change-password {
+  margin: 24px 0;
+}
+
+.change-password h2 {
+  margin: 0 0 16px;
+  font-size: 18px;
+}
+
 .availability-note {
   margin: 0 0 24px;
   padding: 12px;

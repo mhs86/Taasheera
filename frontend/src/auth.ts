@@ -38,6 +38,20 @@ export async function connectGoogle(idToken: string, password: string, expectedT
   return response.json()
 }
 
+export async function changePassword(currentPassword: string, newPassword: string): Promise<void> {
+  const response = await protectedFetch('/auth/change-password', {
+    method: 'POST', silent: true, cache: 'no-store',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+  })
+  if (response.status === 204) return
+  if (response.status === 403) throw new Error('Current password is incorrect.')
+  if (response.status === 400) throw new Error('Choose a different new password.')
+  if (response.status === 422) throw new Error('Use at least 8 characters and at most 72 UTF-8 bytes for your new password.')
+  if (response.status === 429) throw new Error('Too many attempts. Please wait 15 minutes before trying again.')
+  throw new Error('Could not change your password. Please try again.')
+}
+
 // Access tokens live only in this module's memory. The browser manages the
 // HttpOnly refresh cookie; no token is written to browser storage.
 let accessToken: string | null = null

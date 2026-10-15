@@ -83,6 +83,13 @@ class GoogleLinkRequest(PasswordInput):
     expected_traveler_id: int = SchemaField(gt=0)
 
 
+class ChangePasswordRequest(PasswordInput):
+    model_config = ConfigDict(extra="forbid")
+    current_password: SecretStr = SchemaField(min_length=1, max_length=72)
+    # Inherit PasswordInput's length and UTF-8 byte validation for the new password.
+    password: SecretStr = SchemaField(alias="new_password", min_length=8, max_length=72)
+
+
 class AuthConfigurationPublic(BaseModel):
     google_client_id: str | None
 

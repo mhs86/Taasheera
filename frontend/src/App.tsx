@@ -7,6 +7,7 @@ import CreateAccount from './CreateAccount'
 import ForgotPassword from './ForgotPassword'
 import SetNewPassword from './SetNewPassword'
 import ConnectGoogle from './ConnectGoogle'
+import ChangePassword from './ChangePassword'
 import { readNavigation, type Navigation } from './navigation'
 
 const pageTitles = {
@@ -86,6 +87,7 @@ function App({ initialNavigation, googleClientId = import.meta.env?.VITE_GOOGLE_
           <ConnectGoogle traveler={traveler} clientId={googleClientId}
             configurationStatus={googleConfigurationStatus} onConfigurationRetry={onGoogleConfigurationRetry}
             onConnected={setTraveler} />
+          {traveler.password_enabled === true && <ChangePassword />}
           <a href="/passport" className="primary-button passport-link">Upload your passport</a>
           <button className="primary-button" data-activity-id="logout-button" disabled={loggingOut} onClick={async () => {
             setLoggingOut(true)

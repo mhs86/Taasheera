@@ -1,6 +1,6 @@
 ﻿# Taasheera frontend
 
-React + TypeScript + Vite. Registration, email/password sign-in, Google sign-in, and password reset are connected to the backend. Signed-in travelers see their name from protected `/auth/me` and can log out. Google sign-in requires the public client ID configured below; email/password sign-in works without it.
+React + TypeScript + Vite. Registration, email/password sign-in, Google sign-in, and password reset are connected to the backend. Signed-in travelers see their name from protected `/auth/me` and can log out. Email/password travelers can also change their password on the account page; the current session stays signed in and other sessions are revoked. Google sign-in requires the public client ID configured below; email/password sign-in works without it.
 
 ## Run locally on Windows
 

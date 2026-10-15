@@ -192,6 +192,10 @@ What we decided, why, and what we rejected. Newest at the bottom. Add an entry w
     security logs cover authentication. `admin_user_auth` reports both account types privately.
     SES sender/OAuth administration use sharafm032@gmail.com only; owner remains mhs86@mail.aub.edu.
     SES is sandboxed; see `docs/AUTH_OTP_AWS.md` for verified recipients and deployment prerequisites.
+18. **Signed-in password change (US 43).** Email/password travelers confirm their current password
+    at `POST /auth/change-password`; the new password follows registration rules. The current session
+    stays valid while all other sessions are revoked. Google-only accounts cannot change a password.
+    The account page shows the form only when `/auth/me` reports `password_enabled`.
 
 ## Personal instructions
 
