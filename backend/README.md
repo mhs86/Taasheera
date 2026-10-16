@@ -1,6 +1,6 @@
 # Taasheera backend — traveler authentication
 
-The backend supports traveler registration, email/password and Google sign-in, a protected profile, refresh, logout, password reset, and authenticated passport upload and extraction. The frontend connects the authentication flows and traveler profile. There is no admin registration.
+The backend supports traveler registration, email/password and Google sign-in, a protected traveler profile, refresh, logout, password reset, and authenticated passport upload and extraction. The account page does not yet edit the new profile fields. There is no admin registration.
 
 ## Windows setup and run
 
@@ -24,8 +24,9 @@ On every later start, run from `backend/`:
 `dev.py run` runs Alembic migrations before starting the server. Back up existing
 local databases before the first run after a schema update. The SSO migration adds
 nullable `traveler.sso_email`, preserves contact emails/password hashes, and
-backfills the original verified email for existing Google identities. Later
-Google sign-ins update this field from verified claims; it is never a login key.
+backfills the original verified email for existing Google identities. Later Google
+sign-ins update this field from verified claims; it is never a login key. The newer
+profile migration adds a separate `travelerprofile` table without changing `traveler`.
 
 The local secret stays stable across restarts and is Git-ignored. The development launcher loads only these local settings; production startup still reads environment variables and must receive its own `JWT_SECRET`, `GOOGLE_CLIENT_ID`, and secure-cookie settings from deployment configuration. Never commit a production secret or Google Client Secret. Changing the JWT secret invalidates existing access JWTs; persisted refresh sessions still work until revoked or expired.
 
@@ -34,7 +35,9 @@ Open http://127.0.0.1:8000/docs to try registration. Stop the server with Ctrl+C
 Run the tests from `backend/` (CI installs `requirements-dev.lock`):
 
 ```powershell
-.\.venv\Scripts\python.exe -m pytest -q
+$env:TEMP = "$env:USERPROFILE\pytest-tmp"
+$env:TMP = "$env:USERPROFILE\pytest-tmp"
+.\.venv\Scripts\python.exe -m pytest tests -q -p no:cacheprovider
 ```
 
 Tests use isolated temporary SQLite databases and never the development database.
@@ -64,6 +67,27 @@ that ID, HTTP method, route template, response status, and duration. They exclud
 query string, headers, request body, traveler fields, passport IDs, and credentials. The provided
 local launcher and container disable Uvicorn's separate raw-path access log; keep it disabled if
 the deployment host overrides the server command.
+
+## Traveler profile API
+
+`GET /profile` and `PUT /profile` require the same bearer access token as `/auth/me`.
+The profile is a separate row owned by the authenticated traveler; the request cannot choose
+another traveler ID. Before a row exists, GET returns all fields as `null`. PUT replaces the
+whole row, so omitted fields become `null`; an empty `given_names` or optional address line
+is allowed. The account display name in `traveler.name` is separate.
+
+The fields are `surname`, `given_names`, `birth_date`, `nationality`, `phone`,
+`address_line1`, `address_line2`, `address_city`, `address_region`,
+`address_postal_code`, and `address_country`. Dates use `YYYY-MM-DD` and must be in
+the past. Country codes are 1–3 uppercase letters as printed on the passport
+(for example `LBN` or `D`); the backend does not check country membership. Phones
+must include an international `+` prefix and are validated and stored as E.164
+using `phonenumbers`. Unknown fields are rejected. Responses disable caching,
+and phone, address, and birth date are omitted from request logs.
+
+To apply this migration manually to the local database from `backend/`, stop the
+backend, run `.\.venv\Scripts\python.exe migrate.py upgrade`, then run
+`.\.venv\Scripts\python.exe dev.py run`. The launcher also migrates automatically.
 
 ## Passport API
 

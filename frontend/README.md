@@ -24,7 +24,7 @@ The public Google Web Client ID is already in `frontend/.env.development` and `b
 
 Open http://127.0.0.1:5173/sign-in#create-account. You can also follow Get started from the homepage. If port 5173 is occupied, stop the old Vite server before starting this one. Restart Vite after changing its configuration.
 
-The browser calls `/auth`, `/passports`, and `/activity` on the frontend origin. Vite forwards these requests to http://127.0.0.1:8000. No backend CORS allowance is needed. A production host must route all three prefixes to the API and use HTTPS with secure cookies. Use `127.0.0.1` consistently locally so the origin matches the backend allowlist.
+The browser calls `/auth`, `/passports`, `/profile`, `/activity`, and `/assistant` on the frontend origin. Vite forwards these requests to http://127.0.0.1:8000. No backend CORS allowance is needed. A production host must route all five prefixes to the API and use HTTPS with secure cookies. Use `127.0.0.1` consistently locally so the origin matches the backend allowlist. The `/profile` API is ready; the account page does not edit those fields yet.
 
 The browser also sends allowlisted page visits and tagged clicks to authenticated `/activity/events`. It sends fixed identifiers only, never field values, link URLs, reset fragments, passwords, tokens, or Google credentials. Activity delivery is best effort and does not interrupt navigation. The backend records registration, sign-in, logout, and passport actions directly. Anonymous clicks are not stored because they cannot be linked to a verified traveler. Production routing must proxy `/activity` to FastAPI too.
 

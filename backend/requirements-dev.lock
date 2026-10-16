@@ -109,6 +109,8 @@ packaging==26.3
     #   -r requirements.lock
     #   pytesseract
     #   pytest
+phonenumbers==9.0.41
+    # via -r requirements.lock
 pillow==12.3.0
     # via
     #   -r requirements.lock

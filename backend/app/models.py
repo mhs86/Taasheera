@@ -1,10 +1,10 @@
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, EmailStr, SecretStr, StringConstraints, field_validator
 from pydantic import Field as SchemaField
 from sqlmodel import Field, SQLModel
-from sqlalchemy import CheckConstraint
+from sqlalchemy import CheckConstraint, Text
 
 
 class Traveler(SQLModel, table=True):
@@ -28,6 +28,21 @@ class Traveler(SQLModel, table=True):
     @property
     def password_enabled(self) -> bool:
         return self.auth_type == "email_password" and bool(self.password_hash)
+
+
+class TravelerProfile(SQLModel, table=True):
+    traveler_id: int = Field(primary_key=True, foreign_key="traveler.id")
+    surname: str | None = Field(default=None, max_length=100, repr=False)
+    given_names: str | None = Field(default=None, max_length=100, repr=False)
+    birth_date: date | None = Field(default=None, repr=False)
+    nationality: str | None = Field(default=None, max_length=3, repr=False)
+    phone: str | None = Field(default=None, max_length=16, repr=False)
+    address_line1: str | None = Field(default=None, sa_type=Text, repr=False)
+    address_line2: str | None = Field(default=None, sa_type=Text, repr=False)
+    address_city: str | None = Field(default=None, sa_type=Text, repr=False)
+    address_region: str | None = Field(default=None, sa_type=Text, repr=False)
+    address_postal_code: str | None = Field(default=None, sa_type=Text, repr=False)
+    address_country: str | None = Field(default=None, max_length=3, repr=False)
 
 
 class ActivityEvent(SQLModel, table=True):
