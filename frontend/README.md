@@ -1,6 +1,6 @@
 ﻿# Taasheera frontend
 
-React + TypeScript + Vite. Registration, email/password sign-in, Google sign-in, and password reset are connected to the backend. Signed-in travelers see their name from protected `/auth/me` and can log out. Email/password travelers can also change their password on the account page; the current session stays signed in and other sessions are revoked. Google sign-in requires the public client ID configured below; email/password sign-in works without it.
+React + TypeScript + Vite. Registration, email/password sign-in, Google sign-in, and password reset are connected to the backend. Signed-in travelers see their name from protected `/auth/me` and can log out. The welcome view links to `/account`, where travelers can edit profile details, see sign-in methods, and (for email/password accounts) change their password. Google sign-in requires the public client ID configured below; email/password sign-in works without it.
 
 ## Run locally on Windows
 
@@ -24,7 +24,11 @@ The public Google Web Client ID is already in `frontend/.env.development` and `b
 
 Open http://127.0.0.1:5173/sign-in#create-account. You can also follow Get started from the homepage. If port 5173 is occupied, stop the old Vite server before starting this one. Restart Vite after changing its configuration.
 
-The browser calls `/auth`, `/passports`, `/profile`, `/activity`, and `/assistant` on the frontend origin. Vite forwards these requests to http://127.0.0.1:8000. No backend CORS allowance is needed. A production host must route all five prefixes to the API and use HTTPS with secure cookies. Use `127.0.0.1` consistently locally so the origin matches the backend allowlist. The `/profile` API is ready; the account page does not edit those fields yet.
+The browser calls `/auth`, `/passports`, `/profile`, `/activity`, and `/assistant` on the frontend origin. Vite forwards these requests to http://127.0.0.1:8000. No backend CORS allowance is needed. A production host must route all five prefixes to the API and use HTTPS with secure cookies. Use `127.0.0.1` consistently locally so the origin matches the backend allowlist. `/account` is a page; `/profile` is the protected API it uses.
+
+## Edit traveler profile
+
+Sign in, choose **Edit your account details** from the welcome view, then open the profile form at `/account`. All fields are optional. The country selects show names and send passport-style codes such as `LBN` and Germany's `D`; the source list is in `src/countries.ts`. Phone numbers need an international `+` prefix and are normalized by the backend when saved. Save replaces the complete profile, so a cleared field is saved as empty. A new traveler sees an empty-state message. The page also contains the existing **Sign-in methods** and **Change password** sections, with a link back to the welcome view. The account page does not send page or click audit events until the backend has an allowlisted account identifier; it never logs profile values.
 
 The browser also sends allowlisted page visits and tagged clicks to authenticated `/activity/events`. It sends fixed identifiers only, never field values, link URLs, reset fragments, passwords, tokens, or Google credentials. Activity delivery is best effort and does not interrupt navigation. The backend records registration, sign-in, logout, and passport actions directly. Anonymous clicks are not stored because they cannot be linked to a verified traveler. Production routing must proxy `/activity` to FastAPI too.
 
@@ -51,7 +55,7 @@ sign-in available and provide a retry button. Tokens remain in memory and
 HttpOnly cookies; Google credentials and passwords are never stored in browser storage.
 
 For an existing password account, sign in normally, open the account view at
-`/sign-in`, enter the current application password under **Connect Google**,
+`/account`, enter the current application password under **Connect Google**,
 and use the official Google button. After successful linking the account view
 shows the verified SSO email. Log out and use Google sign-in to return to that
 same traveler account. An email collision on the signed-out flow still asks

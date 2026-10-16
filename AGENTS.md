@@ -201,6 +201,7 @@ What we decided, why, and what we rejected. Newest at the bottom. Add an entry w
     `PUT /profile` replaces all fields. Names and past birth dates are validated; country codes are
     1–3 uppercase letters without a backend country list, and `phonenumbers` normalizes E.164 phones.
     The intake chat can import `ProfileFields` from `app.profile`. Passport validation is unchanged.
+20. **Account page (US 43).** `/account` holds the profile form, sign-in methods and password change; the signed-in welcome view links there. Country names come from the UN M49 table, with ICAO Doc 9303 codes (`D` for Germany, `RKS` for Kosovo, `TWN` for Taiwan). Account-page activity events are not recorded yet because the backend has no account-page identifier.
 
 ## Personal instructions
 

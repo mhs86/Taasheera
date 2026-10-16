@@ -28,5 +28,6 @@ export const routes: RouteObject[] = [
     ],
   },
   { path: 'sign-in', loader: () => readNavigation(window), element: <AuthRoute /> },
+  { path: 'account', loader: () => readNavigation(window), element: <AuthRoute accountPage /> },
   { path: 'reset-password', loader: () => readNavigation(window), element: <AuthRoute /> },
 ]

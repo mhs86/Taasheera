@@ -16,13 +16,16 @@ async function showAccount(traveler = profile, changeStatus = 204) {
     calls.push({ url, ...options })
     if (url === '/auth/refresh') return Response.json({ access_token: 'synthetic-access' })
     if (url === '/auth/me') return Response.json(traveler)
+    if (url === '/profile') return Response.json({ surname: null, given_names: null, birth_date: null,
+      nationality: null, phone: null, address_line1: null, address_line2: null, address_city: null,
+      address_region: null, address_postal_code: null, address_country: null })
     if (url === '/auth/change-password') return new Response(
       changeStatus === 204 ? null : '{}', { status: changeStatus })
     assert.fail(`Unexpected request: ${url}`)
   }
   root = createRoot(document.getElementById('root'))
   await act(async () => root.render(createElement(App, {
-    initialNavigation: { page: 'sign-in', resetToken: null }, googleClientId: '',
+    initialNavigation: { page: 'sign-in', resetToken: null }, accountPage: true, googleClientId: '',
   })))
   return calls
 }
