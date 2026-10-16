@@ -38,16 +38,26 @@ export default function ConnectGoogle({ traveler, clientId, configurationStatus,
     }
   }, [password, onConnected, traveler.id])
 
-  if (traveler.sso_email) return <p>Google connected: {traveler.sso_email}</p>
-  return <section aria-labelledby="connect-google-heading">
-    <h2 id="connect-google-heading">Connect Google</h2>
-    <p>Confirm your current password, then choose your Google account to enable Google sign-in for this traveler account.</p>
-    <label htmlFor="connect-google-password">Current password</label>
-    <input id="connect-google-password" type="password" autoComplete="current-password"
-      value={password} disabled={busy} onChange={event => setPassword(event.target.value)} />
-    <GoogleSignIn clientId={clientId} disabled={busy || !password}
-      configurationStatus={configurationStatus} onConfigurationRetry={onConfigurationRetry}
-      onCredential={credential} onMessage={setMessage} />
-    <p role="status">{message}</p>
-  </section>
+  return <>
+    <section className="sign-in-methods" aria-labelledby="sign-in-methods-heading">
+      <h2 id="sign-in-methods-heading">Sign-in methods</h2>
+      <ul>
+        <li><span>Email and password</span><strong>{traveler.password_enabled === true ? 'Linked' : 'Not linked'}</strong></li>
+        <li><span>Google</span><strong>{traveler.sso_email ? 'Linked' : 'Not linked'}</strong>
+          {traveler.sso_email && <span className="sign-in-method-email">{traveler.sso_email}</span>}</li>
+      </ul>
+    </section>
+    {!traveler.sso_email && traveler.password_enabled === true &&
+      <section aria-labelledby="connect-google-heading">
+        <h2 id="connect-google-heading">Connect Google</h2>
+        <p>Confirm your current password, then choose your Google account to enable Google sign-in for this traveler account.</p>
+        <label htmlFor="connect-google-password">Current password</label>
+        <input id="connect-google-password" type="password" autoComplete="current-password"
+          value={password} disabled={busy} onChange={event => setPassword(event.target.value)} />
+        <GoogleSignIn clientId={clientId} disabled={busy || !password}
+          configurationStatus={configurationStatus} onConfigurationRetry={onConfigurationRetry}
+          onCredential={credential} onMessage={setMessage} />
+        <p role="status">{message}</p>
+      </section>}
+  </>
 }
