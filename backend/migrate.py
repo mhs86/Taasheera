@@ -49,13 +49,20 @@ def upgrade() -> None:
                     sso = {("add_column", "traveler", "sso_email"),
                            ("add_index", "ix_traveler_sso_email")}
                     profile = {("add_table", "travelerprofile")}
+                    session_details = {
+                        ("add_column", "authsession", "device_label"),
+                        ("add_column", "authsession", "created_at"),
+                        ("add_column", "authsession", "last_active_at"),
+                    }
                     if len(signatures) != len(differences) or signatures not in (
-                        profile, otp | profile, otp | sso | profile,
+                        session_details, profile | session_details,
+                        otp | profile | session_details, otp | sso | profile | session_details,
                     ):
                         raise RuntimeError("Existing unversioned schema differs from a known migration. Back it up before repair.")
                     prior_revision = (
-                        "c82a91f4d670" if signatures == profile else
-                        "b14c9f30e2a7" if signatures == otp | profile else
+                        "d37a5b1e9c42" if signatures == session_details else
+                        "c82a91f4d670" if signatures == profile | session_details else
+                        "b14c9f30e2a7" if signatures == otp | profile | session_details else
                         "aeccbbace2e6"
                     )
                     command.stamp(config, prior_revision)

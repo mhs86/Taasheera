@@ -145,6 +145,9 @@ class AuthSession(SQLModel, table=True):
     refresh_hash: str = Field(max_length=64, repr=False)
     expires_at: int
     revoked: bool = False
+    device_label: str | None = Field(default=None, max_length=100)
+    created_at: datetime | None = None
+    last_active_at: datetime | None = None
 
 
 class RefreshToken(SQLModel, table=True):
