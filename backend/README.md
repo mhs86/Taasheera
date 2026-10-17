@@ -133,12 +133,17 @@ not stored. Browser activity requests are best effort; failed delivery is not qu
 | `POST /auth/refresh` | Refresh cookie, no JSON body or access token required | `200`: new access token and rotated refresh cookie |
 | `POST /auth/logout` | Refresh cookie, no JSON body required | `204`: session revoked and cookie cleared; safe to repeat |
 | `POST /auth/change-password` | Bearer access token; JSON `current_password`, `new_password` | `204`: password changed; other sessions revoked, current session retained |
+| `GET /sessions` | Bearer access token | `200`: unexpired, unrevoked sessions owned by the traveler, with current session marked |
+| `DELETE /sessions/{session_id}` | Bearer access token; allowed Origin | `204`: other owned session revoked; `400` for current session, `404` for unknown or another traveler's session |
+| `POST /sessions/revoke-others` | Bearer access token; allowed Origin | `200`: `ended` count; current session remains valid |
 
 Unknown emails and incorrect passwords return the same `401` message, `Invalid email or password.` Unknown emails still undergo bcrypt verification against a dummy hash. Request validation errors remain `422` and omit submitted values. Access tokens use HS256 with a fixed algorithm allowlist, issuer/audience checks, and required identity, session, issue-time and expiry claims. JWTs last at most 15 minutes. `/auth/me` accepts only a bearer access token, never just a cookie.
 
 Refresh tokens contain 32 random bytes and are stored only as SHA-256 hashes. Their host-only `taasheera_refresh` cookie has `HttpOnly`, `SameSite=Strict`, and `Path=/auth`. `Secure` defaults to true; set `AUTH_COOKIE_SECURE=false` only for local HTTP. Responses containing tokens or profile data use `Cache-Control: no-store`.
 
 A session expires seven days after login; rotation does not extend that deadline. Each refresh atomically replaces the current token. Reusing an older token revokes the entire session, including the replacement and all of its access tokens. Clients must serialize refresh requests, including across tabs: concurrent use of one cookie triggers this replay protection. Logout also immediately invalidates that session's access tokens through a database session check. Other independent device sessions remain valid. Re-login with an existing refresh cookie revokes the replaced browser session.
+
+At login, the server derives a short browser/operating-system label from User-Agent without saving the raw header or IP, and stores UTC creation and last-active times. Last-active changes on successful refresh, not every request. Sessions created before this schema change retain null timestamps and appear as "Unknown device" when no label exists. Session-list responses never contain refresh-token hashes and use `Cache-Control: private, no-store`. Revocation takes effect on the next bearer request as well as the next refresh.
 
 Signed-in email/password travelers can change their password without signing out their current
 session. `POST /auth/change-password` requires the current password, a different new password

@@ -202,6 +202,7 @@ What we decided, why, and what we rejected. Newest at the bottom. Add an entry w
     1–3 uppercase letters without a backend country list, and `phonenumbers` normalizes E.164 phones.
     The intake chat can import `ProfileFields` from `app.profile`. Passport validation is unchanged.
 20. **Account page (US 43).** `/account` holds the profile form, sign-in methods and password change; the signed-in welcome view links there. Country names come from the UN M49 table, with ICAO Doc 9303 codes (`D` for Germany, `RKS` for Kosovo, `TWN` for Taiwan). Account-page activity events are not recorded yet because the backend has no account-page identifier.
+21. **Session management backend (US 119).** Auth sessions store a short parsed device label and UTC creation/last-active timestamps; old rows remain null. Last-active updates only on refresh. Owner-scoped `/sessions` endpoints list active sessions, revoke one other session, or revoke all others using the password-change revocation helper. Revoked bearer and refresh tokens fail on the next request. The account-page Sessions UI is pending.
 
 ## Personal instructions
 

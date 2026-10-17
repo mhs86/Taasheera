@@ -18,6 +18,7 @@ from .database import build_engine
 from .activity import activity_directory_from_environment, create_activity_router, record_activity
 from .assistant import DEFAULT_MODEL, create_assistant_router, gemini_ask
 from .auth import check_origin, create_auth_router, create_current_traveler
+from .sessions import create_sessions_router
 from .google_auth import create_google_auth_router
 from .config import AuthSettings, RuntimeSettings
 from .schema import require_current_schema
@@ -81,6 +82,7 @@ def create_app(database_url: str | None = None, *, reset_sender: ResetSender | N
     current_traveler = create_current_traveler(get_session)
     app.include_router(create_activity_router(get_session, current_traveler))
     app.include_router(create_auth_router(get_session, current_traveler))
+    app.include_router(create_sessions_router(get_session, current_traveler))
     app.include_router(create_google_auth_router(get_session, current_traveler))
     app.include_router(create_password_reset_router(get_session))
     app.include_router(create_profile_router(get_session, current_traveler))
