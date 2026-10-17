@@ -21,6 +21,10 @@ const traveler = { id: 1, name: 'Traveler', email: 'traveler@example.com',
 const blank = { surname: null, given_names: null, birth_date: null, nationality: null,
   phone: null, address_line1: null, address_line2: null, address_city: null,
   address_region: null, address_postal_code: null, address_country: null }
+const currentSession = { id: 'current', device_label: 'Chrome on Windows',
+  created_at: '2026-10-16T10:00:00Z', last_active_at: '2026-10-16T11:00:00Z', current: true }
+const otherSession = { id: 'other', device_label: 'Firefox on Android',
+  created_at: null, last_active_at: null, current: false }
 let root
 
 function setInput(id, value) {
@@ -48,7 +52,7 @@ async function mount(accountPage = true) {
   })))
 }
 
-function mockApi(profile = blank, saveReply) {
+function mockApi(profile = blank, saveReply, sessionsReply = () => Response.json([currentSession])) {
   const calls = []
   globalThis.fetch = async (url, options) => {
     calls.push({ url, ...options })
@@ -58,6 +62,7 @@ function mockApi(profile = blank, saveReply) {
       return saveReply ? saveReply() : Response.json({ ...JSON.parse(options.body), phone: '+96171123456' })
     }
     if (url === '/profile') return Response.json(profile)
+    if (url === '/sessions') return sessionsReply(options)
     assert.fail(`Unexpected request: ${url}`)
   }
   return calls
@@ -87,6 +92,7 @@ test('profile loading is visible until the protected request finishes', async ()
     if (url === '/auth/refresh') return Response.json({ access_token: 'synthetic-access' })
     if (url === '/auth/me') return Response.json(traveler)
     if (url === '/profile') return new Promise(resolve => { finish = resolve })
+    if (url === '/sessions') return Response.json([currentSession])
     assert.fail(`Unexpected request: ${url}`)
   }
   await mount()
@@ -107,6 +113,7 @@ test('account form loads existing values and keeps methods and password sections
   assert.equal(document.querySelector('#profile-address_country option:checked').textContent, 'Germany')
   assert.ok(document.getElementById('sign-in-methods-heading'))
   assert.ok(document.getElementById('change-password-heading'))
+  assert.ok(document.getElementById('sessions-heading'))
   assert.equal(document.querySelectorAll('#sign-in-methods-heading').length, 1)
   assert.equal(document.querySelector('a[href="/sign-in"]').textContent, 'Back to welcome')
   assert.equal(calls.find(call => call.url === '/profile').headers.Authorization, 'Bearer synthetic-access')
@@ -173,4 +180,121 @@ test('welcome links to account and does not duplicate its sections', async () =>
   assert.equal(document.getElementById('profile-heading'), null)
   assert.equal(document.getElementById('sign-in-methods-heading'), null)
   assert.equal(document.getElementById('change-password-heading'), null)
+  assert.equal(document.getElementById('sessions-heading'), null)
+})
+
+test('sessions list marks this device and shows Unknown for legacy dates', async () => {
+  mockApi(blank, undefined, () => Response.json([currentSession, otherSession]))
+  await mount()
+  const rows = document.querySelectorAll('.sessions-list li')
+  assert.equal(rows.length, 2)
+  assert.match(rows[0].textContent, /Chrome on Windows.*This device.*Signed in:.*Last active:/)
+  assert.equal(rows[0].querySelector('button'), null)
+  assert.match(rows[1].textContent, /Firefox on Android.*Signed in: Unknown.*Last active: Unknown/)
+  assert.equal(rows[1].querySelector('button').textContent, 'End session')
+  assert.equal(document.querySelector('.sessions-section [role="alert"]'), null)
+})
+
+test('ending one session confirms, sends DELETE, refreshes the list, and reports success', async () => {
+  let listed = [currentSession, otherSession]
+  const calls = mockApi(blank, undefined, () => Response.json(listed))
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = async (url, options) => {
+    if (url === '/sessions/other' && options?.method === 'DELETE') {
+      calls.push({ url, ...options })
+      listed = [currentSession]
+      return new Response(null, { status: 204 })
+    }
+    return originalFetch(url, options)
+  }
+  await mount()
+  await act(async () => document.querySelector('.session-end').click())
+  assert.equal(calls.some(call => call.method === 'DELETE'), false)
+  assert.match(document.querySelector('.session-confirm').textContent, /End this session/)
+  await act(async () => document.querySelector('.session-confirm .primary-button').click())
+  assert.equal(calls.find(call => call.method === 'DELETE').url, '/sessions/other')
+  assert.equal(calls.filter(call => call.url === '/sessions').length, 2)
+  assert.equal(document.querySelectorAll('.sessions-list li').length, 1)
+  assert.match(document.querySelector('.sessions-section [role="status"]').textContent, /Session ended/)
+})
+
+test('sign out all other devices appears only when needed and can be cancelled', async () => {
+  const calls = mockApi(blank, undefined, () => Response.json([currentSession, otherSession]))
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = async (url, options) => {
+    if (url === '/sessions/revoke-others') {
+      calls.push({ url, ...options })
+      return Response.json({ ended: 1 })
+    }
+    return originalFetch(url, options)
+  }
+  await mount()
+  const all = [...document.querySelectorAll('.sessions-section button')]
+    .find(button => button.textContent.includes('Sign out all other devices'))
+  assert.ok(all)
+  await act(async () => all.click())
+  await act(async () => document.querySelector('.session-confirm .google-retry').click())
+  assert.equal(calls.some(call => call.url === '/sessions/revoke-others'), false)
+})
+
+test('signing out all other devices sends POST and reloads the list', async () => {
+  let listed = [currentSession, otherSession]
+  const calls = mockApi(blank, undefined, () => Response.json(listed))
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = async (url, options) => {
+    if (url === '/sessions/revoke-others' && options?.method === 'POST') {
+      calls.push({ url, ...options })
+      listed = [currentSession]
+      return Response.json({ ended: 1 })
+    }
+    return originalFetch(url, options)
+  }
+  await mount()
+  const all = [...document.querySelectorAll('.sessions-section button')]
+    .find(button => button.textContent.includes('Sign out all other devices'))
+  await act(async () => all.click())
+  await act(async () => document.querySelector('.session-confirm .primary-button').click())
+  assert.equal(calls.find(call => call.url === '/sessions/revoke-others' && call.method === 'POST').url,
+    '/sessions/revoke-others')
+  assert.equal(calls.filter(call => call.url === '/sessions').length, 2)
+  assert.equal(document.querySelectorAll('.sessions-list li').length, 1)
+  assert.match(document.querySelector('.sessions-section [role="status"]').textContent, /Other devices have been signed out/)
+})
+
+test('an empty sessions list has a clear state', async () => {
+  mockApi(blank, undefined, () => Response.json([]))
+  await mount()
+  assert.match(document.querySelector('.sessions-section').textContent, /No active sessions found/)
+  assert.equal(document.querySelector('.sessions-section button'), null)
+})
+
+test('only this device has a clear state and no end-all button', async () => {
+  mockApi()
+  await mount()
+  assert.match(document.querySelector('.sessions-section').textContent, /Only this device is signed in/)
+  assert.equal(document.querySelector('.sessions-section').textContent.includes('Sign out all other devices'), false)
+})
+
+test('sessions load errors show retry; action errors remain retryable', async () => {
+  let loads = 0
+  const calls = mockApi(blank, undefined, () => {
+    loads += 1
+    return loads === 1 ? Response.json({}, { status: 500 }) : Response.json([currentSession, otherSession])
+  })
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = async (url, options) => {
+    if (url === '/sessions/other' && options?.method === 'DELETE') {
+      calls.push({ url, ...options })
+      return Response.json({}, { status: 500 })
+    }
+    return originalFetch(url, options)
+  }
+  await mount()
+  assert.match(document.querySelector('.sessions-section [role="alert"]').textContent, /Could not load/)
+  await act(async () => document.querySelector('.sessions-section .google-retry').click())
+  assert.equal(document.querySelectorAll('.sessions-list li').length, 2)
+  await act(async () => document.querySelector('.session-end').click())
+  await act(async () => document.querySelector('.session-confirm .primary-button').click())
+  assert.match(document.querySelector('.sessions-section [role="alert"]').textContent, /Could not end/)
+  assert.equal(document.querySelector('.session-confirm .primary-button').disabled, false)
 })
