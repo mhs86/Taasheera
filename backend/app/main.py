@@ -15,6 +15,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlmodel import Session, SQLModel, select
 
 from .database import build_engine
+from .applications.router import create_applications_router
 from .activity import activity_directory_from_environment, create_activity_router, record_activity
 from .assistant import DEFAULT_MODEL, create_assistant_router, gemini_ask
 from .auth import check_origin, create_auth_router, create_current_traveler
@@ -105,6 +106,8 @@ def create_app(database_url: str | None = None, *, reset_sender: ResetSender | N
         passport_storage, current_traveler_id, record_event=record_passport_activity,
         uploads_enabled=uploads_setting == "true",
     ))
+
+    app.include_router(create_applications_router(get_session, current_traveler, passport_storage.load_review))
 
     def record_assistant_activity(traveler_id: int, event_type: str, outcome: str):
         with Session(engine) as session:

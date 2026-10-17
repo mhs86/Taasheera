@@ -1,0 +1,265 @@
+"""Visa application endpoints: start an application, then answer it one question at a time.
+
+Follows the app's router-factory pattern. The server, not the browser, decides
+which question comes next (`flow.next_question`), so a client can't skip the
+eligibility gate or answer questions out of order. Every answer is checked and
+saved as soon as it arrives, and every request checks that the signed-in
+traveler owns the application.
+"""
+
+from collections.abc import Callable
+from datetime import date, datetime, timezone
+from typing import Annotated, Any, Literal
+import uuid
+
+from fastapi import APIRouter, Depends, HTTPException, Response
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+from sqlmodel import Session, select
+
+from ..models import Application, ApplicationAnswer, Traveler
+from . import flow
+
+Status = Literal["DRAFT", "INELIGIBLE", "ANSWERS_COMPLETE"]
+
+
+class VisaOption(BaseModel):
+    destination: str
+    visa_type: str
+    title: str
+
+
+class StartRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    destination: str = Field(min_length=1, max_length=20)
+    visa_type: str = Field(min_length=1, max_length=40)
+
+
+class AnswerRequest(BaseModel):
+    """Either a `value`, or the id of a passport upload whose review the traveler confirmed."""
+
+    model_config = ConfigDict(extra="forbid")
+    value: Any = None
+    passport_upload_id: str | None = Field(default=None, pattern=r"^[0-9a-f]{32}$")
+
+    @model_validator(mode="after")
+    def exactly_one(self) -> "AnswerRequest":
+        if ("value" in self.model_fields_set) == (self.passport_upload_id is not None):
+            raise ValueError("Send either a value or a passport_upload_id.")
+        return self
+
+
+class QuestionPublic(BaseModel):
+    id: str
+    step_id: str
+    type: flow.AnswerType
+    prompt: str
+    help: str | None
+    required: bool
+    options: list[flow.Option] | None
+    max_length: int
+    # Allowed date range given the answers so far, so the date picker can grey out the rest.
+    date_min: date | None = None
+    date_max: date | None = None
+
+
+class AnswerPublic(BaseModel):
+    question: QuestionPublic
+    value: Any
+    source: str
+
+
+class StepPublic(BaseModel):
+    id: str
+    title: str
+
+
+class ApplicationSummary(BaseModel):
+    id: str
+    title: str
+    status: Status
+    updated_at: datetime
+
+
+class ApplicationState(ApplicationSummary):
+    destination: str
+    visa_type: str
+    steps: list[StepPublic]
+    progress: flow.Progress
+    # Answered questions in the order they were asked: the chat's history.
+    answers: list[AnswerPublic]
+    # The question to ask now; null when the application is complete or stopped.
+    current: QuestionPublic | None
+    # Why the flow stopped (e.g. the stay is longer than a short-stay visa allows).
+    stopped: str | None
+    # Answers removed because an earlier change made them no longer apply.
+    cleared: list[str]
+
+
+def _status(questionnaire: flow.Questionnaire, answers: flow.Answers) -> Status:
+    if flow.stop_message(questionnaire, answers):
+        return "INELIGIBLE"
+    return "DRAFT" if flow.next_question(questionnaire, answers) else "ANSWERS_COMPLETE"
+
+
+def application_context(session: Session, traveler_id: int, application_id: str) -> str | None:
+    """The assistant's view of one application, or None if it isn't this traveler's."""
+    application = session.get(Application, application_id)
+    if application is None or application.traveler_id != traveler_id:
+        return None
+    rows = session.exec(select(ApplicationAnswer).where(ApplicationAnswer.application_id == application.id))
+    questionnaire = flow.load_questionnaire(application.questionnaire_id)
+    return flow.describe(questionnaire, {row.question_id: row.value for row in rows})
+
+
+def create_applications_router(
+    get_session,
+    current_traveler,
+    load_confirmed_passport: Callable[[int, str], dict | None],
+    *,
+    today: Callable[[], date] = date.today,
+) -> APIRouter:
+    from ..auth import check_origin
+
+    router = APIRouter(prefix="/applications", tags=["applications"])
+    SessionDep = Annotated[Session, Depends(get_session)]
+    TravelerDep = Annotated[Traveler, Depends(current_traveler)]
+
+    def owned(session: Session, traveler: Traveler, application_id: str) -> Application:
+        application = session.get(Application, application_id)
+        if application is None or application.traveler_id != traveler.id:
+            # 404 either way, so another traveler's ids can't be probed.
+            raise HTTPException(status_code=404, detail="Application not found.")
+        return application
+
+    def stored_answers(session: Session, application: Application) -> dict[str, ApplicationAnswer]:
+        rows = session.exec(select(ApplicationAnswer).where(ApplicationAnswer.application_id == application.id))
+        return {row.question_id: row for row in rows}
+
+    def save(session: Session, application: Application, rows: dict[str, ApplicationAnswer],
+             questionnaire: flow.Questionnaire) -> tuple[flow.Answers, list[str]]:
+        """Re-check every answer, delete the ones that no longer apply, update the status, commit.
+
+        Runs on every read too, so an answer that was valid when given but isn't
+        any more (a trip date now in the past) is asked again instead of trusted.
+        """
+        answers, cleared = flow.reconcile(questionnaire, {key: row.value for key, row in rows.items()}, today())
+        for question_id in cleared:
+            session.delete(rows.pop(question_id))
+        status = _status(questionnaire, answers)
+        if cleared or status != application.status:
+            application.status = status
+            application.updated_at = datetime.now(timezone.utc)
+            session.add(application)
+        session.commit()
+        return answers, cleared
+
+    def public_question(questionnaire: flow.Questionnaire, question: flow.Question,
+                        answers: flow.Answers) -> QuestionPublic:
+        earliest, latest = flow.date_bounds(question, answers, today())
+        return QuestionPublic(
+            id=question.id, step_id=questionnaire.step_of(question.id).id, type=question.type,
+            prompt=question.prompt, help=question.help, required=question.required,
+            options=question.options, max_length=question.max_length, date_min=earliest, date_max=latest,
+        )
+
+    def state(application: Application, questionnaire: flow.Questionnaire, answers: flow.Answers,
+              rows: dict[str, ApplicationAnswer], cleared: list[str]) -> ApplicationState:
+        current = flow.next_question(questionnaire, answers)
+        return ApplicationState(
+            id=application.id, title=questionnaire.title, status=application.status,
+            updated_at=application.updated_at, destination=application.destination,
+            visa_type=application.visa_type,
+            steps=[StepPublic(id=step.id, title=step.title) for step in questionnaire.steps],
+            progress=flow.progress(questionnaire, answers),
+            answers=[
+                AnswerPublic(question=public_question(questionnaire, question, answers),
+                             value=answers[question.id], source=rows[question.id].source)
+                for question in flow.visible_questions(questionnaire, answers) if question.id in answers
+            ],
+            current=public_question(questionnaire, current, answers) if current else None,
+            stopped=flow.stop_message(questionnaire, answers),
+            cleared=cleared,
+        )
+
+    @router.get("/options", response_model=list[VisaOption])
+    def options(traveler: TravelerDep):
+        return [VisaOption(destination=q.destination, visa_type=q.visa_type, title=q.title)
+                for q in flow.available_questionnaires()]
+
+    @router.post("", response_model=ApplicationState, status_code=201, dependencies=[Depends(check_origin)])
+    def start(data: StartRequest, traveler: TravelerDep, session: SessionDep, response: Response):
+        questionnaire = next((q for q in flow.available_questionnaires()
+                              if (q.destination, q.visa_type) == (data.destination, data.visa_type)), None)
+        if questionnaire is None:
+            raise HTTPException(status_code=422, detail="We can't prepare that visa yet.")
+        application = Application(
+            id=uuid.uuid4().hex, traveler_id=traveler.id, questionnaire_id=questionnaire.id,
+            questionnaire_version=questionnaire.version, destination=questionnaire.destination,
+            visa_type=questionnaire.visa_type,
+        )
+        session.add(application)
+        session.commit()
+        response.headers["Cache-Control"] = "private, no-store"
+        return state(application, questionnaire, {}, {}, [])
+
+    @router.get("", response_model=list[ApplicationSummary])
+    def list_applications(traveler: TravelerDep, session: SessionDep, response: Response):
+        response.headers["Cache-Control"] = "private, no-store"
+        rows = session.exec(select(Application).where(Application.traveler_id == traveler.id)
+                            .order_by(Application.updated_at.desc()))
+        return [ApplicationSummary(id=row.id, title=flow.load_questionnaire(row.questionnaire_id).title,
+                                   status=row.status, updated_at=row.updated_at) for row in rows]
+
+    @router.get("/{application_id}", response_model=ApplicationState)
+    def get_application(application_id: str, traveler: TravelerDep, session: SessionDep, response: Response):
+        application = owned(session, traveler, application_id)
+        questionnaire = flow.load_questionnaire(application.questionnaire_id)
+        rows = stored_answers(session, application)
+        answers, cleared = save(session, application, rows, questionnaire)
+        response.headers["Cache-Control"] = "private, no-store"
+        return state(application, questionnaire, answers, rows, cleared)
+
+    @router.put("/{application_id}/answers/{question_id}", response_model=ApplicationState,
+                dependencies=[Depends(check_origin)])
+    def answer(application_id: str, question_id: str, data: AnswerRequest, traveler: TravelerDep,
+               session: SessionDep, response: Response):
+        application = owned(session, traveler, application_id)
+        questionnaire = flow.load_questionnaire(application.questionnaire_id)
+        question = questionnaire.question(question_id)
+        if question is None:
+            raise HTTPException(status_code=404, detail="Question not found.")
+        rows = stored_answers(session, application)
+        answers = {key: row.value for key, row in rows.items()}
+        # Only the current question, or one already answered (to change it). This keeps the
+        # order the file defines, so nobody can skip past the eligibility questions.
+        current = flow.next_question(questionnaire, answers)
+        if not flow.is_visible(question, answers) or (
+                question_id not in answers and (current is None or current.id != question_id)):
+            raise HTTPException(status_code=409, detail="Answer the earlier questions first.")
+
+        if data.passport_upload_id is not None:
+            if question.type != "passport":
+                raise HTTPException(status_code=422, detail="Only the passport question takes a passport upload.")
+            raw = load_confirmed_passport(traveler.id, data.passport_upload_id)
+            if raw is None:
+                raise HTTPException(status_code=404, detail="Confirm your passport details first.")
+            source = "passport_upload"
+        else:
+            raw, source = data.value, "traveler"
+        try:
+            value = flow.check_answer(question, raw, answers, today())
+        except flow.InvalidAnswer as error:
+            raise HTTPException(status_code=422, detail=str(error)) from None
+
+        row = rows.get(question_id) or ApplicationAnswer(application_id=application.id, question_id=question_id,
+                                                         value=value, source=source)
+        row.value, row.source, row.answered_at = value, source, datetime.now(timezone.utc)
+        session.add(row)
+        rows[question_id] = row
+        application.updated_at = datetime.now(timezone.utc)
+        session.add(application)
+        answers, cleared = save(session, application, rows, questionnaire)
+        response.headers["Cache-Control"] = "private, no-store"
+        return state(application, questionnaire, answers, rows, cleared)
+
+    return router
