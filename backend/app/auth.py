@@ -14,7 +14,7 @@ from sqlmodel import Session, select
 
 from .config import AuthSettings
 from .activity import record_activity
-from .models import AccessTokenPublic, AuthSession, LoginRequest, RefreshToken, Traveler, TravelerPublic
+from .models import AccessTokenPublic, AuthSession, ChangePasswordRequest, LoginRequest, RefreshToken, Traveler, TravelerPublic
 from .security import audit, throttle
 
 
@@ -127,6 +127,7 @@ def create_current_traveler(get_session):
             traveler = session.get(Traveler, auth_session.traveler_id)
             if traveler is None:
                 raise unauthorized
+            request.state.auth_session_id = auth_session.id
             return traveler
         except (jwt.InvalidTokenError, ValueError, TypeError, OverflowError):
             raise unauthorized from None
@@ -176,6 +177,41 @@ def create_auth_router(get_session, current_traveler=None):
     def me(response: Response, traveler: Annotated[Traveler, Depends(current_traveler)]):
         response.headers["Cache-Control"] = "no-store"
         return traveler
+
+    @router.post("/change-password", status_code=204, dependencies=[Depends(check_origin)])
+    def change_password(data: ChangePasswordRequest, request: Request, session: SessionDep,
+                        traveler: Annotated[Traveler, Depends(current_traveler)]):
+        throttle(request, session, "change-password", account=str(traveler.id), account_limit=5)
+        # Serialize with password reset and password login before checking the hash.
+        session.execute(update(Traveler).where(Traveler.id == traveler.id)
+                        .values(password_hash=Traveler.password_hash))
+        session.refresh(traveler)
+        if not traveler.password_enabled:
+            audit(request, "change-password", "unavailable", traveler.id)
+            raise HTTPException(403, "Password change is unavailable for Google-only accounts.",
+                                headers={"Cache-Control": "no-store"})
+        try:
+            current = data.current_password.get_secret_value().encode("utf-8")
+            matches = bcrypt.checkpw(current, traveler.password_hash.encode("ascii"))
+        except (ValueError, UnicodeError):
+            matches = False
+        if not matches:
+            audit(request, "change-password", "rejected", traveler.id)
+            raise HTTPException(403, "Current password is incorrect.",
+                                headers={"Cache-Control": "no-store"})
+        new_password = data.password.get_secret_value().encode("utf-8")
+        if new_password == current:
+            raise HTTPException(400, "Choose a different new password.",
+                                headers={"Cache-Control": "no-store"})
+        traveler.password_hash = bcrypt.hashpw(new_password, bcrypt.gensalt(rounds=12)).decode("ascii")
+        session.add(traveler)
+        session.execute(update(AuthSession).where(
+            AuthSession.traveler_id == traveler.id,
+            AuthSession.id != request.state.auth_session_id,
+        ).values(revoked=True))
+        session.commit()
+        audit(request, "change-password", "success", traveler.id)
+        return Response(status_code=204, headers={"Cache-Control": "no-store"})
 
     @router.post("/refresh", response_model=AccessTokenPublic, dependencies=[Depends(check_origin)])
     def refresh(request: Request, response: Response, session: SessionDep):

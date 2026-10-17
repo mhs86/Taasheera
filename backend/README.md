@@ -1,6 +1,6 @@
 # Taasheera backend — traveler authentication
 
-The backend supports traveler registration, email/password and Google sign-in, a protected profile, refresh, logout, password reset, and authenticated passport upload and extraction. The frontend connects the authentication flows and traveler profile. There is no admin registration.
+The backend supports traveler registration, email/password and Google sign-in, a protected traveler profile, refresh, logout, password reset, and authenticated passport upload and extraction. The account page does not yet edit the new profile fields. There is no admin registration.
 
 ## Windows setup and run
 
@@ -24,8 +24,9 @@ On every later start, run from `backend/`:
 `dev.py run` runs Alembic migrations before starting the server. Back up existing
 local databases before the first run after a schema update. The SSO migration adds
 nullable `traveler.sso_email`, preserves contact emails/password hashes, and
-backfills the original verified email for existing Google identities. Later
-Google sign-ins update this field from verified claims; it is never a login key.
+backfills the original verified email for existing Google identities. Later Google
+sign-ins update this field from verified claims; it is never a login key. The newer
+profile migration adds a separate `travelerprofile` table without changing `traveler`.
 
 The local secret stays stable across restarts and is Git-ignored. The development launcher loads only these local settings; production startup still reads environment variables and must receive its own `JWT_SECRET`, `GOOGLE_CLIENT_ID`, and secure-cookie settings from deployment configuration. Never commit a production secret or Google Client Secret. Changing the JWT secret invalidates existing access JWTs; persisted refresh sessions still work until revoked or expired.
 
@@ -34,7 +35,9 @@ Open http://127.0.0.1:8000/docs to try registration. Stop the server with Ctrl+C
 Run the tests from `backend/` (CI installs `requirements-dev.lock`):
 
 ```powershell
-.\.venv\Scripts\python.exe -m pytest -q
+$env:TEMP = "$env:USERPROFILE\pytest-tmp"
+$env:TMP = "$env:USERPROFILE\pytest-tmp"
+.\.venv\Scripts\python.exe -m pytest tests -q -p no:cacheprovider
 ```
 
 Tests use isolated temporary SQLite databases and never the development database.
@@ -64,6 +67,27 @@ that ID, HTTP method, route template, response status, and duration. They exclud
 query string, headers, request body, traveler fields, passport IDs, and credentials. The provided
 local launcher and container disable Uvicorn's separate raw-path access log; keep it disabled if
 the deployment host overrides the server command.
+
+## Traveler profile API
+
+`GET /profile` and `PUT /profile` require the same bearer access token as `/auth/me`.
+The profile is a separate row owned by the authenticated traveler; the request cannot choose
+another traveler ID. Before a row exists, GET returns all fields as `null`. PUT replaces the
+whole row, so omitted fields become `null`; an empty `given_names` or optional address line
+is allowed. The account display name in `traveler.name` is separate.
+
+The fields are `surname`, `given_names`, `birth_date`, `nationality`, `phone`,
+`address_line1`, `address_line2`, `address_city`, `address_region`,
+`address_postal_code`, and `address_country`. Dates use `YYYY-MM-DD` and must be in
+the past. Country codes are 1–3 uppercase letters as printed on the passport
+(for example `LBN` or `D`); the backend does not check country membership. Phones
+must include an international `+` prefix and are validated and stored as E.164
+using `phonenumbers`. Unknown fields are rejected. Responses disable caching,
+and phone, address, and birth date are omitted from request logs.
+
+To apply this migration manually to the local database from `backend/`, stop the
+backend, run `.\.venv\Scripts\python.exe migrate.py upgrade`, then run
+`.\.venv\Scripts\python.exe dev.py run`. The launcher also migrates automatically.
 
 ## Passport API
 
@@ -108,12 +132,20 @@ not stored. Browser activity requests are best effort; failed delivery is not qu
 | `GET /auth/me` | `Authorization: Bearer <access_token>` | `200`: `id`, `name`, `email` |
 | `POST /auth/refresh` | Refresh cookie, no JSON body or access token required | `200`: new access token and rotated refresh cookie |
 | `POST /auth/logout` | Refresh cookie, no JSON body required | `204`: session revoked and cookie cleared; safe to repeat |
+| `POST /auth/change-password` | Bearer access token; JSON `current_password`, `new_password` | `204`: password changed; other sessions revoked, current session retained |
 
 Unknown emails and incorrect passwords return the same `401` message, `Invalid email or password.` Unknown emails still undergo bcrypt verification against a dummy hash. Request validation errors remain `422` and omit submitted values. Access tokens use HS256 with a fixed algorithm allowlist, issuer/audience checks, and required identity, session, issue-time and expiry claims. JWTs last at most 15 minutes. `/auth/me` accepts only a bearer access token, never just a cookie.
 
 Refresh tokens contain 32 random bytes and are stored only as SHA-256 hashes. Their host-only `taasheera_refresh` cookie has `HttpOnly`, `SameSite=Strict`, and `Path=/auth`. `Secure` defaults to true; set `AUTH_COOKIE_SECURE=false` only for local HTTP. Responses containing tokens or profile data use `Cache-Control: no-store`.
 
 A session expires seven days after login; rotation does not extend that deadline. Each refresh atomically replaces the current token. Reusing an older token revokes the entire session, including the replacement and all of its access tokens. Clients must serialize refresh requests, including across tabs: concurrent use of one cookie triggers this replay protection. Logout also immediately invalidates that session's access tokens through a database session check. Other independent device sessions remain valid. Re-login with an existing refresh cookie revokes the replaced browser session.
+
+Signed-in email/password travelers can change their password without signing out their current
+session. `POST /auth/change-password` requires the current password, a different new password
+of 8 characters to 72 UTF-8 bytes, a bearer token, and an allowed Origin. It rejects extra fields,
+Google-only accounts, and incorrect current passwords; attempts are rate-limited. On success,
+the current access and refresh tokens remain valid, while all other sessions for that traveler
+are revoked. The response contains no password or hash.
 
 Cookie-changing endpoints check an incoming `Origin` against `AUTH_ALLOWED_ORIGINS`, a comma-separated exact allowlist. Defaults are `http://127.0.0.1:5173,http://127.0.0.1:8000`. Requests without an Origin are accepted for API clients unless marked cross-site by `Sec-Fetch-Site`. Configure exact HTTPS origins for deployment. This is CSRF protection, not a CORS allowance; no CORS middleware was added. The Vite development proxy forwards `/auth` to the backend on the same browser origin.
 

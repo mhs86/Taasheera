@@ -80,7 +80,7 @@ Status key: **in use** = already in the code · **proposed** = tentative recomme
 | Frontend styling | Plain CSS with custom properties (`src/index.css` tokens); DM Sans + Space Grotesk, layout modelled on Migraide (simple, no pricing) | in use | Small site, no extra build tooling; auth screens use the same site font and scoped form styles. Tailwind not adopted (see decision 6) |
 | Frontend data fetching | TanStack Query (loading/error states) | proposed | Adopt once pages load real data |
 | Backend hosting | Non-root container with Tesseract and health checks (`backend/Dockerfile`); free Render demo blueprint (`render.yaml`) | image and blueprint in use; live host pending | Free Render can demo auth; its expiring database and ephemeral files are unsuitable for real passport storage |
-| Frontend hosting | Netlify static hosting (`netlify.toml`, see `docs/NETLIFY.md`); Vercel config retained | Netlify build and SPA fallback in use; API proxy needs backend URL | Build `frontend/dist`; proxy `/auth`, `/passports`, and `/activity` through the browser origin so cookies stay first-party |
+| Frontend hosting | Netlify static hosting (`netlify.toml`, see `docs/NETLIFY.md`); Vercel config retained | Netlify build and SPA fallback in use; API proxy needs backend URL | Build `frontend/dist`; proxy `/auth`, `/passports`, `/profile`, `/activity`, and `/assistant` through the browser origin so cookies stay first-party |
 | Domain | One public frontend origin with an API proxy | proposed | Auth cookies work on the browser origin; production proxy and HTTPS are not configured yet |
 | CI/CD, observability | GitHub Actions CI, Lambda image deployment workflow, JSON request logs; Sentry, uptime check | CI/logs in use; Lambda workflow awaits AWS setup; monitoring proposed | CI builds both backend images; `deploy-backend.yml` pushes the Lambda image on main backend changes after OIDC setup |
 | User activity logging | SQLModel `ActivityEvent` plus private per-traveler JSONL mirrors in `backend/storage/activity-logs/` | in use | Auth and passport actions are recorded on the backend; allowlisted frontend page/control events use authenticated `/activity/events` |
@@ -95,7 +95,7 @@ create `.venv`, install `requirements-dev.lock`, run `python dev.py setup` once,
 `python dev.py run` to load the ignored local JWT secret and public Google client ID and
 serve on port 8000. From `frontend/`, run `npm ci` and `npm run dev` on port 5173.
 Check with backend `python -m pytest -q` and frontend `npm test`, `npm run lint`,
-`npm run build`. The authenticated API proxies `/auth`, `/passports`, `/activity`, and `/assistant` through Vite;
+`npm run build`. The authenticated API proxies `/auth`, `/passports`, `/profile`, `/activity`, and `/assistant` through Vite;
 the standalone passport demo is separate. OCR needs system Tesseract on `PATH`. The assistant needs `GEMINI_API_KEY` (free from Google AI Studio): locally as a line in Git-ignored `backend/.env.local`, which `dev.py run` loads; on Render in the dashboard (`render.yaml` names it with `sync: false`). **Never commit the key: this repository is public.** Without it `/assistant/messages` returns 503 and everything else works.
 Local `dev.py run` migrates the schema; deployment uses `python migrate.py upgrade`
 before starting the API with `APP_ENV=production` and `SCHEMA_AUTO_CREATE=false`.
@@ -192,6 +192,16 @@ What we decided, why, and what we rejected. Newest at the bottom. Add an entry w
     security logs cover authentication. `admin_user_auth` reports both account types privately.
     SES sender/OAuth administration use sharafm032@gmail.com only; owner remains mhs86@mail.aub.edu.
     SES is sandboxed; see `docs/AUTH_OTP_AWS.md` for verified recipients and deployment prerequisites.
+18. **Signed-in password change (US 43).** Email/password travelers confirm their current password
+    at `POST /auth/change-password`; the new password follows registration rules. The current session
+    stays valid while all other sessions are revoked. Google-only accounts cannot change a password.
+    The account page shows the form only when `/auth/me` reports `password_enabled`.
+19. **Separate traveler profile (US 43).** `travelerprofile` has a traveler-owned primary/foreign key;
+    `Traveler.name` remains the display name. `GET /profile` returns null fields before creation;
+    `PUT /profile` replaces all fields. Names and past birth dates are validated; country codes are
+    1–3 uppercase letters without a backend country list, and `phonenumbers` normalizes E.164 phones.
+    The intake chat can import `ProfileFields` from `app.profile`. Passport validation is unchanged.
+20. **Account page (US 43).** `/account` holds the profile form, sign-in methods and password change; the signed-in welcome view links there. Country names come from the UN M49 table, with ICAO Doc 9303 codes (`D` for Germany, `RKS` for Kosovo, `TWN` for Taiwan). Account-page activity events are not recorded yet because the backend has no account-page identifier.
 
 ## Personal instructions
 

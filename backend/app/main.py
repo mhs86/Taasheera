@@ -28,6 +28,7 @@ from .password_reset import create_password_reset_router
 from .models import RegisterRequest, Traveler, TravelerPublic
 from .passport.router import create_passport_router
 from .passport.storage import PassportImageStorage
+from .profile import create_profile_router
 
 
 def create_app(database_url: str | None = None, *, reset_sender: ResetSender | None = None) -> FastAPI:
@@ -82,6 +83,7 @@ def create_app(database_url: str | None = None, *, reset_sender: ResetSender | N
     app.include_router(create_auth_router(get_session, current_traveler))
     app.include_router(create_google_auth_router(get_session, current_traveler))
     app.include_router(create_password_reset_router(get_session))
+    app.include_router(create_profile_router(get_session, current_traveler))
     passport_storage = PassportImageStorage(
         os.environ.get("PASSPORT_STORAGE_DIR", str(Path(__file__).resolve().parents[1] / "storage" / "passports"))
     )

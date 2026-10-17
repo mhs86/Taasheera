@@ -4,6 +4,60 @@ import { apiFetch } from './api.ts'
 export type Traveler = { id: number; name: string; email: string; sso_email?: string | null
   auth_type?: 'email_password' | 'google'; password_enabled?: boolean; last_login_method?: string | null }
 
+export type TravelerProfile = {
+  surname: string | null
+  given_names: string | null
+  birth_date: string | null
+  nationality: string | null
+  phone: string | null
+  address_line1: string | null
+  address_line2: string | null
+  address_city: string | null
+  address_region: string | null
+  address_postal_code: string | null
+  address_country: string | null
+}
+
+export type ProfileField = keyof TravelerProfile
+
+export class ProfileValidationError extends Error {
+  readonly fields: Partial<Record<ProfileField, string>>
+
+  constructor(message: string, fields: Partial<Record<ProfileField, string>>) {
+    super(message)
+    this.name = 'ProfileValidationError'
+    this.fields = fields
+  }
+}
+
+export async function getTravelerProfile(): Promise<TravelerProfile> {
+  const response = await protectedFetch('/profile', { silent: true, cache: 'no-store' })
+  if (!response.ok) throw new Error('Could not load your profile. Please try again.')
+  return response.json()
+}
+
+export async function putTravelerProfile(fields: TravelerProfile): Promise<TravelerProfile> {
+  const response = await protectedFetch('/profile', {
+    method: 'PUT', silent: true, cache: 'no-store',
+    headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(fields),
+  })
+  if (response.status === 422) {
+    const payload = await response.json().catch(() => ({}))
+    const errors: Partial<Record<ProfileField, string>> = {}
+    if (Array.isArray(payload.detail)) {
+      for (const issue of payload.detail) {
+        const field = issue.loc?.[1]
+        if (typeof field === 'string' && field in fields && typeof issue.msg === 'string') {
+          errors[field as ProfileField] = issue.msg.replace(/^Value error, /, '')
+        }
+      }
+    }
+    throw new ProfileValidationError('Please correct the highlighted fields.', errors)
+  }
+  if (!response.ok) throw new Error('Could not save your profile. Please try again.')
+  return response.json()
+}
+
 let configurationRequest: Promise<string> | null = null
 
 export function loadGoogleClientId(): Promise<string> {
@@ -36,6 +90,20 @@ export async function connectGoogle(idToken: string, password: string, expectedT
   if (response.status === 401 || response.status === 422) throw new Error('Google sign-in could not be verified. Try again.')
   if (!response.ok) throw new Error('Could not connect Google. Please try again.')
   return response.json()
+}
+
+export async function changePassword(currentPassword: string, newPassword: string): Promise<void> {
+  const response = await protectedFetch('/auth/change-password', {
+    method: 'POST', silent: true, cache: 'no-store',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+  })
+  if (response.status === 204) return
+  if (response.status === 403) throw new Error('Current password is incorrect.')
+  if (response.status === 400) throw new Error('Choose a different new password.')
+  if (response.status === 422) throw new Error('Use at least 8 characters and at most 72 UTF-8 bytes for your new password.')
+  if (response.status === 429) throw new Error('Too many attempts. Please wait 15 minutes before trying again.')
+  throw new Error('Could not change your password. Please try again.')
 }
 
 // Access tokens live only in this module's memory. The browser manages the
