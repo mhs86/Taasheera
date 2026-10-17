@@ -11,6 +11,8 @@ const controls = new Set([
   'faq-question', 'reset-request', 'reset-submit', 'reset-link',
   'passport-choose-file', 'passport-take-photo', 'passport-replace', 'passport-confirm',
   'assistant-open', 'assistant-close', 'assistant-send', 'assistant-suggestion', 'passport-link',
+  'application-start', 'application-resume', 'application-answer', 'application-change', 'application-cancel-change',
+  'application-passport-upload', 'application-passport-manual', 'application-return', 'application-ask',
 ])
 
 export default function ActivityTracker() {
