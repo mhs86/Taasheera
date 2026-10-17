@@ -48,11 +48,19 @@ Product rules that come from the domain:
 
 Group 7: Mohammad Sharafeddin, Dani Salman, Ahmad Zeid, Ahmad Al Hariri.
 
-Current sprint: **Sprint 1**. Goal (from Jira): a deployed app where a traveler can find the URL, sign in,
-upload a passport, have the details extracted and corrected, and have an onboarding page.
-Areas: Al Hariri (auth), Sharafeddin (infra, CI/CD, monitoring, frontend deploy), Salman (frontend
-shell, homepage, FAQ, error pages), Zeid (passport upload/extraction/review, minimal assistant).
-The product backlog (US 1 to US 130, 15 epics) is a guide and will change. Update this section each sprint.
+Current sprint: **Sprint 2** (Oct 6 to 20; Scrum Master Ahmad Zeid). Goal (from Jira): the app runs on AWS;
+a traveler signs in with Google or email, recovers a forgotten password, manages their profile, and starts
+an application through a guided chat (destination, visa type, passport, personal and trip details).
+Admins can find and suspend users.
+Areas: Sharafeddin (AWS move, US 1 Google sign-in, US 56 password reset), Zeid (guided application
+chat: US 4, 9, 10), Salman (admin roles, API and dashboard: US 131 to 133), Al Hariri (US 43 profile,
+US 119 sessions, US 30 privacy policy). Testers: Zeid tests Sharafeddin, Al Hariri tests Zeid,
+Salman tests Al Hariri, Sharafeddin tests Salman (code review by Zeid).
+Shared code: Sharafeddin owns the sign-in, Google and reset routes. Ending a traveler's other sessions
+goes through `revoke_other_sessions` in `backend/app/auth.py`; don't write a second one. The suspended-user
+check belongs in the single current-traveler loader. Alembic must keep one head: before merging a PR
+that adds a migration, point its `down_revision` at the current `dev` head.
+The product backlog (US 1 to US 133, 15 epics) is a guide and will change. Update this section each sprint.
 
 Git:
 - `main` is production. It only receives merges from `dev` once the sprint's work is tested.
@@ -79,12 +87,12 @@ Status key: **in use** = already in the code · **proposed** = tentative recomme
 | Frontend routing, toasts | React Router (data router: routes, 404, error boundaries), sonner (toasts via `src/api.ts`) | in use | Page crashes and failed API calls show a page or a toast instead of a blank screen |
 | Frontend styling | Plain CSS with custom properties (`src/index.css` tokens); DM Sans + Space Grotesk, layout modelled on Migraide (simple, no pricing) | in use | Small site, no extra build tooling; auth screens use the same site font and scoped form styles. Tailwind not adopted (see decision 6) |
 | Frontend data fetching | TanStack Query (loading/error states) | proposed | Adopt once pages load real data |
-| Backend hosting | Non-root container with Tesseract and health checks (`backend/Dockerfile`); free Render demo blueprint (`render.yaml`) | image and blueprint in use; live host pending | Free Render can demo auth; its expiring database and ephemeral files are unsuitable for real passport storage |
-| Frontend hosting | Netlify static hosting (`netlify.toml`, see `docs/NETLIFY.md`); Vercel config retained | Netlify build and SPA fallback in use; API proxy needs backend URL | Build `frontend/dist`; proxy `/auth`, `/passports`, `/profile`, `/activity`, and `/assistant` through the browser origin so cookies stay first-party |
-| Domain | One public frontend origin with an API proxy | proposed | Auth cookies work on the browser origin; production proxy and HTTPS are not configured yet |
-| CI/CD, observability | GitHub Actions CI, Lambda image deployment workflow, JSON request logs; Sentry, uptime check | CI/logs in use; Lambda workflow awaits AWS setup; monitoring proposed | CI builds both backend images; `deploy-backend.yml` pushes the Lambda image on main backend changes after OIDC setup |
+| Backend hosting | One AWS EC2 host (`us-east-1`) running the non-root FastAPI + Tesseract container with Docker Compose, SQLite and passport files on encrypted EBS (`deploy/aws/`); Render blueprint and Lambda image kept as alternatives | live at https://d3vh2ppjrlwxee.cloudfront.net; its config is in open PR #6 (not on `main`) | Cheapest always-on setup that keeps passport files on persistent private disk |
+| Frontend hosting | Nginx container on the same EC2 host serving the Vite build behind CloudFront; Netlify config (`netlify.toml`, `docs/NETLIFY.md`) kept as rollback | in use | One origin proxies `/auth`, `/passports`, `/profile`, `/sessions`, `/activity`, and `/assistant`, so cookies stay first-party. A new API prefix must be added to `vite.config.ts`, `write-netlify-redirects.mjs` and `deploy/aws/nginx.conf`, and must not match a page path |
+| Domain | CloudFront hostname with viewer HTTPS | in use; custom domain not configured | Auth cookies work on the browser origin; Google OAuth origins must list this hostname |
+| CI/CD, observability | GitHub Actions CI, Lambda image deployment workflow, JSON request logs; Sentry, uptime check | CI/logs in use; Lambda workflow awaits AWS setup; monitoring proposed | CI builds both backend images; `deploy-backend.yml` pushes the Lambda image on main backend changes after OIDC setup. The Lambda build pulls an adapter from public ECR, which sometimes rate-limits GitHub runners (HTTP 429): re-run the failed job |
 | User activity logging | SQLModel `ActivityEvent` plus private per-traveler JSONL mirrors in `backend/storage/activity-logs/` | in use | Auth and passport actions are recorded on the backend; allowlisted frontend page/control events use authenticated `/activity/events` |
-| Later sprints | Playwright (Python) for L2/L3 portal filling; pypdf for L1 PDF forms; a job queue (e.g. arq + Redis) for long agent runs; Telegram Bot API; transactional email | proposed | Not needed in Sprint 1 |
+| Later sprints | Playwright (Python) for L2/L3 portal filling; pypdf for L1 PDF forms; a job queue (e.g. arq + Redis) for long agent runs; Telegram Bot API; transactional email | proposed | Not needed yet |
 
 Layout: `backend/app/` (router factories included by `main.py`), `backend/alembic/`
 (schema revisions), `backend/scripts/` (passport demo), `backend/tests/`,
@@ -95,7 +103,7 @@ create `.venv`, install `requirements-dev.lock`, run `python dev.py setup` once,
 `python dev.py run` to load the ignored local JWT secret and public Google client ID and
 serve on port 8000. From `frontend/`, run `npm ci` and `npm run dev` on port 5173.
 Check with backend `python -m pytest -q` and frontend `npm test`, `npm run lint`,
-`npm run build`. The authenticated API proxies `/auth`, `/passports`, `/profile`, `/activity`, and `/assistant` through Vite;
+`npm run build`. The authenticated API proxies `/auth`, `/passports`, `/profile`, `/sessions`, `/activity`, and `/assistant` through Vite;
 the standalone passport demo is separate. OCR needs system Tesseract on `PATH`. The assistant needs `GEMINI_API_KEY` (free from Google AI Studio): locally as a line in Git-ignored `backend/.env.local`, which `dev.py run` loads; on Render in the dashboard (`render.yaml` names it with `sync: false`). **Never commit the key: this repository is public.** Without it `/assistant/messages` returns 503 and everything else works.
 Local `dev.py run` migrates the schema; deployment uses `python migrate.py upgrade`
 before starting the API with `APP_ENV=production` and `SCHEMA_AUTO_CREATE=false`.
@@ -156,14 +164,10 @@ What we decided, why, and what we rejected. Newest at the bottom. Add an entry w
     JSON request logs contain a server-generated request ID, route template, status, and duration;
     request bodies and values are omitted. Production hosting, durable private storage, API rewrites, secrets, and release automation
     remain deployment decisions.
-11. **Netlify frontend build.** Build the existing Vite app from `frontend/` and publish `dist/`.
-    A generated `_redirects` file serves SPA paths and, when `BACKEND_URL` is set, proxies API
-    paths to an HTTPS FastAPI host. Passport review now saves owner-scoped corrected fields beside
-    the private image. Netlify only hosts the frontend; backend hosting and durable storage remain required.
-12. **Free auth demo backend.** `render.yaml` deploys the existing API and a temporary PostgreSQL
-    database on Render. The Render startup command runs Alembic migrations because its free plan
-    has no pre-deploy command. Free instances lose local files and the free database expires after
-    30 days, so passport uploads are disabled there; durable storage is still needed for production.
+11. **Netlify frontend build (now the rollback).** Publishes `frontend/dist`; a generated `_redirects`
+    serves SPA paths and proxies API paths to `BACKEND_URL`. Passport review saves owner-scoped fields beside the image.
+12. **Free Render demo backend (now the rollback).** `render.yaml` runs migrations at startup; free instances
+    lose files and the database expires after 30 days, so passport uploads are disabled there.
 13. **Passport review UI (US 6–8).** One page at `/passport/:uploadId`: drag-and-drop or camera upload, then a
     review form where each field shows how far the machine could verify it (check failed / auto-corrected /
     passed check / confirm manually); editing a field marks it "Edited". Only confirmed fields are saved.
@@ -202,7 +206,7 @@ What we decided, why, and what we rejected. Newest at the bottom. Add an entry w
     1–3 uppercase letters without a backend country list, and `phonenumbers` normalizes E.164 phones.
     The intake chat can import `ProfileFields` from `app.profile`. Passport validation is unchanged.
 20. **Account page (US 43).** `/account` holds the profile form, sign-in methods and password change; the signed-in welcome view links there. Country names come from the UN M49 table, with ICAO Doc 9303 codes (`D` for Germany, `RKS` for Kosovo, `TWN` for Taiwan). Account-page activity events are not recorded yet because the backend has no account-page identifier.
-21. **Session management backend (US 119).** Auth sessions store a short parsed device label and UTC creation/last-active timestamps; old rows remain null. Last-active updates only on refresh. Owner-scoped `/sessions` endpoints list active sessions, revoke one other session, or revoke all others using the password-change revocation helper. Revoked bearer and refresh tokens fail on the next request. The account-page Sessions UI is pending.
+21. **Session management backend (US 119).** Auth sessions store a short parsed device label and UTC creation/last-active timestamps; old rows remain null. Last-active updates only on refresh. Owner-scoped `/sessions` endpoints list active sessions, revoke one other session, or revoke all others using the password-change revocation helper. Revoked bearer and refresh tokens fail on the next request. The Sessions section on `/account` marks the current device and can end one or all other sessions.
 
 ## Personal instructions
 
