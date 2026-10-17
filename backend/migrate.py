@@ -54,15 +54,20 @@ def upgrade() -> None:
                         ("add_column", "authsession", "created_at"),
                         ("add_column", "authsession", "last_active_at"),
                     }
+                    # Unversioned databases predate migrations, so none has the application tables.
+                    applications = {("add_table", "application"), ("add_index", "ix_application_traveler_id"),
+                                    ("add_table", "applicationanswer")}
                     if len(signatures) != len(differences) or signatures not in (
-                        session_details, profile | session_details,
-                        otp | profile | session_details, otp | sso | profile | session_details,
+                        applications | session_details, applications | profile | session_details,
+                        applications | otp | profile | session_details,
+                        applications | otp | sso | profile | session_details,
                     ):
                         raise RuntimeError("Existing unversioned schema differs from a known migration. Back it up before repair.")
+                    known = signatures - applications
                     prior_revision = (
-                        "d37a5b1e9c42" if signatures == session_details else
-                        "c82a91f4d670" if signatures == profile | session_details else
-                        "b14c9f30e2a7" if signatures == otp | profile | session_details else
+                        "d37a5b1e9c42" if known == session_details else
+                        "c82a91f4d670" if known == profile | session_details else
+                        "b14c9f30e2a7" if known == otp | profile | session_details else
                         "aeccbbace2e6"
                     )
                     command.stamp(config, prior_revision)
