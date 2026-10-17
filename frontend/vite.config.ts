@@ -16,6 +16,7 @@ export default defineConfig({
       '/sessions': 'http://127.0.0.1:8000',
       '/activity': 'http://127.0.0.1:8000',
       '/assistant': 'http://127.0.0.1:8000',
+      '/applications': 'http://127.0.0.1:8000',
     },
   },
 })
