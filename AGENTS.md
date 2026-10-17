@@ -88,13 +88,14 @@ Status key: **in use** = already in the code · **proposed** = tentative recomme
 | Frontend styling | Plain CSS with custom properties (`src/index.css` tokens); DM Sans + Space Grotesk, layout modelled on Migraide (simple, no pricing) | in use | Small site, no extra build tooling; auth screens use the same site font and scoped form styles. Tailwind not adopted (see decision 6) |
 | Frontend data fetching | TanStack Query (loading/error states) | proposed | Adopt once pages load real data |
 | Backend hosting | One AWS EC2 host (`us-east-1`) running the non-root FastAPI + Tesseract container with Docker Compose, SQLite and passport files on encrypted EBS (`deploy/aws/`); Render blueprint and Lambda image kept as alternatives | live at https://d3vh2ppjrlwxee.cloudfront.net; its config is in open PR #6 (not on `main`) | Cheapest always-on setup that keeps passport files on persistent private disk |
-| Frontend hosting | Nginx container on the same EC2 host serving the Vite build behind CloudFront; Netlify config (`netlify.toml`, `docs/NETLIFY.md`) kept as rollback | in use | One origin proxies `/auth`, `/passports`, `/profile`, `/sessions`, `/activity`, and `/assistant`, so cookies stay first-party. A new API prefix must be added to `vite.config.ts`, `write-netlify-redirects.mjs` and `deploy/aws/nginx.conf`, and must not match a page path |
+| Frontend hosting | Nginx container on the same EC2 host serving the Vite build behind CloudFront; Netlify config (`netlify.toml`, `docs/NETLIFY.md`) kept as rollback | in use | One origin proxies `/auth`, `/passports`, `/profile`, `/sessions`, `/activity`, `/assistant`, and `/applications`, so cookies stay first-party. A new API prefix must be added to `vite.config.ts`, `write-netlify-redirects.mjs` and `deploy/aws/nginx.conf`, and must not match a page path |
 | Domain | CloudFront hostname with viewer HTTPS | in use; custom domain not configured | Auth cookies work on the browser origin; Google OAuth origins must list this hostname |
 | CI/CD, observability | GitHub Actions CI, Lambda image deployment workflow, JSON request logs; Sentry, uptime check | CI/logs in use; Lambda workflow awaits AWS setup; monitoring proposed | CI builds both backend images; `deploy-backend.yml` pushes the Lambda image on main backend changes after OIDC setup. The Lambda build pulls an adapter from public ECR, which sometimes rate-limits GitHub runners (HTTP 429): re-run the failed job |
 | User activity logging | SQLModel `ActivityEvent` plus private per-traveler JSONL mirrors in `backend/storage/activity-logs/` | in use | Auth and passport actions are recorded on the backend; allowlisted frontend page/control events use authenticated `/activity/events` |
 | Later sprints | Playwright (Python) for L2/L3 portal filling; pypdf for L1 PDF forms; a job queue (e.g. arq + Redis) for long agent runs; Telegram Bot API; transactional email | proposed | Not needed yet |
 
-Layout: `backend/app/` (router factories included by `main.py`), `backend/alembic/`
+Layout: `backend/app/` (router factories included by `main.py`; `applications/` holds the flow engine and
+one question file per destination in `applications/questionnaires/`), `backend/alembic/`
 (schema revisions), `backend/scripts/` (passport demo), `backend/tests/`,
 `frontend/src/`, `frontend/tests/`. Deployment plan: `docs/DEPLOYMENT_PLAN.md`.
 
@@ -103,7 +104,7 @@ create `.venv`, install `requirements-dev.lock`, run `python dev.py setup` once,
 `python dev.py run` to load the ignored local JWT secret and public Google client ID and
 serve on port 8000. From `frontend/`, run `npm ci` and `npm run dev` on port 5173.
 Check with backend `python -m pytest -q` and frontend `npm test`, `npm run lint`,
-`npm run build`. The authenticated API proxies `/auth`, `/passports`, `/profile`, `/sessions`, `/activity`, and `/assistant` through Vite;
+`npm run build`. The authenticated API proxies `/auth`, `/passports`, `/profile`, `/sessions`, `/activity`, `/assistant`, and `/applications` through Vite;
 the standalone passport demo is separate. OCR needs system Tesseract on `PATH`. The assistant needs `GEMINI_API_KEY` (free from Google AI Studio): locally as a line in Git-ignored `backend/.env.local`, which `dev.py run` loads; on Render in the dashboard (`render.yaml` names it with `sync: false`). **Never commit the key: this repository is public.** Without it `/assistant/messages` returns 503 and everything else works.
 Local `dev.py run` migrates the schema; deployment uses `python migrate.py upgrade`
 before starting the API with `APP_ENV=production` and `SCHEMA_AUTO_CREATE=false`.
@@ -207,6 +208,15 @@ What we decided, why, and what we rejected. Newest at the bottom. Add an entry w
     The intake chat can import `ProfileFields` from `app.profile`. Passport validation is unchanged.
 20. **Account page (US 43).** `/account` holds the profile form, sign-in methods and password change; the signed-in welcome view links there. Country names come from the UN M49 table, with ICAO Doc 9303 codes (`D` for Germany, `RKS` for Kosovo, `TWN` for Taiwan). Account-page activity events are not recorded yet because the backend has no account-page identifier.
 21. **Session management backend (US 119).** Auth sessions store a short parsed device label and UTC creation/last-active timestamps; old rows remain null. Last-active updates only on refresh. Owner-scoped `/sessions` endpoints list active sessions, revoke one other session, or revoke all others using the password-change revocation helper. Revoked bearer and refresh tokens fail on the next request. The Sessions section on `/account` marks the current device and can end one or all other sessions.
+22. **Guided application chat (US 9, with the US 4 pieces it needs).** Schengen short-stay (type C) is the launch
+    destination: one harmonised form covers 29 countries. Questions, order, branching (`show_if`), an eligibility
+    gate (`stop_if`) and date rules (e.g. leave 3 months of passport validity) live in a JSON file per destination,
+    validated when loaded; `applications/flow.py` is a pure engine that picks the next question. The AI never picks
+    questions: the mid-flow assistant only explains, using the application's answers loaded by the server. The server
+    accepts only the current question or a change to an answered one, saves each answer immediately as a copy, and
+    re-checks all answers on every read and write, dropping ones that no longer apply. The passport question takes a
+    confirmed Sprint 1 review (`passport_upload_id`) or typed fields. Page path `/apply` (API prefix `/applications`).
+    *Rejected: LLM-chosen questions (not testable or auditable) and a hard-coded form per country.*
 
 ## Personal instructions
 
