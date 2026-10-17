@@ -15,7 +15,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlmodel import Session, SQLModel, select
 
 from .database import build_engine
-from .applications.router import create_applications_router
+from .applications.router import application_context, create_applications_router
 from .activity import activity_directory_from_environment, create_activity_router, record_activity
 from .assistant import DEFAULT_MODEL, create_assistant_router, gemini_ask
 from .auth import check_origin, create_auth_router, create_current_traveler
@@ -121,9 +121,14 @@ def create_app(database_url: str | None = None, *, reset_sender: ResetSender | N
         genai.Client(api_key=assistant_key, http_options={"timeout": 20_000, "retry_options": {"attempts": 2}}),
         os.environ.get("ASSISTANT_MODEL", DEFAULT_MODEL),
     ) if assistant_key else None
+
+    def load_application_context(traveler_id: int, application_id: str) -> str | None:
+        with Session(engine) as session:
+            return application_context(session, traveler_id, application_id)
+
     app.include_router(create_assistant_router(
         current_traveler_id, passport_storage.latest_review, assistant_ask,
-        record_event=record_assistant_activity,
+        record_event=record_assistant_activity, load_application=load_application_context,
     ))
 
     @app.exception_handler(RequestValidationError)
