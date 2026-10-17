@@ -119,6 +119,25 @@
   font-size: 18px;
 }
 
+.sessions-section { margin: 24px 0; }
+.sessions-section h2 { margin: 0 0 8px; font-size: 20px; }
+.sessions-list { margin: 0 0 16px; padding: 0; list-style: none; }
+.sessions-list li {
+  display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap;
+  gap: 12px; padding: 14px 0; border-top: 1px solid #dfe7e2;
+}
+.session-details { display: grid; gap: 4px; font-size: 14px; color: #60716e; }
+.session-details strong { color: #203b3a; }
+.session-current {
+  width: fit-content; padding: 3px 8px; border-radius: 999px;
+  background: #f0f5f2; color: #21665b; font-size: 12px; font-weight: 700;
+}
+.sign-in-page .session-end { width: auto; margin: 0; }
+.session-confirm { margin-top: 16px; padding: 14px; border: 1px solid #dfe7e2; border-radius: 8px; }
+.session-confirm p { margin: 0 0 12px; }
+.session-confirm-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.sign-in-page .session-confirm-actions button { width: auto; margin: 0; }
+
 .availability-note {
   margin: 0 0 24px;
   padding: 12px;

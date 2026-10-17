@@ -20,6 +20,36 @@ export type TravelerProfile = {
 
 export type ProfileField = keyof TravelerProfile
 
+export type TravelerSession = {
+  id: string
+  device_label: string
+  created_at: string | null
+  last_active_at: string | null
+  current: boolean
+}
+
+export async function getSessions(): Promise<TravelerSession[]> {
+  const response = await protectedFetch('/sessions', { silent: true, cache: 'no-store' })
+  if (!response.ok) throw new Error('Could not load your sessions. Please try again.')
+  return response.json()
+}
+
+export async function endSession(id: string): Promise<void> {
+  const response = await protectedFetch(`/sessions/${encodeURIComponent(id)}`, {
+    method: 'DELETE', silent: true, cache: 'no-store',
+  })
+  if (response.status !== 204) throw new Error('Could not end this session. Please try again.')
+}
+
+export async function endOtherSessions(): Promise<number> {
+  const response = await protectedFetch('/sessions/revoke-others', {
+    method: 'POST', silent: true, cache: 'no-store',
+  })
+  if (!response.ok) throw new Error('Could not sign out other devices. Please try again.')
+  const result = await response.json() as { ended: number }
+  return result.ended
+}
+
 export class ProfileValidationError extends Error {
   readonly fields: Partial<Record<ProfileField, string>>
 

@@ -9,6 +9,7 @@ import SetNewPassword from './SetNewPassword'
 import ConnectGoogle from './ConnectGoogle'
 import ChangePassword from './ChangePassword'
 import ProfileForm from './ProfileForm'
+import Sessions from './Sessions'
 import { readNavigation, type Navigation } from './navigation'
 
 const pageTitles = {
@@ -91,6 +92,7 @@ function App({ initialNavigation, accountPage = false, googleClientId = import.m
               configurationStatus={googleConfigurationStatus} onConfigurationRetry={onGoogleConfigurationRetry}
               onConnected={setTraveler} />
             {traveler.password_enabled === true && <ChangePassword />}
+            <Sessions />
           </> : <>
             <p className="intro">You are signed in.</p>
             <a href="/account" className="account-link">Edit your account details</a>
