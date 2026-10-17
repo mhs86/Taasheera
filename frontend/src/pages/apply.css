@@ -1,0 +1,361 @@
+/* Guided application chat (US 9) · reuses the passport page's fields and the assistant's bubbles
+ * states: default · selected choice · saving (aria-busy) · rejected answer (inline alert) · stopped · complete
+ * Every value is a token from index.css.
+ */
+
+.apply-page {
+  max-width: 760px;
+  padding-top: 56px;
+  padding-bottom: 96px;
+}
+
+.apply-status {
+  margin-top: 32px;
+}
+
+/* Start screen */
+
+.apply-resume {
+  margin-top: 32px;
+}
+
+.apply-resume h2,
+.visa-option h2 {
+  margin: 0 0 8px;
+  font-family: var(--font-display);
+  font-size: 20px;
+  line-height: 1.25;
+}
+
+.apply-resume ul,
+.visa-options {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.apply-resume li {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 4px 16px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--card);
+}
+
+.apply-resume li span {
+  color: var(--fg-muted);
+  font-size: 14px;
+}
+
+.visa-options {
+  margin-top: 32px;
+}
+
+.visa-option {
+  padding: 24px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--card);
+}
+
+.visa-option p {
+  margin: 0 0 18px;
+  color: var(--fg-muted);
+}
+
+/* Chat header: progress */
+
+.chat-header h1 {
+  margin: 0 0 16px;
+  font-family: var(--font-display);
+  font-size: clamp(26px, 4.5vw, 38px);
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+}
+
+.chat-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 14px;
+  padding: 0;
+  list-style: none;
+}
+
+.chat-steps li {
+  padding: 4px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--fg-dim);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.chat-steps .is-done {
+  color: var(--ok);
+  background: var(--ok-bg);
+}
+
+.chat-steps .is-current {
+  border-color: var(--brand);
+  color: var(--brand-dark);
+  background: var(--brand-muted);
+}
+
+.chat-progress {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--fg-muted);
+  font-size: 14px;
+}
+
+.chat-progress progress {
+  flex: 1;
+  height: 8px;
+  border: 0;
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--bg-raised);
+  accent-color: var(--brand);
+  appearance: none;
+}
+
+.chat-progress progress::-webkit-progress-bar {
+  background: var(--bg-raised);
+}
+
+.chat-progress progress::-webkit-progress-value {
+  background: var(--brand);
+  border-radius: 999px;
+}
+
+.chat-progress progress::-moz-progress-bar {
+  background: var(--brand);
+  border-radius: 999px;
+}
+
+/* Conversation */
+
+.chat-log,
+.chat-turn-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.chat-log {
+  margin-top: 32px;
+}
+
+.chat-log .bubble {
+  max-width: min(88%, 560px);
+}
+
+.bubble-help {
+  display: block;
+  margin-top: 6px;
+  color: var(--fg-muted);
+  font-size: 14px;
+}
+
+.bubble-label {
+  display: block;
+  margin-bottom: 2px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  opacity: 0.75;
+}
+
+/* Questions typed to the assistant sit outside the flow: outlined, not filled. */
+.bubble-aside.bubble-user {
+  border: 1px solid var(--brand);
+  background: var(--card);
+  color: var(--fg);
+}
+
+.bubble-aside.bubble-assistant {
+  border: 1px dashed var(--field-border);
+  background: var(--card);
+}
+
+.bubble-notice {
+  background: var(--warn-bg);
+  color: var(--warn);
+}
+
+.bubble-stop {
+  background: var(--danger-bg);
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.bubble-done {
+  background: var(--ok-bg);
+  color: var(--ok);
+  font-weight: 600;
+}
+
+.chat-reply {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 12px;
+}
+
+.reply-source {
+  flex-basis: 100%;
+  order: 3;
+  font-size: 13px;
+  opacity: 0.85;
+}
+
+.reply-change {
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.chat-answer {
+  align-self: stretch;
+}
+
+/* Answer inputs */
+
+.answer {
+  display: grid;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.answer-form {
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--card);
+}
+
+.answer-form .review {
+  margin: 0;
+}
+
+.answer-choices,
+.answer-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.answer-row input,
+.answer-row select,
+.answer-row textarea {
+  flex: 1 1 220px;
+  min-width: 0;
+  min-height: 48px;
+  padding: 10px 12px;
+  border: 1px solid var(--field-border);
+  border-radius: 10px;
+  background: var(--card);
+  color: var(--fg);
+  font: inherit;
+  resize: vertical;
+}
+
+.answer-row input:focus,
+.answer-row select:focus,
+.answer-row textarea:focus {
+  border-color: var(--brand);
+}
+
+.answer-row [aria-invalid='true'] {
+  border-color: var(--danger);
+  background: var(--danger-bg);
+}
+
+.choice {
+  min-height: 44px;
+  padding: 10px 18px;
+  border: 1px solid var(--field-border);
+  border-radius: 999px;
+  background: var(--card);
+  color: var(--fg);
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color var(--dur-quick) var(--ease-out), background-color var(--dur-quick) var(--ease-out);
+}
+
+.choice:hover:not(:disabled),
+.choice.is-selected {
+  border-color: var(--brand);
+  background: var(--brand-muted);
+  color: var(--brand-dark);
+}
+
+.choice:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.field-optional {
+  color: var(--fg-dim);
+  font-weight: 400;
+}
+
+.answer-error {
+  margin: 0;
+  color: var(--danger);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+/* Assistant question box */
+
+.chat-ask {
+  display: grid;
+  gap: 8px;
+  margin-top: 40px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+}
+
+.chat-ask label {
+  color: var(--fg-muted);
+  font-size: 14px;
+}
+
+@media (max-width: 560px) {
+  .review-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .chat-log .bubble {
+    max-width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .choice {
+    transition: none;
+  }
+}
+
+a.button {
+  text-decoration: none;
+}

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router'
+import { Link, useLocation, useNavigate, useParams } from 'react-router'
 import { protectedFetch, restoreSession, type Traveler } from '../auth'
+import { safeReturnPath } from '../application/format'
 import AssistantPanel from '../assistant/AssistantPanel'
 import Dropzone from '../passport/Dropzone'
 import ReviewForm from '../passport/ReviewForm'
@@ -27,6 +28,9 @@ export default function Passport() {
 
 function PassportPage({ uploadId }: { uploadId?: string }) {
   const navigate = useNavigate()
+  const { search } = useLocation()
+  // Set when the application chat sent the traveler here to add their passport.
+  const returnTo = safeReturnPath(search)
   const [traveler, setTraveler] = useState<Traveler | null | undefined>()
   const [phase, setPhase] = useState<'idle' | 'uploading' | 'reading' | 'ready'>(uploadId ? 'reading' : 'idle')
   const [imageUrl, setImageUrl] = useState('')
@@ -86,7 +90,7 @@ function PassportPage({ uploadId }: { uploadId?: string }) {
       const response = await protectedFetch('/passports', { method: 'POST', body })
       if (!response.ok) throw new Error(await problemText(response, 'Could not upload the photo. Please try again.'))
       const { id } = await response.json() as { id: string }
-      navigate(`/passport/${id}`)
+      navigate(`/passport/${id}${returnTo ? `?return=${encodeURIComponent(returnTo)}` : ''}`)
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Could not upload the photo.')
       setPhase(uploadId ? 'ready' : 'idle')
@@ -177,6 +181,8 @@ function PassportPage({ uploadId }: { uploadId?: string }) {
             saving={saving} saved={saved} onChange={change} onSubmit={save} />}
           {saved && <div className="passport-saved" role="status">
             <p>Your details are confirmed. The assistant can now answer questions about them.</p>
+            {returnTo && uploadId && <Link className="button button-primary" to={`${returnTo}?passport=${uploadId}`}
+              data-activity-id="application-return">Continue your application</Link>}
             <button type="button" className="button button-secondary" onClick={() => setAssistantOpen(true)}
               data-activity-id="assistant-open">Ask the assistant</button>
           </div>}
