@@ -515,3 +515,31 @@
 a.button {
   text-decoration: none;
 }
+
+/* Pre-filled answer to confirm (US 10) */
+
+.suggestion {
+  padding: 16px 18px;
+  border: 1px solid var(--brand);
+  border-radius: 16px;
+  background: var(--card);
+}
+
+.suggestion p {
+  margin: 0;
+}
+
+.suggestion-label {
+  color: var(--brand-dark);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.suggestion-value {
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.suggestion-ask {
+  color: var(--fg-muted);
+}

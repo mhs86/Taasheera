@@ -2,7 +2,7 @@
 // Kept free of React so the logic is easy to test and to explain.
 import { countries } from '../countries'
 import type { PassportFields } from '../passport/fields'
-import type { Address, AnswerValue, Question } from './api'
+import type { Address, AnswerSource, AnswerValue, Question } from './api'
 
 export function countryName(code: string): string {
   return countries.find(country => country.code === code)?.name ?? code
@@ -60,6 +60,13 @@ export function formatShortDate(iso: string): string {
   const day = iso.length === 10
   return new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: day ? 'UTC' : undefined })
     .format(new Date(day ? `${iso}T00:00:00Z` : iso))
+}
+
+// Where an answer came from, shown under it. Typed answers need no label.
+export function sourceLabel(source: AnswerSource): string | null {
+  if (source === 'passport_upload' || source === 'passport') return 'From your confirmed passport'
+  if (source === 'profile') return 'From your profile'
+  return null
 }
 
 export function travellers(groupSize: number): string {

@@ -15,6 +15,7 @@ type Props = {
   // Rejects with the server's message when the answer breaks a rule.
   onAnswer: (answer: Answer) => Promise<void>
   onCancel?: () => void
+  cancelLabel?: string
 }
 
 const blankAddress: Address = { line1: '', line2: '', city: '', region: '', postal_code: '', country: '' }
@@ -23,7 +24,7 @@ const MAX_BUTTONS = 10
 
 // One input per answer type. The server checks every answer again, so these are
 // conveniences (date ranges, phone keyboards), not the rules themselves.
-export default function AnswerInput({ question, applicationId, initial, onAnswer, onCancel }: Props) {
+export default function AnswerInput({ question, applicationId, initial, onAnswer, onCancel, cancelLabel = 'Keep my answer' }: Props) {
   const id = useId()
   const [text, setText] = useState(typeof initial === 'string' ? initial : '')
   const [address, setAddress] = useState<Address>(isAddress(initial) ? initial : blankAddress)
@@ -48,7 +49,7 @@ export default function AnswerInput({ question, applicationId, initial, onAnswer
   const errorId = `${id}-error`
   const described = error ? errorId : undefined
   const cancel = onCancel && <button type="button" className="button button-secondary" onClick={onCancel}
-    disabled={saving} data-activity-id="application-cancel-change">Keep my answer</button>
+    disabled={saving} data-activity-id="application-cancel-change">{cancelLabel}</button>
   const continueButton = (label = 'Continue', disabled = false) =>
     <button type="submit" className="button button-primary" disabled={saving || disabled}
       aria-busy={saving || undefined} data-activity-id="application-answer">{saving ? 'Saving…' : label}</button>

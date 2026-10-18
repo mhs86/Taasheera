@@ -19,9 +19,13 @@ export type Question = {
   max_length: number
   date_min: string | null
   date_max: string | null
+  // What the saved passport or profile already says (US 10), for the traveler to confirm or change.
+  suggestion: Suggestion | null
 }
 
-export type Answer = { question: Question; value: AnswerValue; source: 'traveler' | 'passport_upload' }
+export type Suggestion = { value: AnswerValue; source: 'passport' | 'profile' }
+export type AnswerSource = 'traveler' | 'passport_upload' | 'passport' | 'profile'
+export type Answer = { question: Question; value: AnswerValue; source: AnswerSource }
 export type Status = 'DRAFT' | 'INELIGIBLE' | 'ANSWERS_COMPLETE'
 export type Progress = { step_number: number; step_count: number; step_title: string; answered: number; total: number }
 
@@ -104,8 +108,9 @@ export async function getApplication(id: string): Promise<ApplicationState | nul
   return response.json()
 }
 
-// Either a value, or the id of a passport upload the traveler confirmed on the passport page.
-export type AnswerInput = { value: AnswerValue } | { passport_upload_id: string }
+// A value; the id of a passport upload the traveler confirmed on the passport page; or a yes to
+// the suggestion, which the server works out again itself.
+export type AnswerInput = { value: AnswerValue } | { passport_upload_id: string } | { use_suggestion: true }
 
 export async function saveAnswer(id: string, questionId: string, answer: AnswerInput): Promise<ApplicationState> {
   const response = await protectedFetch(`/applications/${id}/answers/${questionId}`, {

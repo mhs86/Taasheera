@@ -5,11 +5,12 @@ import { askAssistant, type ChatTurn } from '../assistant/api'
 import AnswerInput from '../application/AnswerInput'
 import ApplicationsSidebar from '../application/ApplicationsSidebar'
 import StartChat from '../application/StartChat'
+import SuggestedAnswer from '../application/SuggestedAnswer'
 import {
   getApplication, listApplications, saveAnswer,
   type AnswerInput as Answer, type ApplicationState, type ApplicationSummary,
 } from '../application/api'
-import { formatAnswer, formatDate, returnedPassport, travellers } from '../application/format'
+import { formatAnswer, formatDate, returnedPassport, sourceLabel, travellers } from '../application/format'
 import { signInPath } from '../paths'
 import '../ui.css'
 import '../assistant/assistant.css'
@@ -219,7 +220,7 @@ function ApplicationChat({ applicationId, onChange }: ChatProps) {
                 initial={saved.value} onAnswer={input => answer(saved.question.id, input)} onCancel={() => setEditing(null)} /></li>
             : <li className="bubble bubble-user chat-reply">
                 <span>{formatAnswer(saved.question, saved.value)}</span>
-                {saved.source === 'passport_upload' && <span className="reply-source">From your confirmed passport</span>}
+                {sourceLabel(saved.source) && <span className="reply-source">{sourceLabel(saved.source)}</span>}
                 <button type="button" className="reply-change" onClick={() => setEditing(saved.question.id)}
                   aria-label={`Change your answer to: ${saved.question.prompt}`} data-activity-id="application-change">Change</button>
               </li>}
@@ -238,8 +239,12 @@ function ApplicationChat({ applicationId, onChange }: ChatProps) {
           </li>
           <li className="chat-answer">
             {handoffError && <p className="answer-error" role="alert">{handoffError}</p>}
-            <AnswerInput key={application.current.id} question={application.current} applicationId={applicationId}
-              onAnswer={input => answer(application.current!.id, input)} />
+            {application.current.suggestion
+              ? <SuggestedAnswer key={application.current.id}
+                  question={{ ...application.current, suggestion: application.current.suggestion }}
+                  applicationId={applicationId} onAnswer={input => answer(application.current!.id, input)} />
+              : <AnswerInput key={application.current.id} question={application.current} applicationId={applicationId}
+                  onAnswer={input => answer(application.current!.id, input)} />}
           </li>
         </ol>
       </li>}

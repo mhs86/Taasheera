@@ -382,6 +382,55 @@ test('a crafted return link is ignored by the passport page', async () => {
   assert.equal(button('Continue your application'), undefined)
 })
 
+// --- Pre-fill (US 10) ----------------------------------------------------------
+
+const PHONE = question('phone', 'phone', 'What phone number can the embassy reach you on?', {
+  step_id: 'personal', suggestion: { value: '+96171123456', source: 'profile' },
+})
+
+test('a known answer is shown to confirm instead of asked again', async () => {
+  handlers = signedIn({
+    [`GET /applications/${APP}`]: () => json(state([], PHONE)),
+    [`PUT /applications/${APP}/answers/phone`]: () => json(state([[PHONE, '+96171123456', 'profile']], ARRIVAL)),
+  })
+  await render(`/apply/${APP}`)
+  assert.equal($('.suggestion-label').textContent, 'From your profile')
+  assert.equal($('.suggestion-value').textContent, '+96171123456')
+  assert.equal($('#current-question input'), null, 'no empty field to retype it into')
+  await click(button("Yes, that's right"))
+  assert.deepEqual(bodyOf(`PUT /applications/${APP}/answers/phone`), { use_suggestion: true })
+  assert.match($('.chat-reply:not(.chat-fixed)').textContent, /\+96171123456From your profile/)
+})
+
+test('changing a known answer starts from it and says what it changes', async () => {
+  handlers = signedIn({
+    [`GET /applications/${APP}`]: () => json(state([], PHONE)),
+    [`PUT /applications/${APP}/answers/phone`]: () => json(state([[PHONE, '+33123456789']], ARRIVAL)),
+  })
+  await render(`/apply/${APP}`)
+  await click(button('Change it'))
+  assert.match(text(), /only changes this application, not your profile/)
+  await click(button('Go back'))
+  assert.ok(button("Yes, that's right"), 'back to the saved answer')
+  await click(button('Change it'))
+  const input = $('#current-question input[type="tel"]')
+  assert.equal(input.value, '+96171123456')
+  await type(input, '+33 1 23 45 67 89')
+  await submit(input.form)
+  assert.deepEqual(bodyOf(`PUT /applications/${APP}/answers/phone`), { value: '+33 1 23 45 67 89' })
+})
+
+test('a saved passport is offered the same way', async () => {
+  const offered = { ...PASSPORT, suggestion: { value: SPECIMEN, source: 'passport' } }
+  handlers = signedIn({ [`GET /applications/${APP}`]: () => json(state([], offered)) })
+  await render(`/apply/${APP}`)
+  assert.equal($('.suggestion-label').textContent, 'From your confirmed passport')
+  assert.match($('.suggestion-value').textContent, /ERIKSSON, ANNA MARIA · passport L898902C3/)
+  await click(button('Change it'))
+  assert.match(text(), /not your saved passport/)
+  assert.equal($('#passport-surname').value, 'ERIKSSON')
+})
+
 // --- Assistant mid-flow -----------------------------------------------------
 
 test('a question to the assistant keeps the traveler on the same step', async () => {
