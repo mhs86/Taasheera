@@ -217,6 +217,12 @@ What we decided, why, and what we rejected. Newest at the bottom. Add an entry w
     re-checks all answers on every read and write, dropping ones that no longer apply. The passport question takes a
     confirmed Sprint 1 review (`passport_upload_id`) or typed fields. Page path `/apply` (API prefix `/applications`).
     *Rejected: LLM-chosen questions (not testable or auditable) and a hard-coded form per country.*
+23. **Opening steps and applications sidebar (US 4, US 12).** `/apply` asks destination, visa type and group size
+    as chat steps; they choose the question file, so they come before the record exists and can't change after
+    (a new destination is a new application). Group size is recorded only (`application.group_size`) until group
+    applications (US 81). A sidebar lists the traveler's applications, named by the answers the question file's
+    `summary` points at (place, trip date); each answer's response updates it, so no extra list request. The
+    signed-in header and homepage button is "Start an application"; the passport page stays in the footer.
 
 ## Personal instructions
 
