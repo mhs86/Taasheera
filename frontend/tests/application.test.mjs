@@ -47,10 +47,21 @@ const PASSPORT = question('passport', 'passport', "Let's add your passport.", { 
 const ARRIVAL = question('arrival_date', 'date', 'When do you plan to arrive?',
   { step_id: 'trip', date_min: '2026-10-19', date_max: '2027-04-18' })
 
+const OPTION = {
+  destination: 'SCHENGEN', visa_type: 'short_stay', title: 'Schengen short-stay visa (type C)',
+  destination_label: 'Schengen area', destination_description: '29 European countries',
+  visa_label: 'Short stay (type C)', visa_description: 'Up to 90 days in any 180-day period.',
+}
+const summary = (extra = {}) => ({
+  id: APP, title: OPTION.title, destination: 'SCHENGEN', visa_type: 'short_stay',
+  destination_label: 'Schengen area', visa_label: 'Short stay (type C)', status: 'DRAFT', group_size: 1,
+  place: null, trip_date: null, answered: 0, total: 18,
+  created_at: '2026-10-18T09:00:00Z', updated_at: '2026-10-18T10:00:00Z', ...extra,
+})
+
 function state(answers, current, extra = {}) {
   return {
-    id: APP, title: 'Schengen short-stay visa (type C)', status: current ? 'DRAFT' : 'ANSWERS_COMPLETE',
-    updated_at: '2026-10-18T10:00:00Z', destination: 'SCHENGEN', visa_type: 'short_stay',
+    ...summary(), status: current ? 'DRAFT' : 'ANSWERS_COMPLETE', answered: answers.length, total: 4,
     steps: [{ id: 'eligibility', title: 'Eligibility' }, { id: 'passport', title: 'Passport' }],
     progress: { step_number: 1, step_count: 2, step_title: 'Eligibility', answered: answers.length, total: 4 },
     answers: answers.map(([q, value, source = 'traveler']) => ({ question: q, value, source })),
@@ -71,6 +82,7 @@ const signedIn = extra => ({
   'POST /auth/refresh': () => json({ access_token: 'token' }),
   'GET /auth/me': () => json({ id: 1, name: 'Anna', email: 'anna@example.com' }),
   'POST /activity/events': () => new Response(null, { status: 204 }),
+  'GET /applications': () => json([]),
   ...extra,
 })
 const bodyOf = key => JSON.parse(calls.filter(call => call.key === key).at(-1).body)
@@ -143,29 +155,105 @@ test('application pages have their own activity page id, without the id itself',
   assert.equal(safePage('/apply/not-an-id', ''), 'not-found')
 })
 
-// --- Starting --------------------------------------------------------------
+// --- Starting (US 4) -------------------------------------------------------
 
-test('starting an application opens its chat at the first question', async () => {
+test('the opening steps pick the visa and record who is travelling', async () => {
   handlers = signedIn({
-    'GET /applications/options': () => json([{ destination: 'SCHENGEN', visa_type: 'short_stay', title: 'Schengen short-stay visa (type C)' }]),
-    'GET /applications': () => json([]),
+    'GET /applications/options': () => json([OPTION]),
+    'POST /applications': () => json(state([], PURPOSE, { group_size: 3 }), 201),
+    [`GET /applications/${APP}`]: () => json(state([], PURPOSE, { group_size: 3 })),
+  })
+  const router = await render('/apply')
+  assert.match(text(), /Where are you travelling to\?/)
+  await click([...container.querySelectorAll('.choice-card')].find(card => card.textContent.includes('Schengen area')))
+  assert.match(text(), /Which visa do you need\?/)
+  await click([...container.querySelectorAll('.choice-card')].find(card => card.textContent.includes('Short stay (type C)')))
+  assert.match(text(), /just for yourself, or travelling with family or a group\?/)
+  await click(button('Family or group'))
+  assert.match(text(), /How many people are travelling, including you\?/)
+  await click(button('3'))
+  assert.deepEqual(bodyOf('POST /applications'), { destination: 'SCHENGEN', visa_type: 'short_stay', group_size: 3 })
+  assert.equal(router.state.location.pathname, `/apply/${APP}`)
+  // The chat repeats the opening answers, then asks the destination's first question.
+  assert.match(text(), /Schengen area.*Short stay \(type C\).*Family or group of 3/)
+  assert.match(text(), /What's the main purpose of your trip\?/)
+  assert.match(text(), /Step 1 of 2/)
+  // The new application appears in the sidebar straight away.
+  assert.equal($('.apps-item[aria-current="page"]').getAttribute('href'), `/apply/${APP}`)
+})
+
+test('travelling alone starts the application in one click', async () => {
+  handlers = signedIn({
+    'GET /applications/options': () => json([OPTION]),
     'POST /applications': () => json(state([], PURPOSE), 201),
     [`GET /applications/${APP}`]: () => json(state([], PURPOSE)),
   })
-  const router = await render('/apply')
-  assert.match(text(), /Schengen short-stay visa \(type C\)/)
-  await click(button('Start this application'))
-  assert.deepEqual(bodyOf('POST /applications'), { destination: 'SCHENGEN', visa_type: 'short_stay' })
-  assert.equal(router.state.location.pathname, `/apply/${APP}`)
-  assert.match(text(), /What's the main purpose of your trip\?/)
-  assert.match(text(), /Step 1 of 2/)
-  assert.match(text(), /0 of 4 questions answered/)
+  await render('/apply')
+  await click($('.choice-card'))
+  await click($('.choice-card'))
+  await click(button('Just me'))
+  assert.deepEqual(bodyOf('POST /applications'), { destination: 'SCHENGEN', visa_type: 'short_stay', group_size: 1 })
+  assert.match(text(), /Just me/)
+})
+
+test('changing the destination clears the steps after it', async () => {
+  handlers = signedIn({ 'GET /applications/options': () => json([OPTION]) })
+  await render('/apply')
+  await click($('.choice-card'))
+  await click($('.choice-card'))
+  assert.match(text(), /just for yourself/)
+  await click($('[aria-label="Change your answer to: Where are you travelling to?"]'))
+  assert.doesNotMatch(text(), /Which visa do you need\?/)
+  assert.ok($('.choice-card'))
 })
 
 test('signed-out visitors are asked to sign in', async () => {
   handlers = { 'POST /auth/refresh': () => json({ detail: 'No session' }, 401) }
   await render('/apply')
   assert.match(text(), /Please sign in to start an application/)
+})
+
+// --- Sidebar (US 12) ---------------------------------------------------------
+
+test('the sidebar lists applications by where and when, newest first', async () => {
+  const other = 'c'.repeat(32)
+  handlers = signedIn({
+    'GET /applications': () => json([
+      summary({ place: 'France', trip_date: '2027-01-10', answered: 13, total: 18 }),
+      summary({ id: other, status: 'ANSWERS_COMPLETE', place: 'Germany', updated_at: '2026-10-17T10:00:00Z' }),
+    ]),
+    [`GET /applications/${APP}`]: () => json(state([[PURPOSE, 'tourism']], LONG_STAY, {
+      place: 'France', trip_date: '2027-01-10' })),
+  })
+  await render(`/apply/${APP}`)
+  const items = [...container.querySelectorAll('.apps-item')]
+  assert.deepEqual(items.map(item => item.querySelector('.apps-name').textContent), ['France', 'Germany'])
+  assert.match(items[0].textContent, /Arriving 10 Jan 2027/)
+  assert.match(items[0].textContent, /In progress · 1 of 4/)
+  assert.match(items[1].textContent, /Answers complete/)
+  assert.equal(items[0].getAttribute('aria-current'), 'page')
+  assert.equal(items[1].getAttribute('href'), `/apply/${other}`)
+  assert.match($('.chat-header').textContent, /France · arriving 10 January 2027/)
+})
+
+test('answering updates the sidebar without reloading the list', async () => {
+  handlers = signedIn({
+    'GET /applications': () => json([summary({ total: 4 })]),
+    [`GET /applications/${APP}`]: () => json(state([], PURPOSE)),
+    [`PUT /applications/${APP}/answers/purpose`]: () => json(state([[PURPOSE, 'business']], LONG_STAY)),
+  })
+  await render(`/apply/${APP}`)
+  assert.match($('.apps-item').textContent, /0 of 4/)
+  await click(button('Business'))
+  assert.match($('.apps-item').textContent, /1 of 4/)
+  assert.equal(calls.filter(call => call.key === 'GET /applications').length, 1)
+})
+
+test('with no applications yet, the sidebar explains itself', async () => {
+  handlers = signedIn({ 'GET /applications/options': () => json([OPTION]) })
+  await render('/apply')
+  assert.match($('.apps-sidebar').textContent, /Applications you start appear here/)
+  assert.equal($('.apps-new').getAttribute('aria-current'), 'page')
 })
 
 // --- Answering -------------------------------------------------------------
@@ -179,7 +267,7 @@ test('a choice answer is saved at once and the next question follows', async () 
   await click(button('Business'))
   assert.deepEqual(bodyOf(`PUT /applications/${APP}/answers/purpose`), { value: 'business' })
   assert.match(text(), /Will you stay more than 90 days\?/)
-  assert.ok($('.chat-reply').textContent.startsWith('Business'))
+  assert.ok($('.chat-reply:not(.chat-fixed)').textContent.startsWith('Business'))
   assert.match(text(), /1 of 4 questions answered/)
 })
 

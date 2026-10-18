@@ -25,10 +25,25 @@ export type Answer = { question: Question; value: AnswerValue; source: 'traveler
 export type Status = 'DRAFT' | 'INELIGIBLE' | 'ANSWERS_COMPLETE'
 export type Progress = { step_number: number; step_count: number; step_title: string; answered: number; total: number }
 
-export type ApplicationSummary = { id: string; title: string; status: Status; updated_at: string }
-export type ApplicationState = ApplicationSummary & {
+// What the applications sidebar shows (US 12).
+export type ApplicationSummary = {
+  id: string
+  title: string
   destination: string
   visa_type: string
+  destination_label: string
+  visa_label: string
+  status: Status
+  group_size: number
+  // From the answers that name the trip, once given: "France", "2027-01-10".
+  place: string | null
+  trip_date: string | null
+  answered: number
+  total: number
+  created_at: string
+  updated_at: string
+}
+export type ApplicationState = ApplicationSummary & {
   steps: { id: string; title: string }[]
   progress: Progress
   answers: Answer[]
@@ -36,7 +51,15 @@ export type ApplicationState = ApplicationSummary & {
   stopped: string | null
   cleared: string[]
 }
-export type VisaOption = { destination: string; visa_type: string; title: string }
+export type VisaOption = {
+  destination: string
+  visa_type: string
+  title: string
+  destination_label: string
+  destination_description: string
+  visa_label: string
+  visa_description: string
+}
 
 // A rejected answer: the server's message is written for the traveler, so show it as is.
 export class AnswerError extends Error {
@@ -65,10 +88,10 @@ export async function listApplications(): Promise<ApplicationSummary[]> {
   return response.json()
 }
 
-export async function startApplication(option: VisaOption): Promise<ApplicationState> {
+export async function startApplication(option: VisaOption, groupSize: number): Promise<ApplicationState> {
   const response = await protectedFetch('/applications', {
     method: 'POST', headers: json, cache: 'no-store',
-    body: JSON.stringify({ destination: option.destination, visa_type: option.visa_type }),
+    body: JSON.stringify({ destination: option.destination, visa_type: option.visa_type, group_size: groupSize }),
   })
   if (!response.ok) throw new Error(await detail(response, 'Could not start the application. Please try again.'))
   return response.json()

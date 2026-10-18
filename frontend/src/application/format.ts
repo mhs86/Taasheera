@@ -54,3 +54,14 @@ export function returnedPassport(search: string): string | null {
   const upload = new URLSearchParams(search).get('passport')
   return upload && UPLOAD_ID.test(upload) ? upload : null
 }
+
+// A date answer (YYYY-MM-DD) is a calendar day, shown as is; a timestamp is shown in the traveler's time zone.
+export function formatShortDate(iso: string): string {
+  const day = iso.length === 10
+  return new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: day ? 'UTC' : undefined })
+    .format(new Date(day ? `${iso}T00:00:00Z` : iso))
+}
+
+export function travellers(groupSize: number): string {
+  return groupSize === 1 ? 'Just me' : `Family or group of ${groupSize}`
+}
