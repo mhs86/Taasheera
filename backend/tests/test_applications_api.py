@@ -78,8 +78,19 @@ def answer_all(client, headers, application_id, answers=ANSWERS, stop_at=None):
 
 def test_options_list_the_schengen_questionnaire(api):
     client, _, headers, _ = api
-    assert client.get("/applications/options", headers=headers[0]).json() == [
-        {"destination": "SCHENGEN", "visa_type": "short_stay", "title": "Schengen short-stay visa (type C)"}]
+    [option] = client.get("/applications/options", headers=headers[0]).json()
+    assert option["destination"] == "SCHENGEN" and option["visa_type"] == "short_stay"
+    assert option["destination_label"] == "Schengen area" and option["visa_label"] == "Short stay (type C)"
+    assert "90 days" in option["visa_description"]
+
+
+def test_group_size_is_recorded_when_starting(api):
+    client, app, headers, _ = api
+    state = client.post("/applications", headers=headers[0], json={**START, "group_size": 3}).json()
+    assert state["group_size"] == 3
+    assert start(client, headers[0])["group_size"] == 1
+    for size in (0, 11, "two"):
+        assert client.post("/applications", headers=headers[0], json={**START, "group_size": size}).status_code == 422
 
 
 def test_starting_creates_a_draft_that_asks_the_first_question(api):
@@ -124,6 +135,23 @@ def test_a_full_walk_ends_with_a_complete_application(api):
                                      "region": "", "postal_code": "", "country": "LBN"}
     with Session(app.state.engine) as session:
         assert len(session.exec(select(ApplicationAnswer)).all()) == len(ANSWERS)
+
+
+def test_the_list_names_each_application_by_its_answers(api):
+    client, _, headers, _ = api
+    first = start(client, headers[0])["id"]
+    second = client.post("/applications", headers=headers[0], json={**START, "group_size": 2}).json()["id"]
+    answer_all(client, headers[0], first, stop_at="departure_date")
+    listed = client.get("/applications", headers=headers[0]).json()
+    # Most recently changed first.
+    assert [item["id"] for item in listed] == [first, second]
+    assert listed[0]["place"] == "France" and listed[0]["trip_date"] == ARRIVAL.isoformat()
+    assert listed[0]["destination_label"] == "Schengen area" and listed[0]["status"] == "DRAFT"
+    assert listed[0]["answered"] == 13 and listed[0]["total"] == 18
+    assert listed[1]["place"] is None and listed[1]["trip_date"] is None and listed[1]["group_size"] == 2
+    assert listed[1]["answered"] == 0
+    # Timestamps carry their UTC offset even though SQLite stores them without one.
+    assert listed[0]["created_at"].endswith(("Z", "+00:00"))
 
 
 def test_each_answer_is_saved_immediately_and_resumes(api):
@@ -271,11 +299,29 @@ def test_the_assistant_context_is_owner_scoped_and_lists_answers(api):
     with Session(app.state.engine) as session:
         assert application_context(session, 2, application_id) is None
         context = application_context(session, 1, application_id)
-    assert context.startswith("Visa: Schengen short-stay visa (type C)\n")
+    assert context.startswith("Visa: Schengen short-stay visa (type C)\nTravelling: alone\n")
     assert "Current question: When do you plan to arrive in the Schengen area?" in context
     assert "- Which Schengen country is your main destination? France" in context
     assert "- Will you stay in the Schengen area for more than 90 days in any 180-day period? No" in context
     assert "line1: 1 Example Street, city: Beirut, country: LBN" in context
+
+
+def test_group_size_migration_counts_existing_applications_as_one_traveler(tmp_path, monkeypatch):
+    url = f"sqlite:///{(tmp_path / 'before-group-size.db').as_posix()}"
+    monkeypatch.setenv("DATABASE_URL", url)
+    command.upgrade(migration_config(), "1f04330ae8cb")
+    engine = build_engine(url)
+    with engine.begin() as connection:
+        connection.execute(text("INSERT INTO traveler (id,name,email,password_hash,auth_type) "
+                                "VALUES (1,'Existing','existing@example.com','hash','email_password')"))
+        connection.execute(text(
+            "INSERT INTO application (id,traveler_id,questionnaire_id,questionnaire_version,destination,visa_type,"
+            "status,created_at,updated_at) VALUES ('" + "c" * 32 + "',1,'schengen-short-stay',1,'SCHENGEN',"
+            "'short_stay','DRAFT','2026-10-18 10:00:00','2026-10-18 10:00:00')"))
+    command.upgrade(migration_config(), "head")
+    with Session(engine) as session:
+        assert session.get(Application, "c" * 32).group_size == 1
+    engine.dispose()
 
 
 def test_migration_upgrades_from_previous_head(tmp_path, monkeypatch):

@@ -26,12 +26,18 @@ class VisaOption(BaseModel):
     destination: str
     visa_type: str
     title: str
+    destination_label: str
+    destination_description: str
+    visa_label: str
+    visa_description: str
 
 
 class StartRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     destination: str = Field(min_length=1, max_length=20)
     visa_type: str = Field(min_length=1, max_length=40)
+    # Counting the traveler. Recorded only: each application is still for one person (US 81 adds groups).
+    group_size: int = Field(default=1, ge=1, le=10)
 
 
 class AnswerRequest(BaseModel):
@@ -74,15 +80,26 @@ class StepPublic(BaseModel):
 
 
 class ApplicationSummary(BaseModel):
+    """What the applications sidebar shows (US 12): the visa, where to, when, and how far along."""
+
     id: str
     title: str
+    destination: str
+    visa_type: str
+    destination_label: str
+    visa_label: str
     status: Status
+    group_size: int
+    # From the answers the question file names in "summary", once given: "France", "2027-01-10".
+    place: str | None
+    trip_date: date | None
+    answered: int
+    total: int
+    created_at: datetime
     updated_at: datetime
 
 
 class ApplicationState(ApplicationSummary):
-    destination: str
-    visa_type: str
     steps: list[StepPublic]
     progress: flow.Progress
     # Answered questions in the order they were asked: the chat's history.
@@ -93,6 +110,25 @@ class ApplicationState(ApplicationSummary):
     stopped: str | None
     # Answers removed because an earlier change made them no longer apply.
     cleared: list[str]
+
+
+def _utc(value: datetime) -> datetime:
+    # SQLite drops timezone information when reading a datetime back (as in sessions.py).
+    return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value
+
+
+def _summary(application: Application, questionnaire: flow.Questionnaire,
+             answers: flow.Answers) -> dict[str, Any]:
+    progress = flow.progress(questionnaire, answers)
+    trip_date = answers.get(questionnaire.summary.date) if questionnaire.summary.date else None
+    return dict(
+        id=application.id, title=questionnaire.title, destination=application.destination,
+        visa_type=application.visa_type, destination_label=questionnaire.destination_label,
+        visa_label=questionnaire.visa_label, status=application.status, group_size=application.group_size,
+        place=flow.summary_place(questionnaire, answers), trip_date=trip_date,
+        answered=progress.answered, total=progress.total,
+        created_at=_utc(application.created_at), updated_at=_utc(application.updated_at),
+    )
 
 
 def _status(questionnaire: flow.Questionnaire, answers: flow.Answers) -> Status:
@@ -108,7 +144,7 @@ def application_context(session: Session, traveler_id: int, application_id: str)
         return None
     rows = session.exec(select(ApplicationAnswer).where(ApplicationAnswer.application_id == application.id))
     questionnaire = flow.load_questionnaire(application.questionnaire_id)
-    return flow.describe(questionnaire, {row.question_id: row.value for row in rows})
+    return flow.describe(questionnaire, {row.question_id: row.value for row in rows}, application.group_size)
 
 
 def create_applications_router(
@@ -166,9 +202,7 @@ def create_applications_router(
               rows: dict[str, ApplicationAnswer], cleared: list[str]) -> ApplicationState:
         current = flow.next_question(questionnaire, answers)
         return ApplicationState(
-            id=application.id, title=questionnaire.title, status=application.status,
-            updated_at=application.updated_at, destination=application.destination,
-            visa_type=application.visa_type,
+            **_summary(application, questionnaire, answers),
             steps=[StepPublic(id=step.id, title=step.title) for step in questionnaire.steps],
             progress=flow.progress(questionnaire, answers),
             answers=[
@@ -183,7 +217,9 @@ def create_applications_router(
 
     @router.get("/options", response_model=list[VisaOption])
     def options(traveler: TravelerDep):
-        return [VisaOption(destination=q.destination, visa_type=q.visa_type, title=q.title)
+        return [VisaOption(destination=q.destination, visa_type=q.visa_type, title=q.title,
+                           destination_label=q.destination_label, destination_description=q.destination_description,
+                           visa_label=q.visa_label, visa_description=q.visa_description)
                 for q in flow.available_questionnaires()]
 
     @router.post("", response_model=ApplicationState, status_code=201, dependencies=[Depends(check_origin)])
@@ -195,7 +231,7 @@ def create_applications_router(
         application = Application(
             id=uuid.uuid4().hex, traveler_id=traveler.id, questionnaire_id=questionnaire.id,
             questionnaire_version=questionnaire.version, destination=questionnaire.destination,
-            visa_type=questionnaire.visa_type,
+            visa_type=questionnaire.visa_type, group_size=data.group_size,
         )
         session.add(application)
         session.commit()
@@ -205,10 +241,17 @@ def create_applications_router(
     @router.get("", response_model=list[ApplicationSummary])
     def list_applications(traveler: TravelerDep, session: SessionDep, response: Response):
         response.headers["Cache-Control"] = "private, no-store"
-        rows = session.exec(select(Application).where(Application.traveler_id == traveler.id)
-                            .order_by(Application.updated_at.desc()))
-        return [ApplicationSummary(id=row.id, title=flow.load_questionnaire(row.questionnaire_id).title,
-                                   status=row.status, updated_at=row.updated_at) for row in rows]
+        applications = session.exec(select(Application).where(Application.traveler_id == traveler.id)
+                                    .order_by(Application.updated_at.desc())).all()
+        # One query for every application's answers, not one per application.
+        answers: dict[str, flow.Answers] = {application.id: {} for application in applications}
+        rows = session.exec(select(ApplicationAnswer)
+                            .where(ApplicationAnswer.application_id.in_(list(answers)))) if answers else []
+        for row in rows:
+            answers[row.application_id][row.question_id] = row.value
+        return [ApplicationSummary(**_summary(application, flow.load_questionnaire(application.questionnaire_id),
+                                              answers[application.id]))
+                for application in applications]
 
     @router.get("/{application_id}", response_model=ApplicationState)
     def get_application(application_id: str, traveler: TravelerDep, session: SessionDep, response: Response):

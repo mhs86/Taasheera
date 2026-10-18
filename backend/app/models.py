@@ -54,6 +54,9 @@ class Application(SQLModel, table=True):
     questionnaire_version: int
     destination: str = Field(max_length=20)
     visa_type: str = Field(max_length=40)
+    # How many people travel together, counting the traveler (US 4). Recorded only, for now:
+    # each application is for one person until group applications (US 81).
+    group_size: int = Field(default=1, sa_column_kwargs={"server_default": "1"})
     # DRAFT while answering, INELIGIBLE when an answer stops the flow, ANSWERS_COMPLETE when nothing is left.
     status: str = Field(default="DRAFT", max_length=20)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
