@@ -170,17 +170,34 @@ Every account has a `role` (`traveler`, `support` or `admin`) and a `status` (`a
 are active travelers. Named database CHECK constraints reject any other value, including
 different capitalization.
 
+Every `/admin` route needs `Authorization: Bearer <access_token>` of an active admin.
+
 | Endpoint | Input | Success |
 | --- | --- | --- |
-| `GET /admin/me` | `Authorization: Bearer <access_token>` of an active admin | `200`: `id`, `name`, `email`, `role` |
+| `GET /admin/me` | none | `200`: `id`, `name`, `email`, `role` |
+| `GET /admin/users` | query `q` (name or email contains, any case), `role`, `status`, `page` (from 1), `page_size` (1–100, default 20) | `200`: `items` (newest first), `total`, `page`, `page_size` |
+| `GET /admin/users/{id}` | none | `200`: account details, sign-up and last sign-in times, and `counts` (active sessions, sign-ins, failed sign-ins, passport uploads) |
+| `POST /admin/users/{id}/suspend` | none | `200`: the updated user; every session of that account ends |
+| `POST /admin/users/{id}/reactivate` | none | `200`: the updated user |
+| `PUT /admin/users/{id}/role` | `{"role": "traveler" \| "support" \| "admin"}` | `200`: the updated user |
+| `GET /admin/overview` | none | `200`: `total_users`, `new_last_7_days`, `suspended`, `applications_started` (`null` until applications are stored) |
 
-Without a valid access token, `/admin` routes return `401` like `/auth/me`. Every other account,
-including support staff and suspended admins, gets the same `403` with `Admin access required.`
-Every response under `/admin`, including `401`, `403`, `404`, `405` and redirects, uses
-`Cache-Control: no-store`, also behind a path prefix.
-Access tokens carry no role: the role and status
-are read from the database on every request, so a change applies to the next request. Suspension
-only affects `/admin` until US 133 adds sign-in enforcement.
+Without a valid access token, `/admin` routes return `401` like `/auth/me`. Active travelers and
+support staff get the same `403` with `Admin access required.` Every response under `/admin`,
+including `401`, `403`, `404`, `405` and redirects, uses `Cache-Control: no-store`, also behind a
+path prefix. Access tokens carry no role: the role and status are read from the database on every
+request, so a change applies to the next request. Unknown query parameters are refused (`422`)
+rather than ignored. The admin API never returns passport images, passport fields or profile details.
+
+Suspension ends every session of the account at once, and a suspended account cannot sign in with
+a password or Google or refresh a session. Only someone who passes the password or Google check
+learns why: `403` with `{"detail": {"code": "account_suspended", ...}}`. Admins cannot suspend
+themselves or change their own role (`409`), and repeating an action that changes nothing is also
+`409`. Each change is checked again against the acting admin under a row lock and recorded on the
+changed account as a `status_change` or `role_change` activity event such as
+`admin:<admin id>:active->suspended`, saved in the same transaction. Sign-up times (`created_at`)
+are recorded for new accounts; older accounts take the time of their registration event, or stay
+`null` when there is none.
 
 No sign-up path accepts a role. To create the first admin, the person signs up normally; confirm
 with them that they control that account (password-account emails are not verified, so prefer a
@@ -191,7 +208,8 @@ Google account). Then run from `backend/`:
 ```
 
 The command changes only the role of an existing account, never handles passwords, and records a
-`role_change` activity event in the same transaction. It prints the account ID and sign-in method,
+`role_change` activity event (`cli:<old>-><new>`) in the same transaction. After the first admin,
+admins can manage roles through `PUT /admin/users/{id}/role`. It prints the account ID and sign-in method,
 never the email, and refuses a SQLite path that does not exist instead of creating an empty
 database. The same command sets `traveler` or `support`. On the AWS host (through Systems
 Manager), run it in the API service, which already has the production settings and storage volume:
