@@ -6,6 +6,10 @@ import './App.css'
 import CreateAccount from './CreateAccount'
 import ForgotPassword from './ForgotPassword'
 import SetNewPassword from './SetNewPassword'
+import ConnectGoogle from './ConnectGoogle'
+import ChangePassword from './ChangePassword'
+import ProfileForm from './ProfileForm'
+import Sessions from './Sessions'
 import { readNavigation, type Navigation } from './navigation'
 
 const pageTitles = {
@@ -15,8 +19,10 @@ const pageTitles = {
   'set-new-password': 'Set new password',
 }
 
-function App({ initialNavigation, googleClientId = import.meta.env?.VITE_GOOGLE_CLIENT_ID?.trim() ?? '' }: {
-  initialNavigation: Navigation; googleClientId?: string
+function App({ initialNavigation, accountPage = false, googleClientId = import.meta.env?.VITE_GOOGLE_CLIENT_ID?.trim() ?? '',
+  googleConfigurationStatus = 'ready', onGoogleConfigurationRetry }: {
+  initialNavigation: Navigation; accountPage?: boolean; googleClientId?: string
+  googleConfigurationStatus?: 'loading' | 'ready' | 'failed'; onGoogleConfigurationRetry?: () => void
 }) {
   const [route, setRoute] = useState({ ...initialNavigation, version: 0 })
   const page = route.page
@@ -52,8 +58,8 @@ function App({ initialNavigation, googleClientId = import.meta.env?.VITE_GOOGLE_
   }, [])
 
   useEffect(() => {
-    document.title = `${traveler && !isRecoveryPage ? 'Signed in' : pageTitles[page]} | Taasheera`
-  }, [page, traveler, isRecoveryPage])
+    document.title = `${traveler && !isRecoveryPage ? (accountPage ? 'Account' : 'Signed in') : pageTitles[page]} | Taasheera`
+  }, [page, traveler, isRecoveryPage, accountPage])
 
   return (
     <main className="sign-in-page">
@@ -76,11 +82,22 @@ function App({ initialNavigation, googleClientId = import.meta.env?.VITE_GOOGLE_
           setRoute(previous => ({ ...previous, resetToken: null }))
         }}
       /> : page === 'forgot-password' ? <ForgotPassword /> : checking ? <p role="status">Restoring your session…</p> : traveler ? (
-        <section className="sign-in-card" aria-labelledby="signed-in-heading">
+        <section className={`sign-in-card${accountPage ? ' account-card' : ''}`} aria-labelledby="signed-in-heading">
           <p className="eyebrow">YOUR TRAVELER ACCOUNT</p>
-          <h1 id="signed-in-heading">Welcome, {traveler.name}</h1>
-          <p className="intro">You are signed in.</p>
-          <a href="/passport" className="primary-button passport-link">Upload your passport</a>
+          <h1 id="signed-in-heading">{accountPage ? 'Your account' : `Welcome, ${traveler.name}`}</h1>
+          {accountPage ? <>
+            <p className="intro"><a href="/sign-in">Back to welcome</a></p>
+            <ProfileForm />
+            <ConnectGoogle traveler={traveler} clientId={googleClientId}
+              configurationStatus={googleConfigurationStatus} onConfigurationRetry={onGoogleConfigurationRetry}
+              onConnected={setTraveler} />
+            {traveler.password_enabled === true && <ChangePassword />}
+            <Sessions />
+          </> : <>
+            <p className="intro">You are signed in.</p>
+            <a href="/account" className="account-link">Edit your account details</a>
+            <a href="/passport" className="primary-button passport-link">Upload your passport</a>
+          </>}
           <button className="primary-button" data-activity-id="logout-button" disabled={loggingOut} onClick={async () => {
             setLoggingOut(true)
             setSessionError('')
@@ -97,12 +114,16 @@ function App({ initialNavigation, googleClientId = import.meta.env?.VITE_GOOGLE_
           }}>{loggingOut ? 'Logging out…' : 'Log out'}</button>
         </section>
       ) : <>
-        {page === 'sign-in' && <SignIn googleClientId={googleClientId} initialMessage={registrationMessage} onSignedIn={(profile) => {
+        {page === 'sign-in' && <SignIn googleClientId={googleClientId}
+          googleConfigurationStatus={googleConfigurationStatus} onGoogleConfigurationRetry={onGoogleConfigurationRetry}
+          initialMessage={registrationMessage} onSignedIn={(profile) => {
           setRegistrationMessage('')
           setSessionError('')
           setTraveler(profile)
         }} />}
-        {page === 'create-account' && <CreateAccount onCreated={() => {
+        {page === 'create-account' && <CreateAccount googleClientId={googleClientId}
+          googleConfigurationStatus={googleConfigurationStatus} onGoogleConfigurationRetry={onGoogleConfigurationRetry}
+          onSignedIn={profile => { setSessionError(''); setTraveler(profile) }} onCreated={() => {
           setRegistrationMessage('Your traveler account has been created. You can now sign in.')
           window.location.hash = 'sign-in'
         }} />}
@@ -114,8 +135,10 @@ function App({ initialNavigation, googleClientId = import.meta.env?.VITE_GOOGLE_
   )
 }
 
-function SignIn({ onSignedIn, googleClientId, initialMessage }: {
+function SignIn({ onSignedIn, googleClientId, initialMessage, googleConfigurationStatus,
+  onGoogleConfigurationRetry }: {
   onSignedIn: (traveler: Traveler) => void; googleClientId: string; initialMessage: string
+  googleConfigurationStatus: 'loading' | 'ready' | 'failed'; onGoogleConfigurationRetry?: () => void
 }) {
   const [message, setMessage] = useState(initialMessage)
   const [submitting, setSubmitting] = useState(false)
@@ -207,6 +230,7 @@ function SignIn({ onSignedIn, googleClientId, initialMessage }: {
       <div className="divider"><span>or</span></div>
 
       <GoogleSignIn clientId={googleClientId} disabled={submitting}
+        configurationStatus={googleConfigurationStatus} onConfigurationRetry={onGoogleConfigurationRetry}
         onCredential={googleCredential} onMessage={setMessage} />
 
       <p className="create-account">

@@ -1,4 +1,3 @@
-import sqlite3
 import time
 from unittest.mock import Mock
 
@@ -6,10 +5,13 @@ import bcrypt
 import pytest
 from fastapi.testclient import TestClient
 from google.auth import exceptions
+from sqlalchemy import text
 from sqlmodel import Session, select
 
+import migrate
 from app.auth import COOKIE_NAME, token_hash
 from app.config import AuthSettings
+from app.database import build_engine
 from app.main import create_app
 from app.models import AuthSession, GoogleIdentity, PasswordResetToken, RefreshToken, Traveler
 
@@ -71,12 +73,13 @@ def test_first_sign_in_creates_identity_and_uses_existing_session_contract(api, 
     assert args[0] == TOKEN and callable(args[1])
     assert kwargs["audience"] == CLIENT_ID
     profile = client.get("/auth/me", headers=bearer(response))
-    assert profile.json() == {"id": 1, "name": "Maya Haddad", "email": EMAIL}
+    assert profile.json() == {"id": 1, "name": "Maya Haddad", "email": EMAIL, "sso_email": EMAIL, "auth_type": "google", "password_enabled": False, "last_login_method": "google"}
     assert client.get("/auth/me").status_code == 401  # Cookie alone is insufficient.
     with Session(app.state.engine) as session:
         traveler = session.exec(select(Traveler)).one()
         identity = session.exec(select(GoogleIdentity)).one()
         assert traveler.password_hash == ""
+        assert traveler.sso_email == EMAIL
         assert identity.subject == "google-subject-123" and identity.traveler_id == traveler.id
         stored = session.exec(select(RefreshToken)).one()
         assert stored.token_hash == token_hash(client.cookies.get(COOKIE_NAME))
@@ -90,12 +93,13 @@ def test_returning_identity_uses_sub_even_when_email_changes(api, google):
     second = sign_in(client)
     assert second.status_code == 200
     assert client.get("/auth/me", headers=bearer(second)).json() == {
-        "id": 1, "name": "Maya Haddad", "email": EMAIL,
+        "id": 1, "name": "Maya Haddad", "email": EMAIL, "sso_email": "changed@example.com", "auth_type": "google", "password_enabled": False, "last_login_method": "google",
     }
     assert client.get("/auth/me", headers=bearer(first)).status_code == 401
     with Session(app.state.engine) as session:
         assert len(session.exec(select(Traveler)).all()) == 1
         assert len(session.exec(select(GoogleIdentity)).all()) == 1
+        assert session.get(Traveler, 1).sso_email == "changed@example.com"
 
 
 @pytest.mark.parametrize("failure", [ValueError("Invalid signature"), ValueError("Token expired"), exceptions.GoogleAuthError("Invalid issuer")])
@@ -241,16 +245,36 @@ def test_request_validation_omits_id_token(api, google):
     google.assert_not_called()
 
 
-def test_existing_local_traveler_table_and_accounts_survive_startup(tmp_path, google):
-    path = tmp_path / "legacy.db"
-    original_hash = bcrypt.hashpw(PASSWORD.encode(), bcrypt.gensalt(rounds=12)).decode()
-    with sqlite3.connect(path) as connection:
-        connection.execute("CREATE TABLE traveler (id INTEGER PRIMARY KEY, name VARCHAR(100) NOT NULL, email VARCHAR(254) NOT NULL UNIQUE, password_hash VARCHAR(60) NOT NULL)")
-        connection.execute("INSERT INTO traveler VALUES (?, ?, ?, ?)", (7, "Existing", "existing@example.com", original_hash))
-    app = create_app(f"sqlite:///{path.as_posix()}")
+def test_sprint1_database_keeps_password_and_google_sign_in_after_migration(sprint1_database, google, monkeypatch):
+    original_hash = bcrypt.hashpw(PASSWORD.encode(), bcrypt.gensalt(rounds=4)).decode()
+    engine = build_engine(sprint1_database)
+    with engine.begin() as connection:
+        connection.execute(text("INSERT INTO traveler (id, name, email, password_hash) VALUES (7, 'Existing', 'existing@example.com', :hash)"),
+                           {"hash": original_hash})
+    engine.dispose()
+    migrate.upgrade()
+    monkeypatch.setenv("SCHEMA_AUTO_CREATE", "false")
+    app = create_app(sprint1_database)
     with TestClient(app) as client:
         assert sign_in(client).status_code == 200
+        client.cookies.clear()
         assert client.post("/auth/login", json={"email": "existing@example.com", "password": PASSWORD}).status_code == 200
         with Session(app.state.engine) as session:
             assert session.get(Traveler, 7).password_hash == original_hash
-            assert len(session.exec(select(Traveler)).all()) == 2
+            travelers = session.exec(select(Traveler)).all()
+            assert len(travelers) == 2
+            assert {(traveler.role, traveler.status) for traveler in travelers} == {("traveler", "active")}
+
+
+def test_role_like_google_claims_are_ignored(api, google):
+    client, app, _ = api
+    google.return_value = {**google.return_value, "role": "admin", "roles": ["admin"], "is_admin": True,
+                           "status": "suspended", "https://taasheera/role": "admin"}
+    response = sign_in(client)
+    assert response.status_code == 200
+    with Session(app.state.engine) as session:
+        traveler = session.exec(select(Traveler)).one()
+        assert (traveler.role, traveler.status) == ("traveler", "active")
+    refused = client.get("/admin/me", headers=bearer(response))
+    assert refused.status_code == 403
+    assert refused.json() == {"detail": "Admin access required."}

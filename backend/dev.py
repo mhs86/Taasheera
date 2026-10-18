@@ -50,7 +50,7 @@ def configure_environment() -> None:
     os.environ.setdefault("JWT_SECRET", read_setting(PRIVATE_CONFIG, "JWT_SECRET"))
     os.environ.setdefault("GOOGLE_CLIENT_ID", read_setting(PUBLIC_CONFIG, "GOOGLE_CLIENT_ID"))
     os.environ.setdefault("AUTH_COOKIE_SECURE", "false")  # Loopback HTTP only.
-    os.environ.setdefault("SCHEMA_AUTO_CREATE", "true")  # Existing local DBs remain usable.
+    os.environ.setdefault("SCHEMA_AUTO_CREATE", "false")  # run() applies migrations first, like a deployment.
     # Optional: the passport assistant's key, kept in the Git-ignored file like the JWT secret.
     # Without it the assistant answers "unavailable" and everything else still works.
     gemini_key = read_optional_setting(PRIVATE_CONFIG, "GEMINI_API_KEY")
@@ -58,13 +58,23 @@ def configure_environment() -> None:
         os.environ.setdefault("GEMINI_API_KEY", gemini_key)
 
 
+def run() -> None:
+    configure_environment()
+    # Imported here so that 'dev.py setup' needs only the standard library.
+    import migrate
+    import uvicorn
+
+    try:
+        migrate.upgrade()  # Same Alembic step as a deployment; also adopts Sprint 1 local databases.
+    except RuntimeError as error:
+        raise SystemExit(str(error)) from None
+    uvicorn.run("app.main:app", host="127.0.0.1", port=8000, reload=True, access_log=False)
+
+
 if __name__ == "__main__":
     if sys.argv[1:] == ["setup"]:
         setup()
     elif sys.argv[1:] == ["run"]:
-        configure_environment()
-        import uvicorn
-
-        uvicorn.run("app.main:app", host="127.0.0.1", port=8000, reload=True, access_log=False)
+        run()
     else:
         raise SystemExit("Usage: python dev.py setup | run")

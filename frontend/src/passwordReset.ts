@@ -36,6 +36,24 @@ export async function requestPasswordReset(email: string): Promise<string> {
   throw new ResetError('Password reset email is temporarily unavailable. Please try again later.')
 }
 
+export async function verifyResetCode(email: string, code: string): Promise<string> {
+  let response: Response
+  try {
+    response = await post('verify-reset-code', { email: email.trim(), code })
+  } catch {
+    throw new ResetError('Could not confirm the code. Check your connection. If it was already used, request a new code.')
+  }
+  if (response.status === 200) {
+    const body: unknown = await response.json().catch(() => null)
+    if (body && typeof body === 'object' && 'reset_token' in body &&
+      typeof body.reset_token === 'string' && /^[A-Za-z0-9_-]{43}$/.test(body.reset_token)) return body.reset_token
+  }
+  if (response.status === 400) throw new ResetError('This code is invalid, expired, or already used. Check it or request a new code.')
+  if (response.status === 422) throw new ResetError('Enter the six-digit code from your email.')
+  if (response.status === 429) throw new ResetError('Too many code attempts. Please wait 15 minutes before trying again.')
+  throw new ResetError('Could not verify the code. Please try again later.')
+}
+
 export async function submitPasswordReset(token: string, password: string): Promise<void> {
   const response = await post('reset-password', { token, password })
   if (response.status === 204) return

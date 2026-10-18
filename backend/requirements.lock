@@ -68,6 +68,8 @@ opentelemetry-api==1.45.0
     # via fastapi
 packaging==26.3
     # via pytesseract
+phonenumbers==9.0.41
+    # via -r requirements.txt
 pillow==12.3.0
     # via
     #   -r requirements.txt
@@ -138,3 +140,11 @@ uvicorn==0.54.0
     # via -r requirements.txt
 websockets==16.1.1
     # via google-genai
+
+# Amazon SES SDK and its additional transitive dependencies (uv-resolved).
+boto3==1.43.114
+botocore==1.43.114
+jmespath==1.1.0
+python-dateutil==2.9.0.post0
+s3transfer==0.19.2
+six==1.17.0

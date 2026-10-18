@@ -27,6 +27,7 @@ def install_request_logging(app: FastAPI) -> None:
     @app.middleware("http")
     async def record_request(request: Request, call_next):
         request_id = uuid4().hex
+        request.state.request_id = request_id
         started = time.perf_counter()
         status_code = 500
         try:
