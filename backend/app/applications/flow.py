@@ -20,7 +20,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
-from ..passport.router import PassportFields
+from ..passport.router import ConfirmedPassportFields
 from ..profile import ProfileFields
 
 QUESTIONNAIRE_DIR = Path(__file__).resolve().parent / "questionnaires"
@@ -324,7 +324,7 @@ def check_answer(question: Question, raw: Any, answers: Answers, today: date) ->
                 raise InvalidAnswer(_first_error(error)) from None
         case "passport":
             try:
-                fields = PassportFields.model_validate(raw)
+                fields = ConfirmedPassportFields.model_validate(raw)
             except ValidationError as error:
                 raise InvalidAnswer(_first_error(error)) from None
             if fields.birth_date is None or fields.expiry_date is None:
