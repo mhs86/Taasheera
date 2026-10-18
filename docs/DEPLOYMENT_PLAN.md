@@ -5,8 +5,8 @@ This branch prepares repeatable checks and a deployable backend image. It does n
 ## Code completed now
 
 1. Run backend tests (including synthetic OCR and disposable PostgreSQL migration tests), frontend tests, lint, and build in GitHub Actions on branch pushes and PRs into `dev` or `main`. Build and smoke-test the backend image there too.
-2. Build the FastAPI image from `backend/Dockerfile` with Tesseract and a font. The process runs as a non-root user and exposes `/health/live` and `/health/ready`.
-3. Version the current SQLModel schema with Alembic. `python migrate.py upgrade` initializes an empty database or stamps an existing, exact local schema (current models, or the Sprint 1 initial schema, which it then upgrades) without deleting records. A schema mismatch stops startup in deployment mode.
+2. Build the FastAPI images from `backend/Dockerfile` and `backend/Dockerfile.lambda` with Tesseract and a font. Both run as a non-root user; the Lambda image includes the AWS Lambda Web Adapter.
+3. Version the current SQLModel schema with Alembic. `python migrate.py upgrade` initializes an empty database or stamps an existing, exact local schema (current models, or a known earlier `create_all` schema, which it then upgrades) without deleting records. A schema mismatch stops startup in deployment mode.
 4. Pin backend runtime and test dependencies in `requirements.lock` and `requirements-dev.lock`; the frontend already uses `package-lock.json`.
 5. Reject unsafe production startup settings, including local HTTP cookie settings, missing database URL, and non-HTTPS browser origins.
 6. Emit JSON request metadata with server-generated request IDs, route templates, status, and duration, without logging URLs, submitted values, or credentials.
@@ -20,9 +20,9 @@ This branch prepares repeatable checks and a deployable backend image. It does n
 ## Still needed when a host is chosen
 
 - Provision a managed PostgreSQL database and a private, durable home for passport images and activity JSONL logs. The current file paths require a persistent private volume; a bucket adapter is still proposed.
-- Configure TLS, one public frontend origin, and a proxy for `/auth`, `/passports`, `/activity`, and `/assistant` before the SPA fallback. `frontend/vercel.json` cannot contain a real API destination until there is a backend URL.
+- Configure TLS, one public frontend origin, and a proxy for `/auth`, `/passports`, `/profile`, `/activity`, and `/assistant` before the SPA fallback. `frontend/vercel.json` cannot contain a real API destination until there is a backend URL.
 - Supply deployment secrets and settings: `APP_ENV=production`, `DATABASE_URL`, `JWT_SECRET`, `AUTH_ALLOWED_ORIGINS`, `AUTH_COOKIE_SECURE=true`, `GOOGLE_CLIENT_ID`, and any reset-email settings. `backend/.env.example` lists the keys with empty required values. Never copy a local `.env` file into the image.
-- Run `python migrate.py upgrade` once as a release step before starting new API instances. Configure trusted proxy IPs, backups, monitoring, and a deployment job for the selected host. Keep deployment credentials out of PR CI.
+- Run `python migrate.py upgrade` once as a release step before starting new API instances. Configure trusted proxy IPs, backups, monitoring, and the AWS prerequisites in `docs/AWS_LAMBDA.md`. Keep deployment credentials out of PR CI.
 - Smoke-test registration, sign-in, passport upload/extraction, activity logging, refresh cookies, and password reset on the HTTPS URL before promoting `dev` to `main`.
 
 ## Dependency updates

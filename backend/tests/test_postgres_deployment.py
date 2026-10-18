@@ -7,7 +7,7 @@ from uuid import uuid4
 import pytest
 from alembic import command
 from fastapi.testclient import TestClient
-from sqlalchemy import make_url, text
+from sqlalchemy import inspect, make_url, text
 from sqlalchemy.exc import IntegrityError
 
 import manage
@@ -15,6 +15,9 @@ import migrate
 from app.database import build_engine, normalize_database_url
 from app.main import create_app
 from app.schema import migration_config, schema_revision
+
+
+ROLE_PARENT_REVISION = "e6f81a73c902"  # The revision before roles; downgrading to it removes only role/status.
 
 
 @pytest.mark.skipif(not os.environ.get("TEST_POSTGRES_URL"), reason="needs disposable PostgreSQL")
@@ -42,6 +45,40 @@ def test_migration_and_authenticated_request_on_postgres(monkeypatch):
         }).status_code == 204
 
 
+@pytest.mark.skipif(not os.environ.get('TEST_POSTGRES_URL'), reason='needs disposable PostgreSQL')
+def test_postgres_otp_updates_account_and_revokes_sessions(monkeypatch):
+    from unittest.mock import Mock
+    from sqlalchemy import text
+    from sqlmodel import Session
+    monkeypatch.setenv('DATABASE_URL', os.environ['TEST_POSTGRES_URL'])
+    monkeypatch.setenv('SCHEMA_AUTO_CREATE', 'false')
+    monkeypatch.setenv('RESET_MAIL_PROVIDER', 'ses')
+    monkeypatch.setenv('SES_FROM_EMAIL', 'sharafm032@gmail.com')
+    migrate.upgrade()
+    sender = Mock()
+    email = f'otp-{uuid4().hex}@example.com'
+    app = create_app(reset_sender=sender)
+    with TestClient(app) as client:
+        registered = client.post('/auth/register', json={'name': 'OTP specimen', 'email': email, 'password': 'Original-test-password'})
+        assert registered.status_code == 201
+        owner = registered.json()['id']
+        access = client.post('/auth/login', json={'email': email, 'password': 'Original-test-password'}).json()['access_token']
+        assert client.post('/auth/forgot-password', json={'email': email}).status_code == 202
+        code = sender.send_reset.call_args.args[1]
+        assert len(code) == 6 and code.isdigit()
+        verified = client.post('/auth/verify-reset-code', json={'email': email, 'code': code})
+        assert verified.status_code == 200
+        grant = verified.json()['reset_token']
+        assert client.post('/auth/verify-reset-code', json={'email': email, 'code': code}).status_code == 400
+        assert client.post('/auth/reset-password', json={'token': grant, 'password': 'Replacement-test-password'}).status_code == 204
+        assert client.get('/auth/me', headers={'Authorization': 'Bearer ' + access}).status_code == 401
+        assert client.post('/auth/login', json={'email': email, 'password': 'Original-test-password'}).status_code == 401
+        assert client.post('/auth/login', json={'email': email, 'password': 'Replacement-test-password'}).status_code == 200
+        with Session(app.state.engine) as session:
+            report = session.execute(text('SELECT auth_type,password_enabled FROM admin_user_auth WHERE id=:id'), {'id': owner}).one()
+            assert tuple(report) == ('email_password', 1)
+
+
 @pytest.mark.skipif(not os.environ.get("TEST_POSTGRES_URL"), reason="needs disposable PostgreSQL")
 def test_role_revision_round_trip_and_checks_on_postgres(monkeypatch):
     monkeypatch.setenv("DATABASE_URL", os.environ["TEST_POSTGRES_URL"])
@@ -50,11 +87,11 @@ def test_role_revision_round_trip_and_checks_on_postgres(monkeypatch):
     engine = build_engine()
     try:
         try:
-            command.downgrade(migration_config(), migrate.BASELINE_REVISION)
-            assert schema_revision(engine)[0] == migrate.BASELINE_REVISION
+            command.downgrade(migration_config(), ROLE_PARENT_REVISION)
+            assert schema_revision(engine)[0] == ROLE_PARENT_REVISION
             with engine.begin() as connection:
-                connection.execute(text("INSERT INTO traveler (name, email, password_hash) "
-                                        "VALUES ('CI traveler', :email, '')"), {"email": email})
+                connection.execute(text("INSERT INTO traveler (name, email, password_hash, auth_type) "
+                                        "VALUES ('CI traveler', :email, '', 'google')"), {"email": email})
         finally:
             # CI runs alembic check against this database afterwards, so always end at head.
             command.upgrade(migration_config(), "head")
@@ -72,8 +109,8 @@ def test_role_revision_round_trip_and_checks_on_postgres(monkeypatch):
 
 
 @pytest.mark.skipif(not os.environ.get("TEST_POSTGRES_URL"), reason="needs disposable PostgreSQL")
-def test_unversioned_sprint1_schema_is_refused_on_postgres(monkeypatch):
-    # Adopting a Sprint 1 schema is only for local SQLite files; PostgreSQL was always migrated.
+def test_unversioned_sprint1_schema_is_adopted_and_upgraded_on_postgres(monkeypatch):
+    # A throwaway database, so the shared CI database stays at head for alembic check.
     server_url = make_url(normalize_database_url(os.environ["TEST_POSTGRES_URL"]))
     name = f"ci_sprint1_{uuid4().hex[:12]}"
     server = build_engine(server_url.render_as_string(hide_password=False)).execution_options(
@@ -89,9 +126,18 @@ def test_unversioned_sprint1_schema_is_refused_on_postgres(monkeypatch):
             config.attributes["connection"] = connection
             command.upgrade(config, migrate.BASELINE_REVISION)
             connection.execute(text("DROP TABLE alembic_version"))
-        with pytest.raises(RuntimeError, match="differs from the current models. Back it up"):
-            migrate.upgrade()
-        assert schema_revision(engine)[0] is None
+            connection.execute(text("INSERT INTO traveler (id, name, email, password_hash) VALUES "
+                                    "(1, 'Maya', 'maya@example.com', 'hash'), (2, 'Omar', 'omar@example.com', '')"))
+        migrate.upgrade()
+        current, head = schema_revision(engine)
+        assert current == head
+        with engine.connect() as connection:
+            assert connection.execute(text(
+                "SELECT id, auth_type, role, status FROM traveler ORDER BY id"
+            )).all() == [(1, "email_password", "traveler", "active"), (2, "google", "traveler", "active")]
+            assert connection.execute(text("SELECT count(*) FROM admin_user_auth")).scalar_one() == 2
+        assert {check["name"] for check in inspect(engine).get_check_constraints("traveler")} == {
+            "ck_traveler_auth_type", "ck_traveler_role", "ck_traveler_status"}
     finally:
         engine.dispose()
         with server.connect() as connection:
@@ -134,7 +180,7 @@ def test_concurrent_role_changes_keep_an_accurate_audit_trail_on_postgres(monkey
     try:
         with engine.begin() as connection:
             traveler_id = connection.execute(text(
-                "INSERT INTO traveler (name, email, password_hash) VALUES ('CI staff', :email, '') RETURNING id"
+                "INSERT INTO traveler (name, email, password_hash, auth_type) VALUES ('CI staff', :email, '', 'google') RETURNING id"
             ), {"email": email}).scalar_one()
         with ThreadPoolExecutor(max_workers=6) as pool:
             list(pool.map(lambda role: manage.set_role(email, role), ["admin", "support", "traveler"] * 4))

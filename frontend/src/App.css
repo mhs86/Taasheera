@@ -46,6 +46,19 @@
   box-shadow: 0 12px 36px #203b3a08;
 }
 
+.account-card { max-width: 760px; }
+.account-link { display: block; margin-bottom: 12px; }
+.profile-section { margin-bottom: 32px; }
+.profile-section h2 { margin: 0 0 8px; font-size: 20px; }
+.profile-help { margin: 0 0 16px; color: #60716e; font-size: 14px; }
+.profile-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 18px; }
+.profile-field { min-width: 0; }
+.sign-in-page .profile-field select {
+  width: 100%; min-height: 46px; margin-bottom: 18px; padding: 10px 12px;
+  border: 1px solid #a9bab3; border-radius: 8px; background: white; color: #203b3a;
+}
+.profile-field-error { margin: -12px 0 16px; color: #a12b28; font-size: 13px; }
+
 .eyebrow {
   margin: 0 0 10px;
   color: #21665b;
@@ -65,6 +78,65 @@
   margin: 10px 0 24px;
   color: #60716e;
 }
+
+.sign-in-methods {
+  margin-bottom: 24px;
+}
+
+.sign-in-methods h2 {
+  margin: 0 0 12px;
+  font-size: 18px;
+}
+
+.sign-in-methods ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sign-in-methods li {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 4px 12px;
+  padding: 10px 0;
+  border-top: 1px solid #dfe7e2;
+  font-size: 14px;
+}
+
+.sign-in-method-email {
+  width: 100%;
+  color: #60716e;
+  overflow-wrap: anywhere;
+}
+
+.change-password {
+  margin: 24px 0;
+}
+
+.change-password h2 {
+  margin: 0 0 16px;
+  font-size: 18px;
+}
+
+.sessions-section { margin: 24px 0; }
+.sessions-section h2 { margin: 0 0 8px; font-size: 20px; }
+.sessions-list { margin: 0 0 16px; padding: 0; list-style: none; }
+.sessions-list li {
+  display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap;
+  gap: 12px; padding: 14px 0; border-top: 1px solid #dfe7e2;
+}
+.session-details { display: grid; gap: 4px; font-size: 14px; color: #60716e; }
+.session-details strong { color: #203b3a; }
+.session-current {
+  width: fit-content; padding: 3px 8px; border-radius: 999px;
+  background: #f0f5f2; color: #21665b; font-size: 12px; font-weight: 700;
+}
+.sign-in-page .session-end { width: auto; margin: 0; }
+.session-confirm { margin-top: 16px; padding: 14px; border: 1px solid #dfe7e2; border-radius: 8px; }
+.session-confirm p { margin: 0 0 12px; }
+.session-confirm-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.sign-in-page .session-confirm-actions button { width: auto; margin: 0; }
 
 .availability-note {
   margin: 0 0 24px;
@@ -244,4 +316,6 @@
   .sign-in-card {
     padding: 28px 22px;
   }
+
+  .profile-grid { grid-template-columns: 1fr; }
 }

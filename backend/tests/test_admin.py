@@ -14,7 +14,7 @@ from fastapi.routing import APIRoute, iter_route_contexts
 from fastapi.testclient import TestClient
 from sqlmodel import Session, func, select
 
-from app.admin import FORBIDDEN, require_role
+from app.admin_api import FORBIDDEN, require_role
 from app.auth import create_current_traveler
 from app.main import create_app
 from app.models import ActivityEvent, AuthSession, Traveler
@@ -416,4 +416,6 @@ def test_no_json_request_body_outside_admin_accepts_extra_fields_or_roles(api):
 def test_auth_me_is_unchanged_for_admins(api):
     response = api.client.get("/auth/me", headers=bearer(api.tokens["admin"]))
     assert response.status_code == 200
-    assert response.json() == {"id": api.ids["admin"], "name": "Admin", "email": "admin@example.com"}
+    body = response.json()
+    assert (body["id"], body["name"], body["email"]) == (api.ids["admin"], "Admin", "admin@example.com")
+    assert not {"role", "status"} & set(body)  # Only /admin/me reports the role.

@@ -16,18 +16,21 @@ from sqlmodel import Session, SQLModel, select
 
 from .database import build_engine
 from .activity import activity_directory_from_environment, create_activity_router, record_activity
-from .admin import create_admin_router, install_admin_no_store
+from .admin_api import create_admin_router, install_admin_no_store
 from .assistant import DEFAULT_MODEL, create_assistant_router, gemini_ask
-from .auth import create_auth_router, create_current_traveler
+from .auth import check_origin, create_auth_router, create_current_traveler
+from .sessions import create_sessions_router
 from .google_auth import create_google_auth_router
 from .config import AuthSettings, RuntimeSettings
 from .schema import require_current_schema
 from .observability import install_request_logging
-from .mailer import MailSettings, ResetSender, SmtpResetSender
+from .mailer import MailSettings, ResetSender, SesResetSender, SmtpResetSender
+from .security import audit, throttle
 from .password_reset import create_password_reset_router
 from .models import RegisterRequest, Traveler, TravelerPublic
 from .passport.router import create_passport_router
 from .passport.storage import PassportImageStorage
+from .profile import create_profile_router
 
 
 def create_app(database_url: str | None = None, *, reset_sender: ResetSender | None = None) -> FastAPI:
@@ -40,7 +43,8 @@ def create_app(database_url: str | None = None, *, reset_sender: ResetSender | N
         app.state.activity_directory = activity_directory_from_environment()
         app.state.mail_settings = MailSettings.from_environment()
         app.state.reset_sender = reset_sender or (
-            SmtpResetSender(app.state.mail_settings) if app.state.mail_settings else None
+            (SesResetSender(app.state.mail_settings) if app.state.mail_settings.provider == "ses"
+             else SmtpResetSender(app.state.mail_settings)) if app.state.mail_settings else None
         )
         if app.state.runtime_settings.schema_auto_create:
             SQLModel.metadata.create_all(engine)
@@ -81,8 +85,10 @@ def create_app(database_url: str | None = None, *, reset_sender: ResetSender | N
     app.include_router(create_activity_router(get_session, current_traveler))
     app.include_router(create_auth_router(get_session, current_traveler))
     app.include_router(create_admin_router(current_traveler))
-    app.include_router(create_google_auth_router(get_session))
+    app.include_router(create_sessions_router(get_session, current_traveler))
+    app.include_router(create_google_auth_router(get_session, current_traveler))
     app.include_router(create_password_reset_router(get_session))
+    app.include_router(create_profile_router(get_session, current_traveler))
     passport_storage = PassportImageStorage(
         os.environ.get("PASSPORT_STORAGE_DIR", str(Path(__file__).resolve().parents[1] / "storage" / "passports"))
     )
@@ -133,13 +139,17 @@ def create_app(database_url: str | None = None, *, reset_sender: ResetSender | N
         "/auth/register",
         response_model=TravelerPublic,
         status_code=status.HTTP_201_CREATED,
+        dependencies=[Depends(check_origin)],
     )
     def register(
         data: RegisterRequest,
+        request: Request,
         session: Annotated[Session, Depends(get_session)],
     ) -> Traveler:
+        throttle(request, session, "register", account=data.email, ip_limit=10, account_limit=3)
         email_query = select(Traveler).where(Traveler.email == data.email)
         if session.exec(email_query).first() is not None:
+            audit(request, "register", "conflict")
             # No authenticated traveler owns this attempted registration.
             raise HTTPException(status_code=409, detail="Email is already registered.")
 
@@ -159,6 +169,7 @@ def create_app(database_url: str | None = None, *, reset_sender: ResetSender | N
             raise
 
         session.refresh(traveler)
+        audit(request, "register", "success", traveler.id)
         record_activity(session, app.state.activity_directory, traveler.id,
                         "registration", "email_password", "success")
         return traveler

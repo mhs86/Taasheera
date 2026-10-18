@@ -1,68 +1,32 @@
-"""Back-office API. Every route here is admin-only through the router's own dependency."""
+"""Read-only account reporting for trusted operators: python -m app.admin."""
+import argparse
+import json
 
-from typing import Annotated
+from sqlalchemy import text
 
-from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request
-from pydantic import BaseModel, ConfigDict
-
-from .models import ROLES, Role, Traveler
-
-
-PREFIX = "/admin"
-FORBIDDEN = "Admin access required."
+from .database import build_engine
 
 
-def install_admin_no_store(app: FastAPI) -> None:
-    """Admin responses must never be cached: every status under /admin, including 404, 405,
-    redirects, validation errors and handlers that build their own Response."""
-
-    @app.middleware("http")
-    async def admin_no_store(request: Request, call_next):
-        response = await call_next(request)
-        # Behind a path prefix (uvicorn --root-path) scope["path"] includes it; routing strips it the same way.
-        path, root = request.scope["path"], request.scope.get("root_path", "")
-        if root and path.startswith(root + "/"):
-            path = path[len(root):]
-        if path == PREFIX or path.startswith(PREFIX + "/"):
-            response.headers["Cache-Control"] = "no-store"
-        return response
-
-
-def require_role(current_traveler, *roles: str):
-    allowed = frozenset(roles)
-    if not allowed or not allowed <= set(ROLES):
-        raise ValueError("require_role needs one or more of: traveler, support, admin")
-
-    def role_gate(traveler: Annotated[Traveler, Depends(current_traveler)]) -> Traveler:
-        # current_traveler loaded this row from the database for this request; access tokens
-        # carry no role, so demotion or suspension applies at once.
-        # One refusal for every role and status, so it reveals neither.
-        if traveler.status != "active" or traveler.role not in allowed:
-            raise HTTPException(403, FORBIDDEN, headers={"Cache-Control": "no-store"})
-        return traveler
-
-    role_gate.allowed_roles = allowed  # Lets tests find every role-gated route.
-    return role_gate
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--limit', type=int, default=20)
+    parser.add_argument('--summary', action='store_true')
+    options = parser.parse_args()
+    if not 1 <= options.limit <= 1000:
+        parser.error('--limit must be between 1 and 1000')
+    engine = build_engine()
+    try:
+        with engine.connect() as connection:
+            connection.execute(text('PRAGMA query_only = ON' if engine.dialect.name == 'sqlite' else 'SET TRANSACTION READ ONLY'))
+            query = ('SELECT auth_type, password_enabled, google_enabled, COUNT(*) AS users '
+                     'FROM admin_user_auth GROUP BY auth_type,password_enabled,google_enabled '
+                     'ORDER BY auth_type,password_enabled,google_enabled' if options.summary else
+                     'SELECT * FROM admin_user_auth ORDER BY id DESC LIMIT :limit')
+            rows = connection.execute(text(query), {'limit': options.limit}).mappings().all()
+            print(json.dumps([dict(row) for row in rows], indent=2))
+    finally:
+        engine.dispose()
 
 
-class AdminProfilePublic(BaseModel):
-    """GET /admin/me: the signed-in staff member's own account."""
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
-    name: str
-    email: str
-    role: Role
-
-
-def create_admin_router(current_traveler) -> APIRouter:
-    admin = require_role(current_traveler, "admin")
-    # The gate is on the router so later routes cannot skip it; support stays refused
-    # until a route opts it in on its own router with require_role.
-    router = APIRouter(prefix=PREFIX, tags=["Admin"], dependencies=[Depends(admin)])
-
-    @router.get("/me", response_model=AdminProfilePublic)
-    def admin_me(signed_in: Annotated[Traveler, Depends(admin)]):
-        return signed_in
-
-    return router
+if __name__ == '__main__':
+    main()

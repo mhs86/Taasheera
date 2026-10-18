@@ -1,7 +1,140 @@
 import { submitPasswordReset } from './passwordReset.ts'
 import { apiFetch } from './api.ts'
 
-export type Traveler = { id: number; name: string; email: string }
+export type Traveler = { id: number; name: string; email: string; sso_email?: string | null
+  auth_type?: 'email_password' | 'google'; password_enabled?: boolean; last_login_method?: string | null }
+
+export type TravelerProfile = {
+  surname: string | null
+  given_names: string | null
+  birth_date: string | null
+  nationality: string | null
+  phone: string | null
+  address_line1: string | null
+  address_line2: string | null
+  address_city: string | null
+  address_region: string | null
+  address_postal_code: string | null
+  address_country: string | null
+}
+
+export type ProfileField = keyof TravelerProfile
+
+export type TravelerSession = {
+  id: string
+  device_label: string
+  created_at: string | null
+  last_active_at: string | null
+  current: boolean
+}
+
+export async function getSessions(): Promise<TravelerSession[]> {
+  const response = await protectedFetch('/sessions', { silent: true, cache: 'no-store' })
+  if (!response.ok) throw new Error('Could not load your sessions. Please try again.')
+  return response.json()
+}
+
+export async function endSession(id: string): Promise<void> {
+  const response = await protectedFetch(`/sessions/${encodeURIComponent(id)}`, {
+    method: 'DELETE', silent: true, cache: 'no-store',
+  })
+  if (response.status !== 204) throw new Error('Could not end this session. Please try again.')
+}
+
+export async function endOtherSessions(): Promise<number> {
+  const response = await protectedFetch('/sessions/revoke-others', {
+    method: 'POST', silent: true, cache: 'no-store',
+  })
+  if (!response.ok) throw new Error('Could not sign out other devices. Please try again.')
+  const result = await response.json() as { ended: number }
+  return result.ended
+}
+
+export class ProfileValidationError extends Error {
+  readonly fields: Partial<Record<ProfileField, string>>
+
+  constructor(message: string, fields: Partial<Record<ProfileField, string>>) {
+    super(message)
+    this.name = 'ProfileValidationError'
+    this.fields = fields
+  }
+}
+
+export async function getTravelerProfile(): Promise<TravelerProfile> {
+  const response = await protectedFetch('/profile', { silent: true, cache: 'no-store' })
+  if (!response.ok) throw new Error('Could not load your profile. Please try again.')
+  return response.json()
+}
+
+export async function putTravelerProfile(fields: TravelerProfile): Promise<TravelerProfile> {
+  const response = await protectedFetch('/profile', {
+    method: 'PUT', silent: true, cache: 'no-store',
+    headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(fields),
+  })
+  if (response.status === 422) {
+    const payload = await response.json().catch(() => ({}))
+    const errors: Partial<Record<ProfileField, string>> = {}
+    if (Array.isArray(payload.detail)) {
+      for (const issue of payload.detail) {
+        const field = issue.loc?.[1]
+        if (typeof field === 'string' && field in fields && typeof issue.msg === 'string') {
+          errors[field as ProfileField] = issue.msg.replace(/^Value error, /, '')
+        }
+      }
+    }
+    throw new ProfileValidationError('Please correct the highlighted fields.', errors)
+  }
+  if (!response.ok) throw new Error('Could not save your profile. Please try again.')
+  return response.json()
+}
+
+let configurationRequest: Promise<string> | null = null
+
+export function loadGoogleClientId(): Promise<string> {
+  // Share StrictMode's simultaneous requests, but refresh on later route visits.
+  if (!configurationRequest) configurationRequest = request('config').then(async response => {
+    if (!response.ok) throw new Error('Google sign-in configuration could not load.')
+    const config = await response.json()
+    if (config.google_client_id === null) return ''
+    if (typeof config.google_client_id !== 'string' ||
+        !/^[A-Za-z0-9._-]+\.apps\.googleusercontent\.com$/.test(config.google_client_id)) {
+      throw new Error('Google sign-in configuration could not load.')
+    }
+    return config.google_client_id
+  }).finally(() => { configurationRequest = null })
+  return configurationRequest
+}
+
+export async function connectGoogle(idToken: string, password: string, expectedTravelerId: number): Promise<Traveler> {
+  const response = await protectedFetch('/auth/google/link', {
+    method: 'POST', silent: true, cache: 'no-store',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id_token: idToken, password, expected_traveler_id: expectedTravelerId }),
+  })
+  if (response.status === 403) throw new Error('Check your current password and try again.')
+  if (response.status === 409) {
+    const detail = await response.json().catch(() => ({}))
+    if (detail.detail?.code === 'account_changed') throw new Error('Your signed-in account changed. Reload before connecting Google.')
+    throw new Error('That Google account is already connected to another account, or you have a different Google account connected.')
+  }
+  if (response.status === 401 || response.status === 422) throw new Error('Google sign-in could not be verified. Try again.')
+  if (!response.ok) throw new Error('Could not connect Google. Please try again.')
+  return response.json()
+}
+
+export async function changePassword(currentPassword: string, newPassword: string): Promise<void> {
+  const response = await protectedFetch('/auth/change-password', {
+    method: 'POST', silent: true, cache: 'no-store',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+  })
+  if (response.status === 204) return
+  if (response.status === 403) throw new Error('Current password is incorrect.')
+  if (response.status === 400) throw new Error('Choose a different new password.')
+  if (response.status === 422) throw new Error('Use at least 8 characters and at most 72 UTF-8 bytes for your new password.')
+  if (response.status === 429) throw new Error('Too many attempts. Please wait 15 minutes before trying again.')
+  throw new Error('Could not change your password. Please try again.')
+}
 
 // Access tokens live only in this module's memory. The browser manages the
 // HttpOnly refresh cookie; no token is written to browser storage.

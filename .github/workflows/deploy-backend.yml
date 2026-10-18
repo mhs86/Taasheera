@@ -1,0 +1,77 @@
+name: Deploy Backend Lambda
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'backend/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-backend-lambda
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: ${{ vars.AWS_DEPLOY_ROLE_ARN != '' }}
+    runs-on: ubuntu-24.04
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      AWS_REGION: us-east-1
+      AWS_ACCOUNT_ID: '632630731308'
+      ECR_REPOSITORY: taasheera-api
+      LAMBDA_FUNCTION: taasheera-api
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check deployment configuration
+        env:
+          AWS_DEPLOY_ROLE_ARN: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+        run: |
+          if [[ "$AWS_DEPLOY_ROLE_ARN" != "arn:aws:iam::$AWS_ACCOUNT_ID:role/"* ]]; then
+            echo '::error::Set AWS_DEPLOY_ROLE_ARN to an IAM role ARN in AWS account 632630731308.'
+            exit 1
+          fi
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Check Lambda and ECR prerequisites
+        run: |
+          package_type="$(aws lambda get-function-configuration --function-name "$LAMBDA_FUNCTION" --query PackageType --output text)"
+          architecture="$(aws lambda get-function-configuration --function-name "$LAMBDA_FUNCTION" --query 'Architectures[0]' --output text)"
+          if [ "$package_type" != Image ] || [ "$architecture" != x86_64 ]; then
+            echo '::error::The existing Lambda must use package type Image and architecture x86_64. Lambda cannot change a Zip function to Image.'
+            exit 1
+          fi
+          aws ecr describe-repositories --repository-names "$ECR_REPOSITORY" >/dev/null
+
+      - name: Log in to Amazon ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push Lambda image
+        id: image
+        env:
+          ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          image="$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+          docker build --platform linux/amd64 -f backend/Dockerfile.lambda -t "$image" backend
+          docker push "$image"
+          echo "uri=$image" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy Lambda function
+        uses: aws-actions/aws-lambda-deploy@v1.1.0
+        with:
+          function-name: ${{ env.LAMBDA_FUNCTION }}
+          package-type: Image
+          image-uri: ${{ steps.image.outputs.uri }}

@@ -1,6 +1,7 @@
 import hashlib
 import secrets
 import time
+from datetime import datetime, timezone
 from typing import Annotated
 from uuid import uuid4
 
@@ -14,7 +15,8 @@ from sqlmodel import Session, select
 
 from .config import AuthSettings
 from .activity import record_activity
-from .models import AccessTokenPublic, AuthSession, LoginRequest, RefreshToken, Traveler, TravelerPublic
+from .models import AccessTokenPublic, AuthSession, ChangePasswordRequest, LoginRequest, RefreshToken, Traveler, TravelerPublic
+from .security import audit, throttle
 
 
 COOKIE_NAME = "taasheera_refresh"
@@ -27,6 +29,31 @@ DUMMY_HASH = bcrypt.hashpw(secrets.token_bytes(32), bcrypt.gensalt(rounds=12))
 
 def token_hash(raw: str) -> str:
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def device_label(user_agent: str | None) -> str:
+    """Recognize a few common browser/OS families without retaining the header."""
+    agent = (user_agent or "").lower()
+    browser = next((name for marker, name in (
+        ("edg/", "Edge"), ("opr/", "Opera"), ("firefox/", "Firefox"),
+        ("chrome/", "Chrome"), ("safari/", "Safari"),
+    ) if marker in agent), None)
+    system = next((name for marker, name in (
+        ("windows", "Windows"), ("android", "Android"),
+        ("iphone", "iPhone"), ("ipad", "iPad"), ("mac os", "macOS"),
+        ("linux", "Linux"),
+    ) if marker in agent), None)
+    return f"{browser} on {system}" if browser and system else "Unknown device"
+
+
+def revoke_other_sessions(session: Session, traveler_id: int, current_session_id: str) -> int:
+    """Mark a traveler's other sessions revoked within the caller's transaction."""
+    result = session.execute(update(AuthSession).where(
+        AuthSession.traveler_id == traveler_id,
+        AuthSession.id != current_session_id,
+        AuthSession.revoked.is_(False),
+    ).values(revoked=True))
+    return result.rowcount
 
 
 def access_token(session: AuthSession, settings: AuthSettings) -> AccessTokenPublic:
@@ -69,18 +96,25 @@ def check_origin(request: Request):
         raise HTTPException(status_code=403, detail="Origin is not allowed.")
 
 
-def start_session(traveler: Traveler, request: Request, response: Response, session: Session):
+def start_session(traveler: Traveler, request: Request, response: Response, session: Session,
+                  *, method: str = "email_password"):
     """Common session issuance for password and verified Google sign-in."""
     settings = request.app.state.auth_settings
+    traveler.last_login_method = method
+    traveler.last_login_at = int(time.time())
+    session.add(traveler)
     previous = request.cookies.get(COOKIE_NAME)
     if previous:
         old = session.get(RefreshToken, token_hash(previous))
         if old:
             session.execute(update(AuthSession).where(AuthSession.id == old.session_id).values(revoked=True))
     raw = secrets.token_urlsafe(32)
+    now = datetime.now(timezone.utc)
     auth_session = AuthSession(
         id=str(uuid4()), traveler_id=traveler.id, refresh_hash=token_hash(raw),
         expires_at=int(time.time()) + settings.refresh_seconds,
+        device_label=device_label(request.headers.get("user-agent")),
+        created_at=now, last_active_at=now,
     )
     session.add(auth_session)
     session.flush()
@@ -122,6 +156,7 @@ def create_current_traveler(get_session):
             traveler = session.get(Traveler, auth_session.traveler_id)
             if traveler is None:
                 raise unauthorized
+            request.state.auth_session_id = auth_session.id
             return traveler
         except (jwt.InvalidTokenError, ValueError, TypeError, OverflowError):
             raise unauthorized from None
@@ -136,11 +171,12 @@ def create_auth_router(get_session, current_traveler=None):
 
     @router.post("/login", response_model=AccessTokenPublic, dependencies=[Depends(check_origin)])
     def login(data: LoginRequest, request: Request, response: Response, session: SessionDep):
+        throttle(request, session, "login", account=data.email)
         # Serialize login with password reset so an old-password login cannot
         # create a new session after reset has revoked existing sessions.
         session.execute(update(Traveler).where(Traveler.email == data.email).values(password_hash=Traveler.password_hash))
         traveler = session.exec(select(Traveler).where(Traveler.email == data.email)).first()
-        password_enabled = traveler is not None and bool(traveler.password_hash)
+        password_enabled = traveler is not None and traveler.password_enabled
         stored_hash = traveler.password_hash.encode("ascii") if password_enabled else DUMMY_HASH
         try:
             password = data.password.get_secret_value().encode("utf-8")
@@ -151,6 +187,7 @@ def create_auth_router(get_session, current_traveler=None):
             matches = False
             valid_length = False
         if not password_enabled or not valid_length or not matches:
+            audit(request, "login", "rejected", traveler.id if traveler else None)
             if traveler is not None:
                 record_activity(session, request.app.state.activity_directory, traveler.id,
                                 "sign_in", "email_password", "failure")
@@ -160,6 +197,7 @@ def create_auth_router(get_session, current_traveler=None):
             )
 
         result = start_session(traveler, request, response, session)
+        audit(request, "login", "success", traveler.id)
         record_activity(session, request.app.state.activity_directory, traveler.id,
                         "sign_in", "email_password", "success")
         return result
@@ -168,6 +206,38 @@ def create_auth_router(get_session, current_traveler=None):
     def me(response: Response, traveler: Annotated[Traveler, Depends(current_traveler)]):
         response.headers["Cache-Control"] = "no-store"
         return traveler
+
+    @router.post("/change-password", status_code=204, dependencies=[Depends(check_origin)])
+    def change_password(data: ChangePasswordRequest, request: Request, session: SessionDep,
+                        traveler: Annotated[Traveler, Depends(current_traveler)]):
+        throttle(request, session, "change-password", account=str(traveler.id), account_limit=5)
+        # Serialize with password reset and password login before checking the hash.
+        session.execute(update(Traveler).where(Traveler.id == traveler.id)
+                        .values(password_hash=Traveler.password_hash))
+        session.refresh(traveler)
+        if not traveler.password_enabled:
+            audit(request, "change-password", "unavailable", traveler.id)
+            raise HTTPException(403, "Password change is unavailable for Google-only accounts.",
+                                headers={"Cache-Control": "no-store"})
+        try:
+            current = data.current_password.get_secret_value().encode("utf-8")
+            matches = bcrypt.checkpw(current, traveler.password_hash.encode("ascii"))
+        except (ValueError, UnicodeError):
+            matches = False
+        if not matches:
+            audit(request, "change-password", "rejected", traveler.id)
+            raise HTTPException(403, "Current password is incorrect.",
+                                headers={"Cache-Control": "no-store"})
+        new_password = data.password.get_secret_value().encode("utf-8")
+        if new_password == current:
+            raise HTTPException(400, "Choose a different new password.",
+                                headers={"Cache-Control": "no-store"})
+        traveler.password_hash = bcrypt.hashpw(new_password, bcrypt.gensalt(rounds=12)).decode("ascii")
+        session.add(traveler)
+        revoke_other_sessions(session, traveler.id, request.state.auth_session_id)
+        session.commit()
+        audit(request, "change-password", "success", traveler.id)
+        return Response(status_code=204, headers={"Cache-Control": "no-store"})
 
     @router.post("/refresh", response_model=AccessTokenPublic, dependencies=[Depends(check_origin)])
     def refresh(request: Request, response: Response, session: SessionDep):
@@ -195,7 +265,8 @@ def create_auth_router(get_session, current_traveler=None):
                 AuthSession.refresh_hash == old.token_hash,
                 AuthSession.revoked.is_(False),
                 AuthSession.expires_at > int(time.time()),
-            ).values(refresh_hash=new_hash).execution_options(synchronize_session=False)
+            ).values(refresh_hash=new_hash, last_active_at=datetime.now(timezone.utc))
+            .execution_options(synchronize_session=False)
         )
         if result.rowcount != 1 or session.get(Traveler, auth_session.traveler_id) is None:
             # A replay revokes the current replacement token as well.

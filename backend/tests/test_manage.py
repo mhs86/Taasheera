@@ -51,7 +51,7 @@ def database(tmp_path, monkeypatch):
     engine = build_engine(url)
     with Session(engine) as session:
         session.add(Traveler(id=1, name="Maya", email=MAYA, password_hash=PASSWORD_HASH))
-        session.add(Traveler(id=2, name="Omar", email=OMAR, password_hash=""))
+        session.add(Traveler(id=2, name="Omar", email=OMAR, password_hash="", auth_type="google"))
         session.commit()
         session.add(GoogleIdentity(subject="google-subject-2", traveler_id=2))
         session.commit()

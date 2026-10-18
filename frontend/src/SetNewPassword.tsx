@@ -35,7 +35,7 @@ function SetNewPassword({ token, onTokenCleared, onSuccess }: Props) {
         <p className="create-account"><a href="#forgot-password" data-activity-id="reset-link">Request a new reset link</a></p>
         <p className="create-account"><a href="#sign-in" data-activity-id="sign-in-link">Back to sign-in</a></p>
       </> : <>
-        <p className="intro">Enter and confirm your new password.</p>
+        <p className="intro">Your reset code has been verified. Choose a new password within five minutes.</p>
         <form
           aria-busy={submitting}
           onSubmit={async (event) => {

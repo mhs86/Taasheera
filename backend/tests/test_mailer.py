@@ -93,5 +93,5 @@ def test_smtp_sender_transport_message_and_credentials(monkeypatch, security, ca
     assert message["To"] == "maya@example.com"
     assert message["From"] == "no-reply@example.com"
     assert link in message.get_content()
-    assert "30 minutes" in message.get_content()
+    assert "10 minutes" in message.get_content()
     assert link not in caplog.text and password not in caplog.text and password not in repr(settings)

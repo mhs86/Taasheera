@@ -24,7 +24,8 @@ def auth_environment(monkeypatch, tmp_path):
     for name in ("GEMINI_API_KEY", "GOOGLE_API_KEY"):
         monkeypatch.delenv(name, raising=False)
     for name in ("RESET_FRONTEND_URL", "SMTP_HOST", "SMTP_FROM", "SMTP_PORT", "SMTP_SECURITY",
-                 "SMTP_USERNAME", "SMTP_PASSWORD", "SMTP_TIMEOUT_SECONDS"):
+                 "SMTP_USERNAME", "SMTP_PASSWORD", "SMTP_TIMEOUT_SECONDS", "RESET_MAIL_PROVIDER",
+                 "SES_FROM_EMAIL", "SES_REGION", "AUTH_TRUST_CLOUDFRONT_PROXY"):
         monkeypatch.delenv(name, raising=False)
 
 

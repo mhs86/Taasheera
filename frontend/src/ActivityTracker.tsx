@@ -20,6 +20,8 @@ export default function ActivityTracker() {
   useEffect(() => {
     let active = true
     const visit = () => {
+      // The backend's activity allowlist has no account page identifier yet.
+      if (window.location.pathname === '/account') return
       const page = safePage(window.location.pathname, window.location.hash)
       if (lastVisit.current === page) return
       if (hasAccessToken()) {
@@ -48,6 +50,7 @@ export default function ActivityTracker() {
 
   useEffect(() => {
     const click = (event: MouseEvent) => {
+      if (window.location.pathname === '/account') return
       if (!event.isTrusted) return
       const element = event.target instanceof Element ? event.target.closest<HTMLElement>('[data-activity-id]') : null
       const control = element?.dataset.activityId
