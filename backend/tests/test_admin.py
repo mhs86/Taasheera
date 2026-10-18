@@ -34,6 +34,7 @@ ACTORS = {
 }
 REFUSED = [name for name in ACTORS if name != "admin"]
 CLAIMS = {"sub", "sid", "type", "iat", "exp", "iss", "aud", "jti"}
+MEMBER = "member"  # A traveler the admin routes act on; not one of the signed-in actors.
 
 
 def email_of(name):
@@ -41,16 +42,29 @@ def email_of(name):
 
 
 def add_accounts(app, names=ACTORS):
+    # Created active: suspended accounts cannot sign in, so apply_statuses suspends them after login.
     ids = {}
     with Session(app.state.engine) as session:
         for name in names:
-            role, status = ACTORS[name]
+            role, _ = ACTORS.get(name, ("traveler", "active"))
             traveler = Traveler(name=name.replace("_", " ").title(), email=email_of(name),
-                                password_hash=PASSWORD_HASH, role=role, status=status)
+                                password_hash=PASSWORD_HASH, role=role)
             session.add(traveler)
             session.commit()
             ids[name] = traveler.id
     return ids
+
+
+def apply_statuses(app, ids):
+    # Set directly, as an operator editing the database would: the sessions stay unrevoked.
+    for name, traveler_id in ids.items():
+        if ACTORS.get(name, (None, "active"))[1] != "active":
+            update_account(app, traveler_id, status=ACTORS[name][1])
+
+
+def refused_status(name):
+    # Active non-admins are refused by the gate; a suspended account's token no longer authenticates.
+    return 401 if ACTORS[name][1] == "suspended" else 403
 
 
 def login(client, name):
@@ -83,8 +97,9 @@ def unverified_claims(token):
 def api(tmp_path):
     app = create_app(f"sqlite:///{(tmp_path / 'admin.db').as_posix()}")
     with TestClient(app) as client:
-        ids = add_accounts(app)
+        ids = add_accounts(app, [*ACTORS, MEMBER])
         tokens = {name: login(client, name) for name in ACTORS}
+        apply_statuses(app, ids)
         yield SimpleNamespace(client=client, app=app, ids=ids, tokens=tokens)
 
 
@@ -129,7 +144,7 @@ def test_every_admin_route_admits_only_active_admins(api):
     assert contexts
     assert all(isinstance(context.original_route, APIRoute) for context in contexts)
     for context in contexts:
-        path = re.sub(r"\{[^}]+\}", "1", context.path)
+        path = re.sub(r"\{[^}]+\}", str(api.ids[MEMBER]), context.path)
         for method in sorted(context.methods):
             anonymous = api.client.request(method, path)
             assert anonymous.status_code == 401, (method, path)
@@ -143,8 +158,9 @@ def test_every_admin_route_admits_only_active_admins(api):
                     if method == "GET" and "{" not in context.path:
                         assert response.status_code == 200
                 else:
-                    assert response.status_code == 403, (method, path, name)
-                    assert response.json() == {"detail": FORBIDDEN}
+                    assert response.status_code == refused_status(name), (method, path, name)
+                    if response.status_code == 403:
+                        assert response.json() == {"detail": FORBIDDEN}
                 assert response.headers["cache-control"] == "no-store"
 
 
@@ -168,14 +184,15 @@ def test_admin_routes_are_gated_and_role_gates_exist_only_under_admin(api):
 def test_role_and_status_are_read_from_the_database_on_every_request(api):
     headers = bearer(api.tokens["admin"])
     admin_id = api.ids["admin"]
+    # A suspended account is signed out everywhere, not only refused by the admin gate.
     steps = [
-        ({}, 200), ({"role": "traveler"}, 403), ({"role": "admin"}, 200), ({"status": "suspended"}, 403),
-        ({"status": "active"}, 200), ({"role": "support"}, 403),
+        ({}, 200, 200), ({"role": "traveler"}, 403, 200), ({"role": "admin"}, 200, 200),
+        ({"status": "suspended"}, 401, 401), ({"status": "active"}, 200, 200), ({"role": "support"}, 403, 200),
     ]
-    for changes, expected in steps:
+    for changes, admin_expected, auth_expected in steps:
         update_account(api.app, admin_id, **changes)
-        assert api.client.get("/admin/me", headers=headers).status_code == expected, changes
-        assert api.client.get("/auth/me", headers=headers).status_code == 200
+        assert api.client.get("/admin/me", headers=headers).status_code == admin_expected, changes
+        assert api.client.get("/auth/me", headers=headers).status_code == auth_expected, changes
 
 
 def test_promoted_traveler_gains_access_with_the_same_token(api):
@@ -211,8 +228,7 @@ def test_role_claims_in_a_validly_signed_token_are_ignored(api):
 def test_client_supplied_role_hints_are_ignored(api, headers, params):
     for name in REFUSED:
         response = api.client.get("/admin/me", headers={**bearer(api.tokens[name]), **headers}, params=params)
-        assert response.status_code == 403, name
-        assert response.json() == {"detail": FORBIDDEN}
+        assert response.status_code == refused_status(name), name
 
 
 def unsigned(claims):
@@ -284,11 +300,15 @@ def test_ended_admin_sessions_are_rejected(api, ending):
 
 
 def test_refusals_do_not_reveal_role_or_status(api):
-    refusals = set()
+    refusals = {}
     for name in REFUSED:
         response = api.client.get("/admin/me", headers=bearer(api.tokens[name]))
-        refusals.add((response.status_code, response.content, response.headers["cache-control"]))
-    assert refusals == {(403, json.dumps({"detail": FORBIDDEN}, separators=(",", ":")).encode(), "no-store")}
+        refusals.setdefault(ACTORS[name][1], set()).add(
+            (response.status_code, response.content, response.headers["cache-control"]))
+    # Every active non-admin gets one refusal; every suspended account looks like any ended session.
+    assert refusals["active"] == {(403, json.dumps({"detail": FORBIDDEN}, separators=(",", ":")).encode(), "no-store")}
+    assert refusals["suspended"] == {
+        (401, json.dumps({"detail": "Invalid or expired access token."}, separators=(",", ":")).encode(), "no-store")}
 
 
 @pytest.mark.parametrize("method,path,status", [
@@ -341,9 +361,11 @@ def test_support_can_be_opted_in_with_require_role(tmp_path):
 
     app.include_router(router)
     with TestClient(app) as client:
-        add_accounts(app, ["admin", "support", "suspended_support", "traveler"])
-        for name, expected in [("support", 200), ("admin", 200), ("suspended_support", 403), ("traveler", 403)]:
-            response = client.get("/admin/support-check", headers=bearer(login(client, name)))
+        ids = add_accounts(app, ["admin", "support", "suspended_support", "traveler"])
+        tokens = {name: login(client, name) for name in ids}
+        apply_statuses(app, ids)
+        for name, expected in [("support", 200), ("admin", 200), ("suspended_support", 401), ("traveler", 403)]:
+            response = client.get("/admin/support-check", headers=bearer(tokens[name]))
             assert response.status_code == expected, name
             assert response.headers["cache-control"] == "no-store"
         # The admin-only route stays closed to support.

@@ -25,6 +25,8 @@ AUDIENCE = "taasheera-traveler"
 bearer = HTTPBearer(auto_error=False)
 # Unknown emails still perform the same bcrypt work as incorrect passwords.
 DUMMY_HASH = bcrypt.hashpw(secrets.token_bytes(32), bcrypt.gensalt(rounds=12))
+# A code, because /auth/login also answers 403 to a disallowed Origin.
+SUSPENDED = {"code": "account_suspended", "message": "This account is suspended."}
 
 
 def token_hash(raw: str) -> str:
@@ -52,6 +54,14 @@ def revoke_other_sessions(session: Session, traveler_id: int, current_session_id
         AuthSession.traveler_id == traveler_id,
         AuthSession.id != current_session_id,
         AuthSession.revoked.is_(False),
+    ).values(revoked=True))
+    return result.rowcount
+
+
+def revoke_all_sessions(session: Session, traveler_id: int) -> int:
+    """Mark every session of a traveler revoked within the caller's transaction."""
+    result = session.execute(update(AuthSession).where(
+        AuthSession.traveler_id == traveler_id, AuthSession.revoked.is_(False),
     ).values(revoked=True))
     return result.rowcount
 
@@ -100,6 +110,12 @@ def start_session(traveler: Traveler, request: Request, response: Response, sess
                   *, method: str = "email_password"):
     """Common session issuance for password and verified Google sign-in."""
     settings = request.app.state.auth_settings
+    # Callers check the credential first, so only its owner learns the account is suspended.
+    # They also lock the traveler row, so a suspension cannot commit between this check and the new session.
+    if traveler.status != "active":
+        audit(request, "login" if method == "email_password" else "google-login", "suspended", traveler.id)
+        record_activity(session, request.app.state.activity_directory, traveler.id, "sign_in", method, "suspended")
+        raise HTTPException(403, SUSPENDED, headers={"Cache-Control": "no-store"})
     traveler.last_login_method = method
     traveler.last_login_at = int(time.time())
     session.add(traveler)
@@ -154,7 +170,8 @@ def create_current_traveler(get_session):
             ):
                 raise unauthorized
             traveler = session.get(Traveler, auth_session.traveler_id)
-            if traveler is None:
+            # Suspension also revokes sessions; this covers a status changed outside the admin API.
+            if traveler is None or traveler.status != "active":
                 raise unauthorized
             request.state.auth_session_id = auth_session.id
             return traveler
@@ -268,8 +285,9 @@ def create_auth_router(get_session, current_traveler=None):
             ).values(refresh_hash=new_hash, last_active_at=datetime.now(timezone.utc))
             .execution_options(synchronize_session=False)
         )
-        if result.rowcount != 1 or session.get(Traveler, auth_session.traveler_id) is None:
-            # A replay revokes the current replacement token as well.
+        traveler = session.get(Traveler, auth_session.traveler_id)
+        if result.rowcount != 1 or traveler is None or traveler.status != "active":
+            # A replay revokes the current replacement token as well, and a suspended account's session ends.
             session.execute(update(AuthSession).where(AuthSession.id == auth_session.id).values(revoked=True))
             session.commit()
             return rejected()
