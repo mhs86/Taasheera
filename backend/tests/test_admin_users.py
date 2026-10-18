@@ -160,6 +160,9 @@ def test_suspended_accounts_cannot_sign_in_with_google(api, monkeypatch):
 def test_a_status_set_outside_the_api_still_signs_the_account_out(api):
     # An operator editing the row directly does not revoke sessions; the token check still refuses them.
     token = login(api, "maya@example.com")
+    api.client.cookies.clear()
+    refresh_cookie = api.client.post("/auth/login", json={"email": "maya@example.com", "password": PASSWORD}).cookies[COOKIE_NAME]
+    api.client.cookies.clear()
     with Session(api.app.state.engine) as session:
         maya = session.get(Traveler, api.ids["maya"])
         maya.status = "suspended"
@@ -167,6 +170,14 @@ def test_a_status_set_outside_the_api_still_signs_the_account_out(api):
         session.commit()
     assert api.client.get("/auth/me", headers=bearer(token)).status_code == 401
     assert api.client.get("/profile", headers=bearer(token)).status_code == 401
+    # Reactivating must not bring those sessions back: they end, and the account signs in afresh.
+    assert reactivate(api, "maya").status_code == 200
+    assert api.client.get("/auth/me", headers=bearer(token)).status_code == 401
+    api.client.cookies.set(COOKIE_NAME, refresh_cookie, path="/auth")
+    assert api.client.post("/auth/refresh").status_code == 401
+    api.client.cookies.clear()
+    assert active_sessions(api, api.ids["maya"]) == 0
+    assert api.client.get("/auth/me", headers=bearer(login(api, "maya@example.com"))).status_code == 200
 
 
 # --- Users list (CMPS271-198) ------------------------------------------------------------------

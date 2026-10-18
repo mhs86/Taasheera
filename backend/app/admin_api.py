@@ -176,7 +176,9 @@ def apply_change(session: Session, request: Request, actor: Traveler, target: Tr
     previous = getattr(target, field)
     setattr(target, field, value)
     session.add(target)
-    if field == "status" and value == "suspended":
+    if field == "status":
+        # Suspension signs the account out everywhere. Reactivation does too, in case it was suspended
+        # outside this API, where its sessions were only blocked, and would otherwise work again.
         revoke_all_sessions(session, target.id)
     # record_activity commits, so the change and its audit event are saved together or not at all.
     record_activity(session, request.app.state.activity_directory, target.id, event_type,

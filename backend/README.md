@@ -190,7 +190,8 @@ request, so a change applies to the next request. Unknown query parameters are r
 rather than ignored. The admin API never returns passport images, passport fields or profile details.
 
 Suspension ends every session of the account at once, and a suspended account cannot sign in with
-a password or Google or refresh a session. Only someone who passes the password or Google check
+a password or Google or refresh a session. Reactivation also ends any sessions left over, so the
+person signs in again. Only someone who passes the password or Google check
 learns why: `403` with `{"detail": {"code": "account_suspended", ...}}`. Admins cannot suspend
 themselves or change their own role (`409`), and repeating an action that changes nothing is also
 `409`. Each change is checked again against the acting admin under a row lock and recorded on the
