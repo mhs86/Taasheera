@@ -4,6 +4,11 @@
   "destination": "SCHENGEN",
   "visa_type": "short_stay",
   "title": "Schengen short-stay visa (type C)",
+  "destination_label": "Schengen area",
+  "destination_description": "29 European countries, including France, Germany, Italy and Spain",
+  "visa_label": "Short stay (type C)",
+  "visa_description": "Up to 90 days in any 180-day period, for tourism, family visits, business or a short course.",
+  "summary": {"place": "main_destination", "date": "arrival_date"},
   "source": "Harmonised Schengen visa application form, Regulation (EC) No 810/2009 (Visa Code), Annex I",
   "steps": [
     {

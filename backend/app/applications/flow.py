@@ -80,12 +80,25 @@ class Step(_Strict):
     questions: list[Question] = Field(min_length=1)
 
 
+class Summary(_Strict):
+    """Which answers name an application in lists: where to, and when."""
+
+    place: str | None = None
+    date: str | None = None
+
+
 class Questionnaire(_Strict):
     id: str = Field(pattern=r"^[a-z0-9-]+$")
     version: int = Field(ge=1)
     destination: str
     visa_type: str
     title: str
+    # Shown in the opening chat steps (US 4): "Where are you travelling to?", "Which visa?"
+    destination_label: str
+    destination_description: str
+    visa_label: str
+    visa_description: str
+    summary: Summary = Summary()
     source: str
     steps: list[Step] = Field(min_length=1)
 
@@ -113,6 +126,9 @@ class Questionnaire(_Strict):
                 if rule.ref != "today" and name not in seen:
                     raise ValueError(f"{question.id}: rule refers to {rule.ref!r}, which isn't an earlier question.")
             seen[question.id] = question
+        for ref, types in ((self.summary.place, {"choice", "country"}), (self.summary.date, {"date"})):
+            if ref is not None and (ref not in seen or seen[ref].type not in types):
+                raise ValueError(f"summary refers to {ref!r}, which isn't a question of type {sorted(types)}.")
         return self
 
     def questions(self) -> Iterator[Question]:
@@ -372,11 +388,21 @@ def display_value(question: Question, value: Any) -> str:
     return str(value) if value != "" else "(left empty)"
 
 
-def describe(questionnaire: Questionnaire, answers: Answers) -> str:
+def summary_place(questionnaire: Questionnaire, answers: Answers) -> str | None:
+    """The answer that names where the trip goes ("France"), for lists of applications."""
+    ref = questionnaire.summary.place
+    if ref is None or ref not in answers:
+        return None
+    question = questionnaire.question(ref)
+    return display_value(question, answers[ref]) if question.type == "choice" else answers[ref]
+
+
+def describe(questionnaire: Questionnaire, answers: Answers, group_size: int = 1) -> str:
     """Plain text for the assistant's prompt: the visa, where the traveler is, and their answers."""
     current = next_question(questionnaire, answers)
     stopped = stop_message(questionnaire, answers)
-    lines = [f"Visa: {questionnaire.title}"]
+    travelling = "alone" if group_size == 1 else f"in a group of {group_size} (this application is for the traveler only)"
+    lines = [f"Visa: {questionnaire.title}", f"Travelling: {travelling}"]
     if stopped:
         lines.append(f"The application can't go on: {stopped}")
     lines.append(f"Current question: {current.prompt}" if current else

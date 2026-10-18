@@ -8,7 +8,7 @@ from pydantic import ValidationError
 
 from app.applications.flow import (
     QUESTIONNAIRE_DIR, InvalidAnswer, Questionnaire, add_months, available_questionnaires, check_answer, date_bounds,
-    load_questionnaire, next_question, progress, reconcile, stop_message, visible_questions,
+    load_questionnaire, next_question, progress, reconcile, stop_message, summary_place, visible_questions,
 )
 
 TODAY = date(2026, 10, 18)
@@ -220,6 +220,21 @@ def _file(**changes):
 def test_broken_questionnaire_files_are_rejected_when_loaded(broken, message):
     with pytest.raises(ValidationError, match=message):
         Questionnaire.model_validate(_file(trip=broken))
+
+
+@pytest.mark.parametrize("summary, message", [
+    ({"place": "place_of_birth"}, "summary refers to 'place_of_birth'"),
+    ({"date": "main_destination"}, "summary refers to 'main_destination'"),
+    ({"place": "nowhere"}, "summary refers to 'nowhere'"),
+])
+def test_summary_must_name_a_fitting_question(summary, message):
+    with pytest.raises(ValidationError, match=message):
+        Questionnaire.model_validate(_file(summary=summary))
+
+
+def test_summary_place_reads_the_choice_label(schengen):
+    assert summary_place(schengen, {"main_destination": "D"}) == "Germany"
+    assert summary_place(schengen, {}) is None
 
 
 def test_visible_questions_hide_unmet_conditions(schengen):
