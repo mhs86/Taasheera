@@ -74,14 +74,16 @@ def upgrade() -> None:
                         ("add_column", "authsession", "created_at"),
                         ("add_column", "authsession", "last_active_at"),
                     }
-                    # Unversioned databases predate migrations, so none has the role and status columns.
-                    roles = {("add_column", "traveler", "role"), ("add_column", "traveler", "status")}
+                    # Unversioned databases predate migrations, so none has the columns added since.
+                    migrated_only = {("add_column", "traveler", "role"), ("add_column", "traveler", "status"),
+                                     ("add_column", "traveler", "created_at")}
                     if len(signatures) != len(differences) or signatures not in (
-                        roles | session_details, roles | profile | session_details,
-                        roles | otp | profile | session_details, roles | otp | sso | profile | session_details,
+                        migrated_only | session_details, migrated_only | profile | session_details,
+                        migrated_only | otp | profile | session_details,
+                        migrated_only | otp | sso | profile | session_details,
                     ):
                         raise RuntimeError(REFUSED)
-                    known = signatures - roles
+                    known = signatures - migrated_only
                     prior_revision = (
                         "d37a5b1e9c42" if known == session_details else
                         "c82a91f4d670" if known == profile | session_details else
