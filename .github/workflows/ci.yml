@@ -86,6 +86,16 @@ jobs:
             -e DATABASE_URL=sqlite:////app/storage/ci.db \
             -v taasheera-ci-data:/app/storage \
             --entrypoint python taasheera-backend-ci migrate.py upgrade
+          # The image ships the operator command; an unknown account is refused without changes.
+          if docker run --rm --env-file "$RUNNER_TEMP/taasheera-ci.env" \
+            -e DATABASE_URL=sqlite:////app/storage/ci.db \
+            -v taasheera-ci-data:/app/storage \
+            --entrypoint python taasheera-backend-ci manage.py set-role --email nobody@example.com --role admin \
+            2> "$RUNNER_TEMP/set-role.err"; then
+            echo "manage.py set-role accepted an unknown account"
+            exit 1
+          fi
+          grep -q "No account uses that email" "$RUNNER_TEMP/set-role.err"
           docker run -d --name taasheera-ci --env-file "$RUNNER_TEMP/taasheera-ci.env" \
             -e DATABASE_URL=sqlite:////app/storage/ci.db \
             -v taasheera-ci-data:/app/storage \
