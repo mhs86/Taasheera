@@ -85,7 +85,7 @@ test('every Get started button loads the account page as a new document', async 
   assert.equal(router.state.location.pathname, '/')
 })
 
-test('signed-in travelers see Log out and Your passport instead of Log in and Get started', async (t) => {
+test('signed-in travelers see Log out and Start an application instead of Log in and Get started', async (t) => {
   const requests = []
   t.mock.method(globalThis, 'fetch', async (url) => {
     requests.push(url)
@@ -97,13 +97,14 @@ test('signed-in travelers see Log out and Your passport instead of Log in and Ge
   await settle()
   const header = container.querySelector('.nav-right')
   assert.equal(header.querySelector('.logout-button')?.textContent, 'Log out')
-  assert.equal(header.querySelector('a.header-cta')?.getAttribute('href'), '/passport')
+  assert.equal(header.querySelector('a.header-cta')?.getAttribute('href'), '/apply')
   assert.equal(container.querySelector('a[href^="/sign-in"]'), null, 'no Log in or Get started anywhere')
   assert.ok(container.querySelector('.footer-links a[href="/passport"]'))
+  assert.ok(container.querySelector('.footer-links a[href="/apply"]'))
 
   await click(container.querySelector('.menu-button'))
   const items = [...container.querySelectorAll('#mobile-menu a, #mobile-menu button')].map(el => el.textContent.trim())
-  assert.deepEqual(items, ['How it works', 'Destinations', 'Privacy', 'FAQ', 'Log out', 'Your passport'])
+  assert.deepEqual(items, ['How it works', 'Destinations', 'Privacy', 'FAQ', 'Log out', 'Start an application'])
 
   await click(container.querySelector('#mobile-menu .logout-button'))
   await settle()

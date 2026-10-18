@@ -19,13 +19,15 @@ function MainLinks() {
   )
 }
 
+export type LayoutContext = { traveler: Traveler | null }
+
 type AccountProps = { traveler: Traveler | null; loggingOut: boolean; onLogOut: () => void; inMenu?: boolean }
 
-// Signed out: Log in / Get started. Signed in: Log out / Your passport.
+// Signed out: Log in / Get started. Signed in: Log out / Start an application.
 function AccountLinks({ traveler, loggingOut, onLogOut, inMenu = false }: AccountProps) {
   const cta = traveler
-    ? <Link to="/passport" className="header-cta" data-activity-id="passport-link">
-        <span className="mini-circle"><ArrowIcon /></span>Your passport
+    ? <Link to="/apply" className="header-cta" data-activity-id="start-application-link">
+        <span className="mini-circle"><ArrowIcon /></span>Start an application
       </Link>
     : <Link to={createAccountPath} reloadDocument className="header-cta" data-activity-id="get-started-link">
         <span className="mini-circle"><ArrowIcon /></span>Get started
@@ -110,7 +112,8 @@ export default function Layout() {
         )}
       </header>
 
-      <main id="main"><Outlet /></main>
+      {/* Pages read the signed-in traveler from here, e.g. the homepage's main button. */}
+      <main id="main"><Outlet context={{ traveler } satisfies LayoutContext} /></main>
 
       <footer className="site-footer">
         <div className="container">
@@ -122,7 +125,10 @@ export default function Layout() {
               <Link to="/#how-it-works" data-activity-id="how-it-works-link">How it works</Link>
               <Link to="/faq" data-activity-id="faq-link">FAQ</Link>
               {traveler
-                ? <Link to="/passport" data-activity-id="passport-link">Your passport</Link>
+                ? <>
+                    <Link to="/apply" data-activity-id="start-application-link">Your applications</Link>
+                    <Link to="/passport" data-activity-id="passport-link">Your passport</Link>
+                  </>
                 : <Link to={signInPath} data-activity-id="login-link">Log in</Link>}
             </nav>
           </div>
