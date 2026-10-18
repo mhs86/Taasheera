@@ -216,6 +216,13 @@ What we decided, why, and what we rejected. Newest at the bottom. Add an entry w
     event. SQLite migrations run in one explicit transaction, so an interrupted table rebuild rolls back.
     *Rejected: database enum types (PostgreSQL type migrations, nothing on SQLite), a role claim in the JWT
     (stale until expiry), an admin sign-up endpoint or seeded admin password.*
+23. **Admin user management (US 133).** `/admin/users` lists, searches and shows accounts (account data and
+    counts only, never passport or profile fields); admins suspend, reactivate and change roles there.
+    Suspension revokes every session, and sign-in, refresh and the token check all refuse suspended accounts.
+    Each change locks both rows in id order, re-checks the acting admin, refuses self-suspension and
+    self-role changes, and commits with a `status_change`/`role_change` event on the changed account
+    (`admin:<id>:<old>-><new>`). `traveler.created_at` is backfilled from registration events.
+    *Rejected: deleting users (Sprint 3) and audit events for reads.*
 
 ## Personal instructions
 
