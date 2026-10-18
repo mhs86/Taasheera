@@ -16,6 +16,7 @@ from sqlmodel import Session, SQLModel, select
 
 from .database import build_engine
 from .activity import activity_directory_from_environment, create_activity_router, record_activity
+from .admin_api import create_admin_router, install_admin_no_store
 from .assistant import DEFAULT_MODEL, create_assistant_router, gemini_ask
 from .auth import check_origin, create_auth_router, create_current_traveler
 from .sessions import create_sessions_router
@@ -57,6 +58,7 @@ def create_app(database_url: str | None = None, *, reset_sender: ResetSender | N
     app = FastAPI(title="Taasheera traveler API", lifespan=lifespan)
     app.state.engine = engine
     install_request_logging(app)
+    install_admin_no_store(app)
 
     @app.get("/health/live", include_in_schema=False)
     def liveness():
@@ -82,6 +84,7 @@ def create_app(database_url: str | None = None, *, reset_sender: ResetSender | N
     current_traveler = create_current_traveler(get_session)
     app.include_router(create_activity_router(get_session, current_traveler))
     app.include_router(create_auth_router(get_session, current_traveler))
+    app.include_router(create_admin_router(current_traveler))
     app.include_router(create_sessions_router(get_session, current_traveler))
     app.include_router(create_google_auth_router(get_session, current_traveler))
     app.include_router(create_password_reset_router(get_session))

@@ -290,6 +290,20 @@ def test_failed_transaction_preserves_password_token_and_sessions(api, monkeypat
     assert reset(client, raw).status_code == 204
 
 
+def test_reset_endpoints_reject_role_fields(api):
+    client, app, sender = api
+    raw = issue(api)
+    requested = client.post("/auth/forgot-password", json={"email": EMAIL, "role": "admin"})
+    confirmed = client.post("/auth/reset-password", json={"token": raw, "password": NEW, "role": "admin"})
+    assert requested.status_code == confirmed.status_code == 422
+    assert len(sender.messages) == 1
+    with Session(app.state.engine) as session:
+        assert not session.get(PasswordResetToken, token_hash(raw)).used
+        traveler = session.exec(select(Traveler)).one()
+        assert (traveler.role, traveler.status) == ("traveler", "active")
+    assert login(client).status_code == 200
+
+
 def test_reset_does_not_affect_another_traveler(api):
     client, app, _ = api
     with TestClient(app) as other:
