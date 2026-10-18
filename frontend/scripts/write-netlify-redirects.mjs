@@ -13,6 +13,8 @@ export function redirectRules(rawBackendUrl = '') {
       rules.push(`/${route} ${parsed.origin}/${route} 200`)
       rules.push(`/${route}/* ${parsed.origin}/${route}/:splat 200`)
     }
+    // Dashboard pages use /admin, so the admin API has its own browser prefix.
+    rules.push(`/admin-api/* ${parsed.origin}/admin/:splat 200`)
   }
   rules.push('/* /index.html 200')
   return `${rules.join('\n')}\n`
