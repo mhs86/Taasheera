@@ -26,6 +26,12 @@ from ..profile import ProfileFields
 QUESTIONNAIRE_DIR = Path(__file__).resolve().parent / "questionnaires"
 Answers = dict[str, Any]
 AnswerType = Literal["choice", "yes_no", "text", "date", "country", "phone", "address", "passport"]
+# Where a question's answer may already be known (US 10), and the answer type each source gives.
+PREFILL_SOURCES: dict[str, str] = {
+    "passport": "passport",  # the traveler's latest confirmed passport review
+    "profile.address": "address",
+    "profile.phone": "phone",
+}
 # A reference used by a date rule: "today", a question id, or "question.field" for an answer
 # made of several fields, such as "passport.expiry_date".
 _REF = re.compile(r"today|[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)?")
@@ -72,6 +78,7 @@ class Question(_Strict):
     rules: list[DateRule] = Field(default_factory=list)
     show_if: Condition | None = None
     stop_if: StopRule | None = None
+    prefill: str | None = None
 
 
 class Step(_Strict):
@@ -113,6 +120,8 @@ class Questionnaire(_Strict):
                 raise ValueError(f"{question.id}: choice questions, and only they, need options.")
             if question.rules and question.type != "date":
                 raise ValueError(f"{question.id}: only date questions can have date rules.")
+            if question.prefill is not None and PREFILL_SOURCES.get(question.prefill) != question.type:
+                raise ValueError(f"{question.id}: prefill {question.prefill!r} doesn't give a {question.type} answer.")
             # Conditions and rules may only look backwards, so the flow can never loop.
             if question.show_if:
                 source = seen.get(question.show_if.question)
@@ -373,6 +382,26 @@ def reconcile(questionnaire: Questionnaire, answers: Answers, today: date) -> tu
         except InvalidAnswer:
             dropped.append(question.id)
     return kept, dropped
+
+
+# --- Pre-filling from the passport and profile (US 10) ------------------------
+
+
+def prefill_value(question: Question, passport: dict | None, profile: dict | None) -> tuple[Any, str] | None:
+    """The raw answer a saved passport or profile suggests, and where it came from.
+
+    Only a suggestion: the router still runs it through `check_answer`, so an expired
+    passport or a half-filled address is never offered, and the traveler confirms it.
+    """
+    match question.prefill:
+        case "passport" if passport:
+            return passport, "passport"
+        case "profile.phone" if profile and profile.get("phone"):
+            return profile["phone"], "profile"
+        case "profile.address" if profile and any(profile.get(f"address_{key}") for key in ("line1", "city")):
+            # The profile's address_* fields line up with the address answer's fields by name.
+            return {key: profile.get(f"address_{key}") or "" for key in AddressAnswer.model_fields}, "profile"
+    return None
 
 
 # --- Describing an application to the assistant -------------------------------

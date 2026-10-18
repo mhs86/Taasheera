@@ -8,7 +8,8 @@ from pydantic import ValidationError
 
 from app.applications.flow import (
     QUESTIONNAIRE_DIR, InvalidAnswer, Questionnaire, add_months, available_questionnaires, check_answer, date_bounds,
-    load_questionnaire, next_question, progress, reconcile, stop_message, summary_place, visible_questions,
+    load_questionnaire, next_question, prefill_value, progress, reconcile, stop_message, summary_place,
+    visible_questions,
 )
 
 TODAY = date(2026, 10, 18)
@@ -216,10 +217,25 @@ def _file(**changes):
     (lambda q: q + [{"id": "extra", "type": "text", "prompt": "?", "show_if": {"question": "funding", "in": ["friend"]}}], "can't have"),
     (lambda q: q + [{"id": "extra", "type": "date", "prompt": "?", "rules": [{"op": "<=", "ref": "later_date", "message": "m"}]}], "isn't an earlier question"),
     (lambda q: q + [{"id": "extra", "type": "text", "prompt": "?", "show_iff": {"question": "funding", "in": ["self"]}}], "Extra inputs"),
+    (lambda q: q + [{"id": "extra", "type": "text", "prompt": "?", "prefill": "profile.phone"}], "doesn't give a text answer"),
+    (lambda q: q + [{"id": "extra", "type": "phone", "prompt": "?", "prefill": "profile.fax"}], "doesn't give a phone answer"),
 ])
 def test_broken_questionnaire_files_are_rejected_when_loaded(broken, message):
     with pytest.raises(ValidationError, match=message):
         Questionnaire.model_validate(_file(trip=broken))
+
+
+def test_prefill_maps_saved_details_onto_the_question(schengen):
+    profile = {"phone": "+96171123456", "address_line1": "1 Example Street", "address_city": "Beirut",
+               "address_country": "LBN", "address_region": None}
+    assert prefill_value(schengen.question("phone"), None, profile) == ("+96171123456", "profile")
+    assert prefill_value(schengen.question("home_address"), None, profile) == (
+        {"line1": "1 Example Street", "line2": "", "city": "Beirut", "region": "", "postal_code": "",
+         "country": "LBN"}, "profile")
+    assert prefill_value(schengen.question("passport"), SPECIMEN, None) == (SPECIMEN, "passport")
+    assert prefill_value(schengen.question("passport"), None, profile) is None
+    assert prefill_value(schengen.question("home_address"), None, {"phone": "+96171123456"}) is None
+    assert prefill_value(schengen.question("place_of_birth"), SPECIMEN, profile) is None
 
 
 @pytest.mark.parametrize("summary, message", [

@@ -87,6 +87,7 @@
         {
           "id": "passport",
           "type": "passport",
+          "prefill": "passport",
           "prompt": "Let's add your passport. You can upload a photo of its details page and confirm what we read, or type the details yourself."
         },
         {
@@ -141,11 +142,13 @@
         {
           "id": "home_address",
           "type": "address",
+          "prefill": "profile.address",
           "prompt": "What's your home address?"
         },
         {
           "id": "phone",
           "type": "phone",
+          "prefill": "profile.phone",
           "prompt": "What phone number can the embassy reach you on?",
           "help": "Include the country code, for example +961 71 123 456."
         },

@@ -69,7 +69,8 @@ class ApplicationAnswer(SQLModel, table=True):
     application_id: str = Field(primary_key=True, foreign_key="application.id", max_length=32)
     question_id: str = Field(primary_key=True, max_length=40)
     value: Any = Field(sa_column=Column(JSON, nullable=False), repr=False)
-    # "traveler" (typed or chosen in the chat) or "passport_upload" (a confirmed passport review).
+    # "traveler" (typed or chosen in the chat), "passport_upload" (a passport confirmed for this
+    # application), or "passport" / "profile" (a saved passport or profile the traveler confirmed here).
     source: str = Field(max_length=20)
     answered_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 

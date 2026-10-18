@@ -253,6 +253,8 @@ def test_a_confirmed_passport_upload_answers_the_passport_question(api):
     {},
     {"passport_upload_id": "../../etc"},
     {"value": "x", "source": "passport_upload"},
+    {"value": "FRA", "use_suggestion": True},
+    {"use_suggestion": False},
 ])
 def test_answer_bodies_are_strict(api, body):
     client, _, headers, _ = api
@@ -269,6 +271,80 @@ def test_a_passport_upload_only_answers_the_passport_question(api):
     response = client.put(f"/applications/{application_id}/answers/main_destination", headers=headers[0],
                           json={"passport_upload_id": upload_id})
     assert response.status_code == 422
+
+
+# --- Pre-fill (US 10) ----------------------------------------------------------
+
+PROFILE = {"surname": "Eriksson", "phone": "+961 71 123 456", "address_line1": "1 Example Street",
+           "address_city": "Beirut", "address_country": "LBN"}
+
+
+def test_a_confirmed_passport_is_offered_and_confirmed_with_one_click(api):
+    client, _, headers, storage = api
+    storage.save_review(1, storage.save(1, b"jpeg"), SPECIMEN)
+    application_id = start(client, headers[0])["id"]
+    current = answer_all(client, headers[0], application_id, stop_at="passport")["current"]
+    assert current["suggestion"] == {"value": SPECIMEN, "source": "passport"}
+    response = client.put(f"/applications/{application_id}/answers/passport", headers=headers[0],
+                          json={"use_suggestion": True})
+    assert response.status_code == 200
+    saved = response.json()["answers"][-1]
+    assert saved["value"] == SPECIMEN and saved["source"] == "passport"
+
+
+def test_nothing_is_offered_without_a_usable_passport(api):
+    client, _, headers, storage = api
+    expired = {**SPECIMEN, "expiry_date": (date.today() - timedelta(days=1)).isoformat()}
+    storage.save_review(1, storage.save(1, b"jpeg"), expired)
+    storage.save_review(2, storage.save(2, b"jpeg"), SPECIMEN)  # someone else's
+    application_id = start(client, headers[0])["id"]
+    current = answer_all(client, headers[0], application_id, stop_at="passport")["current"]
+    assert current["suggestion"] is None
+    response = client.put(f"/applications/{application_id}/answers/passport", headers=headers[0],
+                          json={"use_suggestion": True})
+    assert response.status_code == 409
+
+
+def test_the_profile_offers_the_address_and_phone(api):
+    client, _, headers, _ = api
+    assert client.put("/profile", headers=headers[0], json=PROFILE).status_code == 200
+    client.put("/profile", headers=headers[1], json={**PROFILE, "phone": "+33 1 23 45 67 89"})
+    application_id = start(client, headers[0])["id"]
+    current = answer_all(client, headers[0], application_id, stop_at="home_address")["current"]
+    assert current["suggestion"] == {"source": "profile", "value": {
+        "line1": "1 Example Street", "line2": "", "city": "Beirut", "region": "", "postal_code": "", "country": "LBN"}}
+    put(client, headers[0], application_id, "home_address", ANSWERS["home_address"])
+    current = client.get(f"/applications/{application_id}", headers=headers[0]).json()["current"]
+    assert current["id"] == "phone" and current["suggestion"] == {"value": "+96171123456", "source": "profile"}
+
+
+def test_an_incomplete_profile_address_is_not_offered(api):
+    client, _, headers, _ = api
+    client.put("/profile", headers=headers[0], json={"address_line1": "1 Example Street", "address_country": "LBN"})
+    application_id = start(client, headers[0])["id"]
+    current = answer_all(client, headers[0], application_id, stop_at="home_address")["current"]
+    assert current["suggestion"] is None
+
+
+def test_editing_a_prefilled_answer_changes_only_the_application(api):
+    client, _, headers, storage = api
+    upload_id = storage.save(1, b"jpeg")
+    storage.save_review(1, upload_id, SPECIMEN)
+    client.put("/profile", headers=headers[0], json=PROFILE)
+    application_id = start(client, headers[0])["id"]
+    answer_all(client, headers[0], application_id, stop_at="passport")
+    client.put(f"/applications/{application_id}/answers/passport", headers=headers[0], json={"use_suggestion": True})
+    answer_all(client, headers[0], application_id, stop_at="phone")
+    client.put(f"/applications/{application_id}/answers/phone", headers=headers[0], json={"use_suggestion": True})
+
+    changed = put(client, headers[0], application_id, "phone", "+33 1 23 45 67 89").json()
+    assert changed["answers"][-1]["value"] == "+33123456789" and changed["answers"][-1]["source"] == "traveler"
+    renamed = put(client, headers[0], application_id, "passport", {**SPECIMEN, "surname": "MARRIED"}).json()
+    passport = next(answer for answer in renamed["answers"] if answer["question"]["id"] == "passport")
+    assert passport["value"]["surname"] == "MARRIED" and passport["source"] == "traveler"
+    # The saved profile and passport review are untouched.
+    assert client.get("/profile", headers=headers[0]).json()["phone"] == "+96171123456"
+    assert storage.load_review(1, upload_id)["surname"] == "ERIKSSON"
 
 
 def test_travelers_only_see_and_change_their_own_applications(api):

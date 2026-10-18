@@ -107,7 +107,8 @@ def create_app(database_url: str | None = None, *, reset_sender: ResetSender | N
         uploads_enabled=uploads_setting == "true",
     ))
 
-    app.include_router(create_applications_router(get_session, current_traveler, passport_storage.load_review))
+    app.include_router(create_applications_router(get_session, current_traveler, passport_storage.load_review,
+                                                  load_latest_passport=passport_storage.latest_review))
 
     def record_assistant_activity(traveler_id: int, event_type: str, outcome: str):
         with Session(engine) as session:

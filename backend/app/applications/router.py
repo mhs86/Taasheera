@@ -16,7 +16,8 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlmodel import Session, select
 
-from ..models import Application, ApplicationAnswer, Traveler
+from ..models import Application, ApplicationAnswer, Traveler, TravelerProfile
+from ..profile import ProfileFields
 from . import flow
 
 Status = Literal["DRAFT", "INELIGIBLE", "ANSWERS_COMPLETE"]
@@ -41,17 +42,27 @@ class StartRequest(BaseModel):
 
 
 class AnswerRequest(BaseModel):
-    """Either a `value`, or the id of a passport upload whose review the traveler confirmed."""
+    """Exactly one of: a `value`; the id of a passport upload whose review the traveler confirmed;
+    or `use_suggestion`, confirming what their saved passport or profile says (US 10)."""
 
     model_config = ConfigDict(extra="forbid")
     value: Any = None
     passport_upload_id: str | None = Field(default=None, pattern=r"^[0-9a-f]{32}$")
+    use_suggestion: Literal[True] | None = None
 
     @model_validator(mode="after")
     def exactly_one(self) -> "AnswerRequest":
-        if ("value" in self.model_fields_set) == (self.passport_upload_id is not None):
-            raise ValueError("Send either a value or a passport_upload_id.")
+        given = ["value" in self.model_fields_set, self.passport_upload_id is not None, self.use_suggestion is not None]
+        if sum(given) != 1:
+            raise ValueError("Send exactly one of value, passport_upload_id or use_suggestion.")
         return self
+
+
+class Suggestion(BaseModel):
+    """An answer the saved passport or profile already gives. Shown for confirming, never saved unasked."""
+
+    value: Any
+    source: Literal["passport", "profile"]
 
 
 class QuestionPublic(BaseModel):
@@ -66,6 +77,7 @@ class QuestionPublic(BaseModel):
     # Allowed date range given the answers so far, so the date picker can grey out the rest.
     date_min: date | None = None
     date_max: date | None = None
+    suggestion: Suggestion | None = None
 
 
 class AnswerPublic(BaseModel):
@@ -152,6 +164,7 @@ def create_applications_router(
     current_traveler,
     load_confirmed_passport: Callable[[int, str], dict | None],
     *,
+    load_latest_passport: Callable[[int], dict | None] = lambda traveler_id: None,
     today: Callable[[], date] = date.today,
 ) -> APIRouter:
     from ..auth import check_origin
@@ -189,17 +202,38 @@ def create_applications_router(
         session.commit()
         return answers, cleared
 
+    def suggest(session: Session, traveler: Traveler, question: flow.Question,
+                answers: flow.Answers) -> Suggestion | None:
+        """What the traveler's own saved passport or profile says for this question, if it passes its rules.
+
+        Loaded here for the signed-in traveler only, and checked like any answer, so an
+        expired passport or a half-filled address is never offered.
+        """
+        if question.prefill is None:
+            return None
+        passport = load_latest_passport(traveler.id) if question.prefill == "passport" else None
+        stored = session.get(TravelerProfile, traveler.id) if question.prefill.startswith("profile.") else None
+        profile = ProfileFields.model_validate(stored, from_attributes=True).model_dump(mode="json") if stored else None
+        found = flow.prefill_value(question, passport, profile)
+        if found is None:
+            return None
+        try:
+            return Suggestion(value=flow.check_answer(question, found[0], answers, today()), source=found[1])
+        except flow.InvalidAnswer:
+            return None
+
     def public_question(questionnaire: flow.Questionnaire, question: flow.Question,
-                        answers: flow.Answers) -> QuestionPublic:
+                        answers: flow.Answers, suggestion: Suggestion | None = None) -> QuestionPublic:
         earliest, latest = flow.date_bounds(question, answers, today())
         return QuestionPublic(
             id=question.id, step_id=questionnaire.step_of(question.id).id, type=question.type,
             prompt=question.prompt, help=question.help, required=question.required,
             options=question.options, max_length=question.max_length, date_min=earliest, date_max=latest,
+            suggestion=suggestion,
         )
 
-    def state(application: Application, questionnaire: flow.Questionnaire, answers: flow.Answers,
-              rows: dict[str, ApplicationAnswer], cleared: list[str]) -> ApplicationState:
+    def state(session: Session, traveler: Traveler, application: Application, questionnaire: flow.Questionnaire,
+              answers: flow.Answers, rows: dict[str, ApplicationAnswer], cleared: list[str]) -> ApplicationState:
         current = flow.next_question(questionnaire, answers)
         return ApplicationState(
             **_summary(application, questionnaire, answers),
@@ -210,7 +244,8 @@ def create_applications_router(
                              value=answers[question.id], source=rows[question.id].source)
                 for question in flow.visible_questions(questionnaire, answers) if question.id in answers
             ],
-            current=public_question(questionnaire, current, answers) if current else None,
+            current=public_question(questionnaire, current, answers, suggest(session, traveler, current, answers))
+            if current else None,
             stopped=flow.stop_message(questionnaire, answers),
             cleared=cleared,
         )
@@ -236,7 +271,7 @@ def create_applications_router(
         session.add(application)
         session.commit()
         response.headers["Cache-Control"] = "private, no-store"
-        return state(application, questionnaire, {}, {}, [])
+        return state(session, traveler, application, questionnaire, {}, {}, [])
 
     @router.get("", response_model=list[ApplicationSummary])
     def list_applications(traveler: TravelerDep, session: SessionDep, response: Response):
@@ -260,7 +295,7 @@ def create_applications_router(
         rows = stored_answers(session, application)
         answers, cleared = save(session, application, rows, questionnaire)
         response.headers["Cache-Control"] = "private, no-store"
-        return state(application, questionnaire, answers, rows, cleared)
+        return state(session, traveler, application, questionnaire, answers, rows, cleared)
 
     @router.put("/{application_id}/answers/{question_id}", response_model=ApplicationState,
                 dependencies=[Depends(check_origin)])
@@ -280,19 +315,26 @@ def create_applications_router(
                 question_id not in answers and (current is None or current.id != question_id)):
             raise HTTPException(status_code=409, detail="Answer the earlier questions first.")
 
-        if data.passport_upload_id is not None:
-            if question.type != "passport":
-                raise HTTPException(status_code=422, detail="Only the passport question takes a passport upload.")
-            raw = load_confirmed_passport(traveler.id, data.passport_upload_id)
-            if raw is None:
-                raise HTTPException(status_code=404, detail="Confirm your passport details first.")
-            source = "passport_upload"
+        if data.use_suggestion:
+            # Worked out again here, not taken from the browser, so "from your passport" stays true.
+            suggestion = suggest(session, traveler, question, answers)
+            if suggestion is None:
+                raise HTTPException(status_code=409, detail="There's nothing saved to use for this question.")
+            value, source = suggestion.value, suggestion.source
         else:
-            raw, source = data.value, "traveler"
-        try:
-            value = flow.check_answer(question, raw, answers, today())
-        except flow.InvalidAnswer as error:
-            raise HTTPException(status_code=422, detail=str(error)) from None
+            if data.passport_upload_id is not None:
+                if question.type != "passport":
+                    raise HTTPException(status_code=422, detail="Only the passport question takes a passport upload.")
+                raw = load_confirmed_passport(traveler.id, data.passport_upload_id)
+                if raw is None:
+                    raise HTTPException(status_code=404, detail="Confirm your passport details first.")
+                source = "passport_upload"
+            else:
+                raw, source = data.value, "traveler"
+            try:
+                value = flow.check_answer(question, raw, answers, today())
+            except flow.InvalidAnswer as error:
+                raise HTTPException(status_code=422, detail=str(error)) from None
 
         row = rows.get(question_id) or ApplicationAnswer(application_id=application.id, question_id=question_id,
                                                          value=value, source=source)
@@ -303,6 +345,6 @@ def create_applications_router(
         session.add(application)
         answers, cleared = save(session, application, rows, questionnaire)
         response.headers["Cache-Control"] = "private, no-store"
-        return state(application, questionnaire, answers, rows, cleared)
+        return state(session, traveler, application, questionnaire, answers, rows, cleared)
 
     return router
