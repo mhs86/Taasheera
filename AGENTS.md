@@ -205,24 +205,25 @@ What we decided, why, and what we rejected. Newest at the bottom. Add an entry w
     `Traveler.name` remains the display name. `GET /profile` returns null fields before creation;
     `PUT /profile` replaces all fields. Names and past birth dates are validated; country codes are
     1–3 uppercase letters without a backend country list, and `phonenumbers` normalizes E.164 phones.
-    The intake chat can import `ProfileFields` from `app.profile`. Passport validation is unchanged.
+    The intake chat can import `ProfileFields` from `app.profile`. Confirmed passports follow the same rules (24).
 20. **Account page (US 43).** `/account` holds the profile form, sign-in methods and password change; the signed-in welcome view links there. Country names come from the UN M49 table, with ICAO Doc 9303 codes (`D` for Germany, `RKS` for Kosovo, `TWN` for Taiwan). Account-page activity events are not recorded yet because the backend has no account-page identifier.
 21. **Session management backend (US 119).** Auth sessions store a short parsed device label and UTC creation/last-active timestamps; old rows remain null. Last-active updates only on refresh. Owner-scoped `/sessions` endpoints list active sessions, revoke one other session, or revoke all others using the password-change revocation helper. Revoked bearer and refresh tokens fail on the next request. The Sessions section on `/account` marks the current device and can end one or all other sessions.
-22. **Guided application chat (US 9, with the US 4 pieces it needs).** Schengen short-stay (type C) is the launch
-    destination: one harmonised form covers 29 countries. Questions, order, branching (`show_if`), an eligibility
-    gate (`stop_if`) and date rules (e.g. leave 3 months of passport validity) live in a JSON file per destination,
-    validated when loaded; `applications/flow.py` is a pure engine that picks the next question. The AI never picks
-    questions: the mid-flow assistant only explains, using the application's answers loaded by the server. The server
-    accepts only the current question or a change to an answered one, saves each answer immediately as a copy, and
-    re-checks all answers on every read and write, dropping ones that no longer apply. The passport question takes a
-    confirmed Sprint 1 review (`passport_upload_id`) or typed fields. Page path `/apply` (API prefix `/applications`).
+22. **Guided application chat (US 9).** Schengen short-stay (type C) launches first: one form covers 29 countries.
+    A JSON file per destination holds the questions, order, branching (`show_if`), an eligibility gate (`stop_if`)
+    and date rules; it is validated when loaded, and the pure engine `applications/flow.py` picks the next question.
+    The AI never picks questions; the mid-flow assistant only explains, from answers the server loads. The server
+    accepts only the current question or a change to an answered one, saves each answer at once as a copy with its
+    source, and re-checks all answers on every read and write. Page `/apply`, API `/applications`.
     *Rejected: LLM-chosen questions (not testable or auditable) and a hard-coded form per country.*
-23. **Opening steps and applications sidebar (US 4, US 12).** `/apply` asks destination, visa type and group size
-    as chat steps; they choose the question file, so they come before the record exists and can't change after
-    (a new destination is a new application). Group size is recorded only (`application.group_size`) until group
-    applications (US 81). A sidebar lists the traveler's applications, named by the answers the question file's
-    `summary` points at (place, trip date); each answer's response updates it, so no extra list request. The
-    signed-in header and homepage button is "Start an application"; the passport page stays in the footer.
+23. **Opening steps and sidebar (US 4, US 12).** Destination, visa and group size are chat steps before the record
+    exists (they choose the question file) and are fixed after. Group size is recorded only, until US 81. The
+    sidebar names applications by the answers the file's `summary` points at. Signed in, the main button is
+    "Start an application".
+24. **Pre-fill (US 10).** A question's `prefill` names a source (`passport`, `profile.address`, `profile.phone`).
+    The server offers the current question's value from the traveler's own latest confirmed passport or profile,
+    only if it passes the question's rules, and recomputes it when the traveler confirms (`use_suggestion`), so
+    the browser can't claim a source. Editing changes only the application. Passport reviews are now saved as
+    `ConfirmedPassportFields` (profile code and birth-date rules); OCR output keeps the looser `PassportFields`.
 
 ## Personal instructions
 
