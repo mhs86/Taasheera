@@ -38,6 +38,18 @@ test('wrong password reports a generic error and never requests protected profil
   assert.equal(calls.length, 1)
 })
 
+test('a suspended account is told so by either sign-in method, and an origin refusal is not mistaken for it', async () => {
+  const suspended = { status: 403, body: { detail: { code: 'account_suspended', message: 'This account is suspended.' } } }
+  arrange(suspended)
+  await assert.rejects(auth.signIn(traveler.email, 'correct-password'), /This account is suspended/)
+  arrange(suspended)
+  await assert.rejects(auth.signInWithGoogle('google-id-token'), /This account is suspended/)
+  assert.deepEqual(calls.map(c => c.url), ['/auth/google'])
+  arrange({ status: 403, body: { detail: 'Origin is not allowed.' } })
+  await assert.rejects(auth.signIn(traveler.email, 'correct-password'), /temporarily unavailable/)
+  assert.equal(auth.hasAccessToken(), false)
+})
+
 test('reload restores from the cookie and concurrent mounts share one refresh', async () => {
   arrange({ status: 200, body: { access_token: 'restored-access' } }, { status: 200, body: traveler })
   const first = auth.restoreSession()

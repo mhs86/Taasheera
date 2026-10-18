@@ -182,6 +182,15 @@ async function refresh(): Promise<boolean> {
   return true
 }
 
+const SUSPENDED = 'This account is suspended, so it cannot sign in.'
+
+// Sign-in answers 403 to a disallowed origin too, so only the code identifies a suspension.
+async function isSuspended(response: Response): Promise<boolean> {
+  if (response.status !== 403) return false
+  const payload = await response.json().catch(() => ({}))
+  return payload?.detail?.code === 'account_suspended'
+}
+
 async function profile(): Promise<Traveler> {
   const response = await request('me', {
     headers: { Authorization: `Bearer ${accessToken}` },
@@ -229,6 +238,7 @@ export function signIn(email: string, password: string): Promise<Traveler> {
     })
     if (response.status === 401) throw new Error('Invalid email or password.')
     if (response.status === 422) throw new Error('Please check your email and password.')
+    if (await isSuspended(response)) throw new Error(SUSPENDED)
     if (!response.ok) throw new Error('Sign-in is temporarily unavailable. Please try again.')
     accessToken = (await response.json()).access_token
     return profile()
@@ -254,6 +264,7 @@ export function signInWithGoogle(idToken: string): Promise<Traveler> {
     if (response.status === 401 || response.status === 422) {
       throw new Error('Google sign-in could not be verified. Please try again or use email sign-in.')
     }
+    if (await isSuspended(response)) throw new Error(SUSPENDED)
     if (!response.ok) throw new Error('Google sign-in is temporarily unavailable. Try again or use email sign-in.')
     accessToken = (await response.json()).access_token
     return profile()

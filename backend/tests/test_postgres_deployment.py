@@ -2,6 +2,7 @@
 
 import os
 from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier
 from uuid import uuid4
 
 import pytest
@@ -203,3 +204,76 @@ def test_role_command_reports_an_unreachable_database_without_details(monkeypatc
     with pytest.raises(SystemExit) as refused:
         manage.set_role("ci@example.com", "admin")
     assert refused.value.code == "Could not connect to the database. Check DATABASE_URL."
+
+
+@pytest.mark.skipif(not os.environ.get("TEST_POSTGRES_URL"), reason="needs disposable PostgreSQL")
+def test_admin_user_management_on_postgres(monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", os.environ["TEST_POSTGRES_URL"])
+    monkeypatch.setenv("AUTH_ALLOWED_ORIGINS", "https://travel.example")
+    migrate.upgrade()
+    tag = uuid4().hex[:12]
+    password = "safe-test-password-123"
+    origin = {"Origin": "https://travel.example"}
+    emails = {key: f"ci-{key}-{tag}@example.com" for key in ("first", "second", "member")}
+    engine = build_engine()
+
+    def sign_in(client, key):
+        client.cookies.clear()
+        response = client.post("/auth/login", json={"email": emails[key], "password": password}, headers=origin)
+        client.cookies.clear()
+        return response
+
+    try:
+        with TestClient(create_app()) as one, TestClient(create_app()) as two:
+            ids = {}
+            for key, name in (("first", "CI admin one"), ("second", "CI admin two"), ("member", f"CI 100%_{tag}")):
+                created = one.post("/auth/register", json={"name": name, "email": emails[key], "password": password},
+                                   headers=origin)
+                assert created.status_code == 201
+                ids[key] = created.json()["id"]
+            for key in ("first", "second"):
+                manage.set_role(emails[key], "admin")
+            headers = {key: {"Authorization": f"Bearer {sign_in(one, key).json()['access_token']}", **origin}
+                       for key in ("first", "second")}
+            member_token = sign_in(one, "member").json()["access_token"]
+
+            # Escaped search: % and _ are literal, and only this run's member matches.
+            found = one.get("/admin/users", params={"q": f"100%_{tag}"}, headers=headers["first"]).json()
+            assert [item["id"] for item in found["items"]] == [ids["member"]]
+
+            assert one.post(f"/admin/users/{ids['member']}/suspend", headers=headers["first"]).status_code == 200
+            assert one.get("/auth/me", headers={"Authorization": f"Bearer {member_token}"}).status_code == 401
+            refused = sign_in(one, "member")
+            assert refused.status_code == 403 and refused.json()["detail"]["code"] == "account_suspended"
+
+            overview = one.get("/admin/overview", headers=headers["first"]).json()
+            with engine.connect() as connection:
+                total, recent, suspended = connection.execute(text(
+                    "SELECT count(*), count(*) FILTER (WHERE created_at >= now() - interval '7 days'), "
+                    "count(*) FILTER (WHERE status = 'suspended') FROM traveler")).one()
+            assert overview == {"total_users": total, "new_last_7_days": recent, "suspended": suspended,
+                                "applications_started": None}
+            assert recent >= 3
+
+            # Two admins demote each other at the same moment: the row locks let exactly one win.
+            for _ in range(5):
+                barrier = Barrier(2)
+
+                def demote(client, actor, target):
+                    barrier.wait()
+                    return client.put(f"/admin/users/{ids[target]}/role", json={"role": "traveler"},
+                                      headers=headers[actor]).status_code
+
+                with ThreadPoolExecutor(max_workers=2) as pool:
+                    results = sorted(pool.map(lambda job: demote(*job), [(one, "first", "second"),
+                                                                         (two, "second", "first")]))
+                assert results == [200, 403]
+                with engine.connect() as connection:
+                    roles = connection.execute(text("SELECT role FROM traveler WHERE id IN (:a, :b)"),
+                                               {"a": ids["first"], "b": ids["second"]}).scalars().all()
+                assert sorted(roles) == ["admin", "traveler"]
+                with engine.begin() as connection:
+                    connection.execute(text("UPDATE traveler SET role = 'admin' WHERE id IN (:a, :b)"),
+                                       {"a": ids["first"], "b": ids["second"]})
+    finally:
+        engine.dispose()

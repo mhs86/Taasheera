@@ -207,7 +207,7 @@ What we decided, why, and what we rejected. Newest at the bottom. Add an entry w
     `Traveler.name` remains the display name. `GET /profile` returns null fields before creation;
     `PUT /profile` replaces all fields. Names and past birth dates are validated; country codes are
     1–3 uppercase letters without a backend country list, and `phonenumbers` normalizes E.164 phones.
-    The intake chat can import `ProfileFields` from `app.profile`. Confirmed passports follow the same rules (25).
+    The intake chat can import `ProfileFields` from `app.profile`. Confirmed passports follow the same rules (26).
 20. **Account page (US 43).** `/account` holds the profile form, sign-in methods and password change; the signed-in welcome view links there. Country names come from the UN M49 table, with ICAO Doc 9303 codes (`D` for Germany, `RKS` for Kosovo, `TWN` for Taiwan). Account-page activity events are not recorded yet because the backend has no account-page identifier.
 21. **Session management backend (US 119).** Auth sessions store a short parsed device label and UTC creation/last-active timestamps; old rows remain null. Last-active updates only on refresh. Owner-scoped `/sessions` endpoints list active sessions, revoke one other session, or revoke all others using the password-change revocation helper. Revoked bearer and refresh tokens fail on the next request. The Sessions section on `/account` marks the current device and can end one or all other sessions.
 22. **Roles and admin access (US 131).** `traveler.role` (traveler / support / admin) and `traveler.status`
@@ -221,18 +221,25 @@ What we decided, why, and what we rejected. Newest at the bottom. Add an entry w
     event. SQLite migrations run in one explicit transaction, so an interrupted table rebuild rolls back.
     *Rejected: database enum types (PostgreSQL type migrations, nothing on SQLite), a role claim in the JWT
     (stale until expiry), an admin sign-up endpoint or seeded admin password.*
-23. **Guided application chat (US 9).** Schengen short-stay (type C) launches first: one form covers 29 countries.
+23. **Admin user management (US 133).** `/admin/users` lists, searches and shows accounts (account data and
+    counts only, never passport or profile fields); admins suspend, reactivate and change roles there.
+    Suspension revokes every session, and sign-in, refresh and the token check all refuse suspended accounts.
+    Each change locks both rows in id order, re-checks the acting admin, refuses self-suspension and
+    self-role changes, and commits with a `status_change`/`role_change` event on the changed account
+    (`admin:<id>:<old>-><new>`). `traveler.created_at` is backfilled from registration events.
+    *Rejected: deleting users (Sprint 3) and audit events for reads.*
+24. **Guided application chat (US 9).** Schengen short-stay (type C) launches first: one form covers 29 countries.
     A JSON file per destination holds the questions, order, branching (`show_if`), an eligibility gate (`stop_if`)
     and date rules; it is validated when loaded, and the pure engine `applications/flow.py` picks the next question.
     The AI never picks questions; the mid-flow assistant only explains, from answers the server loads. The server
     accepts only the current question or a change to an answered one, saves each answer at once as a copy with its
     source, and re-checks all answers on every read and write. Page `/apply`, API `/applications`.
     *Rejected: LLM-chosen questions (not testable or auditable) and a hard-coded form per country.*
-24. **Opening steps and sidebar (US 4, US 12).** Destination, visa and group size are chat steps before the record
+25. **Opening steps and sidebar (US 4, US 12).** Destination, visa and group size are chat steps before the record
     exists (they choose the question file) and are fixed after. Group size is recorded only, until US 81. The
     sidebar names applications by the answers the file's `summary` points at. Signed in, the main button is
     "Start an application".
-25. **Pre-fill (US 10).** A question's `prefill` names a source (`passport`, `profile.address`, `profile.phone`).
+26. **Pre-fill (US 10).** A question's `prefill` names a source (`passport`, `profile.address`, `profile.phone`).
     The server offers the current question's value from the traveler's own latest confirmed passport or profile,
     only if it passes the question's rules, and recomputes it when the traveler confirms (`use_suggestion`), so
     the browser can't claim a source. Editing changes only the application. Passport reviews are now saved as

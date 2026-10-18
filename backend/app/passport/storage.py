@@ -65,6 +65,11 @@ class PassportImageStorage:
             return None
         return json.loads(review_path.read_text(encoding="utf-8"))
 
+    def upload_count(self, owner_id: int) -> int:
+        """How many passport images the traveler has uploaded; the admin API reports only this number."""
+        folder = self.root / str(int(owner_id))
+        return sum(1 for path in folder.glob("*.jpg") if _UPLOAD_ID.fullmatch(path.stem)) if folder.is_dir() else 0
+
     def latest_review(self, owner_id: int) -> dict | None:
         """The traveler's most recently confirmed passport details, or None.
 

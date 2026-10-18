@@ -1,6 +1,7 @@
 import io
 import json
 import logging
+from datetime import datetime, timezone
 
 import pytest
 from alembic import command
@@ -367,6 +368,48 @@ def test_role_revision_downgrades_to_the_previous_revision_and_back(tmp_path, mo
             (1, "traveler", "active")]
         assert check_names(engine) == TRAVELER_CHECKS
         assert "admin_user_auth" in inspect(engine).get_view_names()
+    finally:
+        engine.dispose()
+
+
+CREATED_AT_PARENT_REVISION = "1a1ce7fbb089"  # The revision before traveler.created_at.
+
+
+def test_created_at_is_backfilled_from_registration_events_and_downgrades(tmp_path, monkeypatch):
+    url = database_url(tmp_path)
+    monkeypatch.setenv("DATABASE_URL", url)
+    engine = build_engine(url)
+    try:
+        with engine.begin() as connection:
+            config = migration_config()
+            config.attributes["connection"] = connection
+            command.upgrade(config, CREATED_AT_PARENT_REVISION)
+            connection.execute(text(
+                "INSERT INTO traveler (id, name, email, password_hash, auth_type) VALUES "
+                "(1, 'Maya', 'maya@example.com', 'hash', 'email_password'), "
+                "(2, 'Omar', 'omar@example.com', 'hash', 'email_password')"
+            ))
+            connection.execute(text(
+                "INSERT INTO activityevent (traveler_id, occurred_at, event_type, identifier, outcome) VALUES "
+                "(1, '2026-10-02 09:00:00.000000', 'sign_in', 'email_password', 'success'), "
+                "(1, '2026-10-03 10:00:00.000000', 'registration', 'email_password', 'success'), "
+                "(1, '2026-10-05 10:00:00.000000', 'registration', 'google', 'success'), "
+                "(2, '2026-10-04 10:00:00.000000', 'sign_in', 'email_password', 'success')"
+            ))
+        migrate.upgrade()
+        with Session(engine) as session:
+            maya, omar = session.get(Traveler, 1), session.get(Traveler, 2)
+            # The earliest registration event, never another kind of event; no event leaves it unknown.
+            assert maya.created_at == datetime(2026, 10, 3, 10, tzinfo=timezone.utc)
+            assert omar.created_at is None
+
+        command.downgrade(migration_config(), CREATED_AT_PARENT_REVISION)
+        assert "created_at" not in {column["name"] for column in inspect(engine).get_columns("traveler")}
+        assert check_names(engine) == TRAVELER_CHECKS
+        assert "admin_user_auth" in inspect(engine).get_view_names()
+        assert [row["email"] for row in traveler_rows(engine)] == ["maya@example.com", "omar@example.com"]
+        command.upgrade(migration_config(), "head")
+        assert schema_revision(engine)[0] == schema_revision(engine)[1]
     finally:
         engine.dispose()
 

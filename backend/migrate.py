@@ -74,17 +74,17 @@ def upgrade() -> None:
                         ("add_column", "authsession", "created_at"),
                         ("add_column", "authsession", "last_active_at"),
                     }
-                    # Unversioned databases predate migrations, so none has the role and status
-                    # columns or the application tables.
-                    later = {("add_column", "traveler", "role"), ("add_column", "traveler", "status"),
-                             ("add_table", "application"), ("add_index", "ix_application_traveler_id"),
-                             ("add_table", "applicationanswer")}
+                    # Unversioned databases predate migrations, so none has the columns or tables added since.
+                    migrated_only = {("add_column", "traveler", "role"), ("add_column", "traveler", "status"),
+                                     ("add_column", "traveler", "created_at"), ("add_table", "application"),
+                                     ("add_index", "ix_application_traveler_id"), ("add_table", "applicationanswer")}
                     if len(signatures) != len(differences) or signatures not in (
-                        later | session_details, later | profile | session_details,
-                        later | otp | profile | session_details, later | otp | sso | profile | session_details,
+                        migrated_only | session_details, migrated_only | profile | session_details,
+                        migrated_only | otp | profile | session_details,
+                        migrated_only | otp | sso | profile | session_details,
                     ):
                         raise RuntimeError(REFUSED)
-                    known = signatures - later
+                    known = signatures - migrated_only
                     prior_revision = (
                         "d37a5b1e9c42" if known == session_details else
                         "c82a91f4d670" if known == profile | session_details else

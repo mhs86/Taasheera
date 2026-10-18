@@ -39,6 +39,8 @@ class Traveler(SQLModel, table=True):
     # Only manage.py set-role (and, later, admins) change these.
     role: str = Field(default="traveler", max_length=20, sa_column_kwargs={"server_default": "traveler"})
     status: str = Field(default="active", max_length=20, sa_column_kwargs={"server_default": "active"})
+    # Sign-up time; None for accounts made before it was recorded.
+    created_at: datetime | None = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     @property
     def password_enabled(self) -> bool:

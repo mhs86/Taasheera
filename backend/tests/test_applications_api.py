@@ -403,7 +403,7 @@ def test_group_size_migration_counts_existing_applications_as_one_traveler(tmp_p
 def test_migration_upgrades_from_previous_head(tmp_path, monkeypatch):
     url = f"sqlite:///{(tmp_path / 'previous-head.db').as_posix()}"
     monkeypatch.setenv("DATABASE_URL", url)
-    command.upgrade(migration_config(), "1a1ce7fbb089")
+    command.upgrade(migration_config(), "b14ab372b1d2")
     engine = build_engine(url)
     with engine.begin() as connection:
         connection.execute(text("INSERT INTO traveler (id,name,email,password_hash,auth_type) "
@@ -419,5 +419,5 @@ def test_migration_upgrades_from_previous_head(tmp_path, monkeypatch):
     with engine.connect() as connection:
         assert compare_metadata(MigrationContext.configure(connection), SQLModel.metadata) == []
     assert schema_revision(engine)[0] == schema_revision(engine)[1]
-    command.downgrade(migration_config(), "1a1ce7fbb089")
+    command.downgrade(migration_config(), "b14ab372b1d2")
     engine.dispose()

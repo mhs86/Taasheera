@@ -83,16 +83,16 @@ def create_app(database_url: str | None = None, *, reset_sender: ResetSender | N
             yield session
 
     current_traveler = create_current_traveler(get_session)
+    passport_storage = PassportImageStorage(
+        os.environ.get("PASSPORT_STORAGE_DIR", str(Path(__file__).resolve().parents[1] / "storage" / "passports"))
+    )
     app.include_router(create_activity_router(get_session, current_traveler))
     app.include_router(create_auth_router(get_session, current_traveler))
-    app.include_router(create_admin_router(current_traveler))
+    app.include_router(create_admin_router(get_session, current_traveler, passport_storage))
     app.include_router(create_sessions_router(get_session, current_traveler))
     app.include_router(create_google_auth_router(get_session, current_traveler))
     app.include_router(create_password_reset_router(get_session))
     app.include_router(create_profile_router(get_session, current_traveler))
-    passport_storage = PassportImageStorage(
-        os.environ.get("PASSPORT_STORAGE_DIR", str(Path(__file__).resolve().parents[1] / "storage" / "passports"))
-    )
 
     def current_traveler_id(traveler: Annotated[Traveler, Depends(current_traveler)]) -> int:
         return traveler.id
