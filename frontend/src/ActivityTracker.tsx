@@ -13,6 +13,7 @@ const controls = new Set([
   'assistant-open', 'assistant-close', 'assistant-send', 'assistant-suggestion', 'passport-link',
   'application-start', 'application-resume', 'application-answer', 'application-change', 'application-cancel-change',
   'application-passport-upload', 'application-passport-manual', 'application-return', 'application-ask',
+  'application-new', 'applications-toggle', 'start-application-link',
 ])
 
 export default function ActivityTracker() {
