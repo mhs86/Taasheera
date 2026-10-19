@@ -1,0 +1,277 @@
+{
+  "id": "schengen-short-stay",
+  "version": 1,
+  "destination": "SCHENGEN",
+  "visa_type": "short_stay",
+  "title": "Schengen short-stay visa (type C)",
+  "destination_label": "Schengen area",
+  "destination_description": "29 European countries, including France, Germany, Italy and Spain",
+  "visa_label": "Short stay (type C)",
+  "visa_description": "Up to 90 days in any 180-day period, for tourism, family visits, business or a short course.",
+  "summary": {"place": "main_destination", "date": "arrival_date"},
+  "source": "Harmonised Schengen visa application form, Regulation (EC) No 810/2009 (Visa Code), Annex I",
+  "steps": [
+    {
+      "id": "eligibility",
+      "title": "Eligibility",
+      "questions": [
+        {
+          "id": "main_destination",
+          "type": "choice",
+          "prompt": "Which Schengen country is your main destination?",
+          "help": "The country where you'll spend the most nights. If it's a tie, the one you enter first. That country's embassy handles your application.",
+          "options": [
+            {"value": "AUT", "label": "Austria"},
+            {"value": "BEL", "label": "Belgium"},
+            {"value": "BGR", "label": "Bulgaria"},
+            {"value": "HRV", "label": "Croatia"},
+            {"value": "CZE", "label": "Czechia"},
+            {"value": "DNK", "label": "Denmark"},
+            {"value": "EST", "label": "Estonia"},
+            {"value": "FIN", "label": "Finland"},
+            {"value": "FRA", "label": "France"},
+            {"value": "D", "label": "Germany"},
+            {"value": "GRC", "label": "Greece"},
+            {"value": "HUN", "label": "Hungary"},
+            {"value": "ISL", "label": "Iceland"},
+            {"value": "ITA", "label": "Italy"},
+            {"value": "LVA", "label": "Latvia"},
+            {"value": "LIE", "label": "Liechtenstein"},
+            {"value": "LTU", "label": "Lithuania"},
+            {"value": "LUX", "label": "Luxembourg"},
+            {"value": "MLT", "label": "Malta"},
+            {"value": "NLD", "label": "Netherlands"},
+            {"value": "NOR", "label": "Norway"},
+            {"value": "POL", "label": "Poland"},
+            {"value": "PRT", "label": "Portugal"},
+            {"value": "ROU", "label": "Romania"},
+            {"value": "SVK", "label": "Slovakia"},
+            {"value": "SVN", "label": "Slovenia"},
+            {"value": "ESP", "label": "Spain"},
+            {"value": "SWE", "label": "Sweden"},
+            {"value": "CHE", "label": "Switzerland"}
+          ]
+        },
+        {
+          "id": "purpose",
+          "type": "choice",
+          "prompt": "What's the main purpose of your trip?",
+          "options": [
+            {"value": "tourism", "label": "Tourism"},
+            {"value": "family_friends", "label": "Visiting family or friends"},
+            {"value": "business", "label": "Business"},
+            {"value": "culture", "label": "Culture"},
+            {"value": "sports", "label": "Sports"},
+            {"value": "official", "label": "Official visit"},
+            {"value": "medical", "label": "Medical reasons"},
+            {"value": "study", "label": "Short study course"},
+            {"value": "other", "label": "Something else"}
+          ]
+        },
+        {
+          "id": "stay_over_90_days",
+          "type": "yes_no",
+          "prompt": "Will you stay in the Schengen area for more than 90 days in any 180-day period?",
+          "help": "Count every day you'll be anywhere in the Schengen area, including the days you arrive and leave.",
+          "stop_if": {
+            "in": [true],
+            "message": "A short-stay visa covers at most 90 days in any 180-day period. A longer stay needs a national (type D) visa from your destination country, which Ta'asheera can't prepare yet."
+          }
+        }
+      ]
+    },
+    {
+      "id": "passport",
+      "title": "Passport",
+      "questions": [
+        {
+          "id": "passport",
+          "type": "passport",
+          "prefill": "passport",
+          "prompt": "Let's add your passport. You can upload a photo of its details page and confirm what we read, or type the details yourself."
+        },
+        {
+          "id": "passport_issue_date",
+          "type": "date",
+          "prompt": "When was your passport issued?",
+          "help": "It's printed on the details page, usually next to the expiry date.",
+          "rules": [
+            {"op": "<=", "ref": "today", "message": "The issue date can't be in the future."},
+            {"op": ">=", "ref": "today", "months": -120, "message": "Schengen countries need a passport issued in the last 10 years. You may need to renew it first."}
+          ]
+        }
+      ]
+    },
+    {
+      "id": "personal",
+      "title": "About you",
+      "questions": [
+        {
+          "id": "surname_at_birth",
+          "type": "text",
+          "prompt": "Did you have a different surname at birth? If so, what was it?",
+          "help": "Leave this empty if your surname hasn't changed.",
+          "required": false,
+          "max_length": 100
+        },
+        {
+          "id": "place_of_birth",
+          "type": "text",
+          "prompt": "Which city or town were you born in?",
+          "max_length": 100
+        },
+        {
+          "id": "country_of_birth",
+          "type": "country",
+          "prompt": "And which country is that in?"
+        },
+        {
+          "id": "marital_status",
+          "type": "choice",
+          "prompt": "What's your marital status?",
+          "options": [
+            {"value": "single", "label": "Single"},
+            {"value": "married", "label": "Married"},
+            {"value": "registered_partnership", "label": "Registered partnership"},
+            {"value": "separated", "label": "Separated"},
+            {"value": "divorced", "label": "Divorced"},
+            {"value": "widowed", "label": "Widowed"},
+            {"value": "other", "label": "Other"}
+          ]
+        },
+        {
+          "id": "home_address",
+          "type": "address",
+          "prefill": "profile.address",
+          "prompt": "What's your home address?"
+        },
+        {
+          "id": "phone",
+          "type": "phone",
+          "prefill": "profile.phone",
+          "prompt": "What phone number can the embassy reach you on?",
+          "help": "Include the country code, for example +961 71 123 456."
+        },
+        {
+          "id": "occupation",
+          "type": "choice",
+          "prompt": "What do you currently do?",
+          "options": [
+            {"value": "employed", "label": "I'm employed"},
+            {"value": "self_employed", "label": "I'm self-employed"},
+            {"value": "student", "label": "I'm a student"},
+            {"value": "retired", "label": "I'm retired"},
+            {"value": "unemployed", "label": "I'm not working"},
+            {"value": "other", "label": "Something else"}
+          ]
+        },
+        {
+          "id": "employer",
+          "type": "text",
+          "prompt": "What's the name of your employer or business?",
+          "max_length": 200,
+          "show_if": {"question": "occupation", "in": ["employed", "self_employed"]}
+        },
+        {
+          "id": "school",
+          "type": "text",
+          "prompt": "Which school or university do you attend?",
+          "max_length": 200,
+          "show_if": {"question": "occupation", "in": ["student"]}
+        }
+      ]
+    },
+    {
+      "id": "trip",
+      "title": "Your trip",
+      "questions": [
+        {
+          "id": "arrival_date",
+          "type": "date",
+          "prompt": "When do you plan to arrive in the Schengen area?",
+          "rules": [
+            {"op": ">=", "ref": "today", "days": 1, "message": "Your arrival date needs to be in the future."},
+            {"op": "<=", "ref": "today", "months": 6, "message": "You can apply at most six months before your trip. Come back closer to the date."}
+          ]
+        },
+        {
+          "id": "departure_date",
+          "type": "date",
+          "prompt": "And when will you leave?",
+          "rules": [
+            {"op": ">=", "ref": "arrival_date", "message": "You can't leave before you arrive."},
+            {"op": "<=", "ref": "arrival_date", "days": 89, "message": "A short-stay visa covers at most 90 days, counting the days you arrive and leave."},
+            {"op": "<=", "ref": "passport.expiry_date", "months": -3, "message": "Your passport must stay valid for at least three months after you leave the Schengen area."}
+          ]
+        },
+        {
+          "id": "entries",
+          "type": "choice",
+          "prompt": "How many times will you enter the Schengen area on this trip?",
+          "options": [
+            {"value": "single", "label": "Once"},
+            {"value": "two", "label": "Twice"},
+            {"value": "multiple", "label": "More than twice"}
+          ]
+        },
+        {
+          "id": "accommodation",
+          "type": "choice",
+          "prompt": "Where will you stay?",
+          "options": [
+            {"value": "hotel", "label": "A hotel"},
+            {"value": "rental", "label": "A rented flat or house"},
+            {"value": "host", "label": "With family or friends"},
+            {"value": "other", "label": "Somewhere else"}
+          ]
+        },
+        {
+          "id": "accommodation_details",
+          "type": "text",
+          "prompt": "What's the name and address of the place you're staying?",
+          "max_length": 300,
+          "show_if": {"question": "accommodation", "in": ["hotel", "rental", "other"]}
+        },
+        {
+          "id": "host_details",
+          "type": "text",
+          "prompt": "Who's hosting you? Give their full name and address.",
+          "max_length": 300,
+          "show_if": {"question": "accommodation", "in": ["host"]}
+        },
+        {
+          "id": "funding",
+          "type": "choice",
+          "prompt": "Who's paying for the trip?",
+          "options": [
+            {"value": "self", "label": "I am"},
+            {"value": "sponsor", "label": "Someone else (a sponsor)"}
+          ]
+        },
+        {
+          "id": "sponsor_details",
+          "type": "text",
+          "prompt": "Who's your sponsor, and how are they related to you?",
+          "max_length": 300,
+          "show_if": {"question": "funding", "in": ["sponsor"]}
+        },
+        {
+          "id": "previous_fingerprints",
+          "type": "yes_no",
+          "prompt": "Have your fingerprints been taken for a Schengen visa application in the last 59 months?"
+        },
+        {
+          "id": "fingerprints_date",
+          "type": "date",
+          "prompt": "Roughly when were they taken?",
+          "help": "If you have the visa sticker, its issue date is close enough.",
+          "show_if": {"question": "previous_fingerprints", "in": [true]},
+          "rules": [
+            {"op": "<=", "ref": "today", "message": "That date can't be in the future."},
+            {"op": ">=", "ref": "today", "months": -59, "message": "Only fingerprints from the last 59 months count. Answer no to the previous question instead."}
+          ]
+        }
+      ]
+    }
+  ]
+}

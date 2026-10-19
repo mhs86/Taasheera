@@ -1,20 +1,25 @@
 import { ApiError } from '../api'
 import { protectedFetch } from '../auth'
 
-export type AssistantStep = 'passport_upload' | 'passport_review'
+export type AssistantStep = 'passport_upload' | 'passport_review' | 'application'
 export type ChatTurn = { role: 'user' | 'assistant'; content: string }
 export type AssistantReply = { reply: string; used_passport: boolean }
 
 // The server allows ten earlier turns; older ones are dropped, newest kept.
 export const MAX_HISTORY = 10
 
-export async function askAssistant(message: string, step: AssistantStep, history: ChatTurn[]): Promise<AssistantReply> {
+// In the application chat, only the application's id is sent; the server loads its answers itself.
+export async function askAssistant(message: string, step: AssistantStep, history: ChatTurn[],
+  applicationId?: string): Promise<AssistantReply> {
   let response: Response
   try {
     response = await protectedFetch('/assistant/messages', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message, step, history: history.slice(-MAX_HISTORY) }),
+      body: JSON.stringify({
+        message, step, history: history.slice(-MAX_HISTORY),
+        ...(applicationId ? { application_id: applicationId } : {}),
+      }),
       // The model can take several seconds; the server gives up well before this.
       signal: AbortSignal.timeout(45000),
       silent: true,

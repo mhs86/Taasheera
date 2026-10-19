@@ -125,6 +125,21 @@ def test_review_rejects_extra_fields(client):
                       headers={"X-Traveler": "1"}).status_code == 422
 
 
+@pytest.mark.parametrize("change", [
+    {"nationality": "uto"},
+    {"nationality": "U O"},
+    {"issuing_country": "UTO<"},
+    {"birth_date": "2999-01-01"},
+])
+def test_confirmed_details_follow_the_profile_rules(client, change):
+    # An OCR read may hold a misread like "U O"; it can be shown for review, never confirmed as is.
+    upload_id = upload(client).json()["id"]
+    fields = client.post(f"/passports/{upload_id}/extract", headers={"X-Traveler": "1"}).json()["fields"]
+    response = client.put(f"/passports/{upload_id}/review", json={**fields, **change}, headers={"X-Traveler": "1"})
+    assert response.status_code == 422
+    assert client.get(f"/passports/{upload_id}/review", headers={"X-Traveler": "1"}).status_code == 404
+
+
 def test_uploads_can_be_disabled_on_a_host_without_durable_storage(tmp_path):
     app = FastAPI()
     app.include_router(create_passport_router(PassportImageStorage(tmp_path), fake_traveler_id,
