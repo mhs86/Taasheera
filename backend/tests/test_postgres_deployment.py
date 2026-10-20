@@ -251,8 +251,9 @@ def test_admin_user_management_on_postgres(monkeypatch):
                 total, recent, suspended = connection.execute(text(
                     "SELECT count(*), count(*) FILTER (WHERE created_at >= now() - interval '7 days'), "
                     "count(*) FILTER (WHERE status = 'suspended') FROM traveler")).one()
+                applications = connection.execute(text("SELECT count(*) FROM application")).scalar_one()
             assert overview == {"total_users": total, "new_last_7_days": recent, "suspended": suspended,
-                                "applications_started": None}
+                                "applications_started": applications}
             assert recent >= 3
 
             # Two admins demote each other at the same moment: the row locks let exactly one win.

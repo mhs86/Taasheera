@@ -36,7 +36,7 @@ export type AdminOverview = {
   total_users: number
   new_last_7_days: number
   suspended: number
-  applications_started: number | null
+  applications_started: number
 }
 
 export type UserSearch = { q?: string; role?: Role | ''; status?: Status | ''; page?: number }

@@ -22,7 +22,7 @@ function Overview() {
     return () => { active = false }
   }, [leave])
 
-  const cards: [string, number | null | undefined][] = [
+  const cards: [string, number | undefined][] = [
     ['Total users', overview?.total_users],
     ['New in the last 7 days', overview?.new_last_7_days],
     ['Suspended', overview?.suspended],
@@ -34,9 +34,7 @@ function Overview() {
       : <dl className="admin-cards">
         {cards.map(([label, value]) => <div key={label} className="admin-card">
           <dt>{label}</dt>
-          {/* applications_started is null until applications are stored. */}
-          {value === null ? <dd className="admin-card-note">Not tracked yet</dd>
-            : <dd>{value ?? '…'}</dd>}
+          <dd>{value ?? '…'}</dd>
         </div>)}
       </dl>}
   </section>

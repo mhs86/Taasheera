@@ -32,7 +32,7 @@ const MAYA_DETAIL = {
   ...MAYA, sso_email: null, password_enabled: true, google_linked: false, last_sign_in_method: 'email_password',
   counts: { active_sessions: 2, sign_ins: 5, failed_sign_ins: 1, passport_uploads: 1 },
 }
-const OVERVIEW = { total_users: 12, new_last_7_days: 3, suspended: 1, applications_started: null }
+const OVERVIEW = { total_users: 12, new_last_7_days: 3, suspended: 1, applications_started: 4 }
 
 // A fake backend: each test lists the responses it expects, keyed by "METHOD path".
 let handlers
@@ -126,7 +126,7 @@ test('the overview cards and users table load, with every request carrying the b
   backend()
   await render('/admin')
   assert.equal(router.state.location.pathname, '/admin')
-  for (const value of ['Total users12', 'New in the last 7 days3', 'Suspended1', 'Applications startedNot tracked yet']) {
+  for (const value of ['Total users12', 'New in the last 7 days3', 'Suspended1', 'Applications started4']) {
     assert.ok(page().replace(/\s+/g, '').includes(value.replace(/\s+/g, '')), value)
   }
   assert.ok($('a[href="/admin/users/7"]'))
