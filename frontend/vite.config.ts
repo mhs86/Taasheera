@@ -16,6 +16,7 @@ export default defineConfig({
       '/sessions': 'http://127.0.0.1:8000',
       '/activity': 'http://127.0.0.1:8000',
       '/assistant': 'http://127.0.0.1:8000',
+      '/applications': 'http://127.0.0.1:8000',
       // The dashboard's pages live at /admin, so the browser calls the admin API under its own prefix.
       '/admin-api': { target: 'http://127.0.0.1:8000', rewrite: path => path.replace(/^\/admin-api/, '/admin') },
     },

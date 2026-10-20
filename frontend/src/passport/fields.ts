@@ -73,7 +73,7 @@ export function fieldTrust(key: FieldKey, extraction: Extraction | null, edited:
   return null
 }
 
-const CODE = /^[A-Z<]{1,3}$/
+const CODE = /^[A-Z]{1,3}$/
 const DOCUMENT = /^[A-Z0-9<]{1,30}$/
 
 // The same limits the API enforces, checked first so mistakes show next to the field.

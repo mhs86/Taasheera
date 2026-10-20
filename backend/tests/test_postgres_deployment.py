@@ -18,7 +18,7 @@ from app.main import create_app
 from app.schema import migration_config, schema_revision
 
 
-ROLE_PARENT_REVISION = "e6f81a73c902"  # The revision before roles; downgrading to it removes only role/status.
+ROLE_PARENT_REVISION = "e6f81a73c902"  # The revision before roles; downgrading also removes the later application tables.
 
 
 @pytest.mark.skipif(not os.environ.get("TEST_POSTGRES_URL"), reason="needs disposable PostgreSQL")

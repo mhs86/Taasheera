@@ -8,6 +8,7 @@ import Layout from './Layout'
 import Faq from './pages/Faq'
 import Home from './pages/Home'
 import Passport from './pages/Passport'
+import Apply from './pages/Apply'
 import NotFound from './pages/NotFound'
 import ServerError from './pages/ServerError'
 
@@ -25,6 +26,9 @@ export const routes: RouteObject[] = [
           { path: 'faq', element: <Faq /> },
           { path: 'passport', element: <Passport /> },
           { path: 'passport/:uploadId', element: <Passport /> },
+          // Not /applications: that prefix is the API, proxied to the backend.
+          { path: 'apply', element: <Apply /> },
+          { path: 'apply/:applicationId', element: <Apply /> },
           { path: '*', element: <NotFound /> },
         ],
       },

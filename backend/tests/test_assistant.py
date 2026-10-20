@@ -253,6 +253,51 @@ def test_adapter_reports_api_and_network_failures_as_unavailable(error):
         gemini_ask(FakeGemini(error=error))("system", [{"role": "user", "content": "x"}])
 
 
+# --- Mid-flow questions in the application chat (US 9) ------------------------
+
+APPLICATION = "Visa: Schengen short-stay visa (type C)\nCurrent question: When do you plan to arrive?\nAnswers so far:"
+
+
+def test_application_questions_carry_that_applications_answers(tmp_path):
+    model = FakeModel("It's the day you first enter the Schengen area.")
+    seen = []
+
+    def load_application(traveler_id, application_id):
+        seen.append((traveler_id, application_id))
+        return APPLICATION
+
+    client, _ = make_client(tmp_path, model, load_application=load_application)
+    response = ask_question(client, traveler=3, message="What counts as arrival?", step="application",
+                            application_id="c" * 32)
+    assert response.status_code == 200
+    assert seen == [(3, "c" * 32)]
+    system = model.calls[0][0]
+    assert "guided chat" in system and f"<application>\n{APPLICATION}\n</application>" in system
+    assert "don't answer it for them" in system
+
+
+def test_an_application_the_traveler_does_not_own_is_not_found(tmp_path):
+    model = FakeModel()
+    client, _ = make_client(tmp_path, model, load_application=lambda traveler_id, application_id: None)
+    response = ask_question(client, step="application", application_id="c" * 32)
+    assert response.status_code == 404 and model.calls == []
+
+
+@pytest.mark.parametrize("body", [
+    {"step": "application"},
+    {"step": "passport_review", "application_id": "c" * 32},
+    {"step": "application", "application_id": "../etc"},
+])
+def test_application_id_and_application_step_go_together(tmp_path, body):
+    model = FakeModel()
+    client, _ = make_client(tmp_path, model, load_application=lambda *_: APPLICATION)
+    assert ask_question(client, **body).status_code == 422 and model.calls == []
+
+
+def test_prompt_without_an_application_has_no_application_block():
+    assert "<application>" not in build_system_prompt(None, "passport_review", TODAY)
+
+
 # --- Wired into the real app -------------------------------------------------
 
 def test_main_app_assistant_requires_sign_in_and_a_configured_key(tmp_path, monkeypatch):

@@ -82,7 +82,7 @@ def check_names(engine, table="traveler"):
 
 
 TRAVELER_CHECKS = {"ck_traveler_auth_type", "ck_traveler_role", "ck_traveler_status"}
-ROLE_PARENT_REVISION = "e6f81a73c902"  # The revision before roles; downgrading to it removes only role/status.
+ROLE_PARENT_REVISION = "e6f81a73c902"  # The revision before roles; downgrading also removes the later application tables.
 
 
 HASH = "$2b$12$" + "x" * 53  # The shape of a bcrypt hash; never checked against a password here.
