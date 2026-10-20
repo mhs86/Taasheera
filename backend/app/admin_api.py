@@ -11,7 +11,7 @@ from sqlmodel import Session, func, select
 
 from .activity import record_activity
 from .auth import check_origin, revoke_all_sessions
-from .models import ROLES, ActivityEvent, AuthSession, GoogleIdentity, Role, Status, Traveler
+from .models import ROLES, ActivityEvent, Application, AuthSession, GoogleIdentity, Role, Status, Traveler
 
 
 PREFIX = "/admin"
@@ -101,7 +101,7 @@ class AdminOverview(BaseModel):
     total_users: int
     new_last_7_days: int
     suspended: int
-    applications_started: int | None  # None until applications are stored.
+    applications_started: int  # Every application created, whatever its status.
 
 
 class UserSearch(BaseModel):
@@ -204,7 +204,7 @@ def create_admin_router(get_session, current_traveler, passport_storage) -> APIR
             total_users=count(session, Traveler),
             new_last_7_days=count(session, Traveler, Traveler.created_at >= week_ago),
             suspended=count(session, Traveler, Traveler.status == "suspended"),
-            applications_started=None,
+            applications_started=count(session, Application),
         )
 
     @router.get("/users", response_model=AdminUserPage)

@@ -88,9 +88,9 @@ Status key: **in use** = already in the code · **proposed** = tentative recomme
 | Frontend styling | Plain CSS with custom properties (`src/index.css` tokens); DM Sans + Space Grotesk, layout modelled on Migraide (simple, no pricing) | in use | Small site, no extra build tooling; auth screens use the same site font and scoped form styles. Tailwind not adopted (see decision 6) |
 | Frontend data fetching | TanStack Query (loading/error states) | proposed | Adopt once pages load real data |
 | Backend hosting | One AWS EC2 host (`us-east-1`) running the non-root FastAPI + Tesseract container with Docker Compose, SQLite and passport files on encrypted EBS (`deploy/aws/`); Render blueprint and Lambda image kept as alternatives | live at https://d3vh2ppjrlwxee.cloudfront.net; its config is in open PR #6 (not on `main`) | Cheapest always-on setup that keeps passport files on persistent private disk |
-| Frontend hosting | Nginx container on the same EC2 host serving the Vite build behind CloudFront; Netlify config (`netlify.toml`, `docs/NETLIFY.md`) kept as rollback | in use | One origin proxies `/auth`, `/passports`, `/profile`, `/sessions`, `/activity`, `/assistant`, and `/applications`, so cookies stay first-party. A new API prefix must be added to `vite.config.ts`, `write-netlify-redirects.mjs` and `deploy/aws/nginx.conf`, and must not match a page path |
+| Frontend hosting | Nginx container on the same EC2 host serving the Vite build behind CloudFront; Netlify config (`netlify.toml`, `docs/NETLIFY.md`) kept as rollback | in use | One origin proxies `/auth`, `/passports`, `/profile`, `/sessions`, `/activity`, `/assistant`, `/applications`, and `/admin-api` (to `/admin`), so cookies stay first-party. A new API prefix must be added to `vite.config.ts`, `write-netlify-redirects.mjs` and `deploy/aws/nginx.conf`, and must not match a page path |
 | Domain | CloudFront hostname with viewer HTTPS | in use; custom domain not configured | Auth cookies work on the browser origin; Google OAuth origins must list this hostname |
-| CI/CD, observability | GitHub Actions CI, Lambda image deployment workflow, JSON request logs; Sentry, uptime check | CI/logs in use; Lambda workflow awaits AWS setup; monitoring proposed | CI builds both backend images; `deploy-backend.yml` pushes the Lambda image on main backend changes after OIDC setup. The Lambda build pulls an adapter from public ECR, which sometimes rate-limits GitHub runners (HTTP 429): re-run the failed job |
+| CI/CD, observability | GitHub Actions CI, Lambda image deployment workflow, JSON request logs; Sentry, uptime check | CI/logs in use; Lambda workflow awaits AWS setup; monitoring proposed | CI builds both backend images; `deploy-backend.yml` pushes the Lambda image on main backend changes after OIDC setup. Public ECR rate-limits GitHub runners (HTTP 429), so CI keeps the Lambda adapter image in the Actions cache and retries the pull only when the cache is empty |
 | User activity logging | SQLModel `ActivityEvent` plus private per-traveler JSONL mirrors in `backend/storage/activity-logs/` | in use | Auth and passport actions are recorded on the backend; allowlisted frontend page/control events use authenticated `/activity/events` |
 | Later sprints | Playwright (Python) for L2/L3 portal filling; pypdf for L1 PDF forms; a job queue (e.g. arq + Redis) for long agent runs; Telegram Bot API; transactional email | proposed | Not needed yet |
 
@@ -105,7 +105,7 @@ create `.venv`, install `requirements-dev.lock`, run `python dev.py setup` once,
 `python dev.py run` to apply database migrations, load the ignored local JWT secret and
 public Google client ID, and serve on port 8000. From `frontend/`, run `npm ci` and `npm run dev` on port 5173.
 Check with backend `python -m pytest -q` and frontend `npm test`, `npm run lint`,
-`npm run build`. The authenticated API proxies `/auth`, `/passports`, `/profile`, `/sessions`, `/activity`, `/assistant`, and `/applications` through Vite;
+`npm run build`. The authenticated API proxies `/auth`, `/passports`, `/profile`, `/sessions`, `/activity`, `/assistant`, `/applications`, and `/admin-api` through Vite;
 the standalone passport demo is separate. OCR needs system Tesseract on `PATH`. The assistant needs `GEMINI_API_KEY` (free from Google AI Studio): locally as a line in Git-ignored `backend/.env.local`, which `dev.py run` loads; on Render in the dashboard (`render.yaml` names it with `sync: false`). **Never commit the key: this repository is public.** Without it `/assistant/messages` returns 503 and everything else works.
 `dev.py run` and deployments both run `python migrate.py upgrade` before the API starts; deployments
 set `APP_ENV=production` and `SCHEMA_AUTO_CREATE=false`. Give an existing account a role with
@@ -244,6 +244,10 @@ What we decided, why, and what we rejected. Newest at the bottom. Add an entry w
     only if it passes the question's rules, and recomputes it when the traveler confirms (`use_suggestion`), so
     the browser can't claim a source. Editing changes only the application. Passport reviews are now saved as
     `ConfirmedPassportFields` (profile code and birth-date rules); OCR output keeps the looser `PassportFields`.
+27. **Admin dashboard (US 132).** Pages at `/admin` (`frontend/src/admin/`) call the API as `/admin-api/*`, which
+    Vite, nginx and Netlify rewrite to `/admin/*`, so page loads never hit the API. The layout asks `/admin/me`
+    first: signed-out visitors go to sign-in, everyone else refused goes home with a notice. This only hides pages;
+    the backend is the protection. Every action needs a confirmation and ends in a toast.
 
 ## Personal instructions
 

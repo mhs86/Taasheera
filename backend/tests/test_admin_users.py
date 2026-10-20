@@ -15,7 +15,7 @@ import app.admin_api as admin_api
 from app.admin_api import FORBIDDEN
 from app.auth import COOKIE_NAME
 from app.main import create_app
-from app.models import ActivityEvent, AuthSession, GoogleIdentity, Traveler
+from app.models import ActivityEvent, Application, AuthSession, GoogleIdentity, Traveler
 
 
 PASSWORD = "Staff-password-123"
@@ -427,11 +427,16 @@ def test_overview_counts_users_new_this_week_and_suspended(api):
             row.created_at = created
             session.add(row)
         session.commit()
+        # Every application counts as started, whatever its status.
+        for index, (key, status) in enumerate([("maya", "DRAFT"), ("maya", "ANSWERS_COMPLETE"), ("omar", "INELIGIBLE")]):
+            session.add(Application(id=f"{index:032x}", traveler_id=api.ids[key], questionnaire_id="schengen_c",
+                                    questionnaire_version=1, destination="schengen", visa_type="C", status=status))
+        session.commit()
     assert suspend(api, "omar").status_code == 200
     response = api.client.get("/admin/overview", headers=api.admin)
     assert response.status_code == 200
     # Maya, Omar and Sara joined in the last 7 days; Adam earlier; Rana's sign-up time is unknown.
-    assert response.json() == {"total_users": 5, "new_last_7_days": 3, "suspended": 1, "applications_started": None}
+    assert response.json() == {"total_users": 5, "new_last_7_days": 3, "suspended": 1, "applications_started": 3}
 
 
 def test_new_accounts_record_their_sign_up_time(api):
