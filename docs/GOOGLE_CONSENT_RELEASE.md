@@ -5,6 +5,11 @@ owner, control of a production domain, and a real Google sign-in check. No Googl
 Cloud owner session or domain-management connection is available to this coding
 environment. Existing OAuth client IDs and development origins were preserved.
 
+Public policy pages and a targeted AWS publisher are now prepared. See
+[the exact app-domain URLs and publishing steps](GOOGLE_APP_DOMAIN.md). Their AWS
+publication is separate from releasing the Sprint 3 app; it requires an authenticated
+AWS connection. Google ownership/branding verification remains an owner action.
+
 Use the existing project/client described in [GOOGLE_SSO_AWS.md](GOOGLE_SSO_AWS.md),
 with **sharafm032@gmail.com** for OAuth support/developer administration as specified
 there. Do not create a second OAuth application or replace the JWT signing secret.
@@ -13,7 +18,11 @@ there. Do not create a second OAuth application or replace the JWT signing secre
    existing local and hosted JavaScript origins. The currently documented hosted
    origin is `https://d3vh2ppjrlwxee.cloudfront.net`; this is a hosting address,
    not evidence that the team owns the registrable `cloudfront.net` domain.
-2. Select the team's actual owned production domain. Verify ownership through
+2. Use a hostname Google accepts as an authorized top private domain and verify
+   control in Search Console. The team currently has no custom domain; try the
+   exact CloudFront hostname as described in the app-domain guide, not the shared
+   `cloudfront.net` suffix. If it is not accepted, select an owned custom domain.
+   Verify ownership through
    Google's required domain verification process, add it to authorized domains,
    and add the exact HTTPS browser origin to the existing Web client's authorized
    JavaScript origins. This app uses a GIS popup and backend ID-token verification;

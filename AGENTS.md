@@ -33,7 +33,9 @@ feature branch adds the Sprint 3 admin monitoring/privacy work (US 94, 88, 120,
 - `dev` is integration. Branch from `dev`; convention `<name>_<feature>_sprint<N>`.
 - Reference story numbers in review descriptions and explain behavior and validation.
 - Current user instruction: push this work only to its new feature branch; the user
-  must test locally before any merge/push into `dev` or any deployment.
+  must test locally before merging/pushing functional features into `dev` or deploying them.
+- The user separately authorized US 1 public policy pages on AWS. The scoped publisher
+  updates public assets/homepage links without releasing Sprint 3 API features.
 - Do not modify existing deployment/environment settings to test new features.
 
 ## Stack and layout
@@ -166,6 +168,11 @@ privilege; absent it, PostgreSQL cases are skipped. CI includes both DBs and ima
     Sentry uses strict metadata allowlists; uptime is opt-in. Google production consent
     publication needs the owner's real domain/account (docs/GOOGLE_CONSENT_RELEASE.md).
     See docs/MONITORING_RUNBOOK.md for log locations, retries and service configuration.
+29. Public consent pages are standalone `frontend/public/privacy.html` and `terms.html`,
+    with shared legal.css and links in index.html outside the React root. No auth/JS
+    is needed. `deploy/aws/publish_public_policies.py --execute` uses AWS CLI/SSM to
+    update only these public assets and the existing homepage, with backup/rollback.
+    Missing AWS credentials block publication; see docs/GOOGLE_APP_DOMAIN.md.
 
 ## Personal instructions
 
