@@ -167,12 +167,11 @@ fi
 # Resolve the image's user rather than relying on a distribution-specific UID.
 phase='build application images'
 printf 'Setup: %s\n' "$phase"
-docker compose --parallel 1 -f deploy/aws/compose.yaml build
+python3 deploy/aws/build_images.py --log-dir "/srv/taasheera/private/build-logs/$TAASHEERA_REVISION"
 phase='assign application storage ownership'
-api_image=$(docker compose -f deploy/aws/compose.yaml images -q api)
-if [ -z "$api_image" ]; then
-  api_image=taasheera-api
-fi
+# compose images reports existing containers, which still use the old image at
+# this point. Resolve the newly built tag for ownership and the backup worker.
+api_image=$(docker image inspect taasheera-api --format '{{.Id}}')
 api_uid=$(docker run --rm --entrypoint id "$api_image" -u)
 api_gid=$(docker run --rm --entrypoint id "$api_image" -g)
 chown "$api_uid:$api_gid" /srv/taasheera
@@ -202,7 +201,7 @@ else:
 PY
 phase='migrate database and start application containers'
 printf 'Setup: %s\n' "$phase"
-if docker compose -f deploy/aws/compose.yaml up -d --wait --wait-timeout 180; then
+if docker compose -f deploy/aws/compose.yaml up --no-build -d --wait --wait-timeout 180; then
   :
 else
   result=$?

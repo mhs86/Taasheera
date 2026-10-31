@@ -57,7 +57,7 @@ for attempt in $(seq 1 180); do
     Failed|Cancelled|TimedOut)
       echo "Application setup failed (SSM command $command_id)."
       aws ssm get-command-invocation --command-id "$command_id" --instance-id "$TAASHEERA_INSTANCE_ID" \
-        --query '{Status:Status,ExitCode:ResponseCode,Error:StandardErrorContent}' --output json
+        --query '{Status:Status,ExitCode:ResponseCode,Output:StandardOutputContent,Error:StandardErrorContent}' --output json
       exit 1;;
   esac
   sleep 10

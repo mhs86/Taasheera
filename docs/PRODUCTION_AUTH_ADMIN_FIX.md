@@ -29,6 +29,29 @@ Read-only inspection of the live JS bundle found no `/backoffice`, `/apply`, or
 
 ## Deploy from authenticated AWS CloudShell
 
+If the first release failed with `no active session ... context deadline exceeded`
+during image builds (SSM `a45bb7e1-272a-4892-991a-1041fbdd8ef6`), update the
+existing clean CloudShell checkout and retry:
+
+```bash
+cd ~/Taasheera-prod-fix &&
+git pull --ff-only origin mohammad_prod_auth_admin_sprint3 &&
+python3 deploy/aws/release_production.py --execute --admin-email sharafm032@gmail.com
+```
+
+The recovery builds API and web separately with Compose Bake disabled. Migration
+and API share one backend image; startup refuses to rebuild it. A disconnected
+build session retries once using cached layers; ordinary dependency/build/resource
+failures stop immediately. Private logs are under
+`/srv/taasheera/private/build-logs/<commit>/`, with resource counters and the last
+build output included on failure. No Docker daemon restart, image/cache pruning,
+instance upgrade, secret rewrite or data removal is performed. The failed attempt
+stopped before backup/migration/service shutdown. Public readiness, homepage and
+both policies were independently HTTP-verified after the reported failure.
+Recovery validation: 15 deployment/build tests passed, shell syntax passed, and
+the real Docker Compose parser confirmed shared backend tags and unchanged
+persistent mounts. This does not establish successful execution on the AWS host.
+
 The coding workspace has no AWS credentials or outbound AWS identity. Production
 has **not** been changed by preparing this branch. The operator's authenticated
 CloudShell can perform the release:
