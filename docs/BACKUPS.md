@@ -23,8 +23,9 @@ instead, which is not built.
 
 Backups contain passport data. The bucket blocks all public access, refuses non-HTTPS
 requests, encrypts every object (SSE-S3) and keeps old versions. The host can write and read
-backups but has no permission to delete them, so a compromised host can't erase history;
-S3 lifecycle rules remove old ones. Never share presigned links to backup objects.
+backups but has no permission to delete them; S3 lifecycle rules remove old ones. A
+compromised host could still overwrite a backup, but the overwritten copy stays as an old
+version for the same 30 days. Never share presigned links to backup objects.
 
 ## One-time setup (AWS)
 
@@ -57,7 +58,10 @@ S3 lifecycle rules remove old ones. Never share presigned links to backup object
    ```
 
 A failed backup leaves the service in the `failed` state (`systemctl --failed`), with the
-reason in the journal. Logs never list file names, which contain traveler IDs.
+reason in the journal. Errors never print file names (they contain traveler IDs) or command
+lines (one holds the origin token). Each backup is unpacked and checked once before it is
+uploaded, and a run that takes over an hour is stopped. A backup and a restore never run at
+the same time.
 
 ## Restore
 
@@ -82,16 +86,29 @@ To put it in place, run the same command with `--yes`. The site is down for a fe
    waits for them to be healthy;
 5. checks `/health/ready` through the origin header.
 
-If a step fails, the tool stops and says which. The kept copy and `bootstrap.sh`'s
-pre-migration backups are the way back. Remove `private/pre-restore-*` and `private/restore/`
-by hand once the restore is confirmed; they take disk space and hold passport data.
+Remove `private/pre-restore-*` by hand once the restore is confirmed; it takes disk space and
+holds passport data. Downloaded archives and the staging folder are removed automatically.
+
+### If a restore fails
+
+Before the swap (download, checksum, integrity check), nothing has changed and the site is
+still up. If stopping the containers fails, start them again:
+`sudo docker compose -f /opt/taasheera/deploy/aws/compose.yaml up -d`.
+
+After the swap, the error names the step (the migration, starting the containers, or the
+readiness check) and the `pre-restore-<time>` folder. The backup is in place and the site may be
+down. Read `docker compose -f /opt/taasheera/deploy/aws/compose.yaml logs --tail 50 api migrate`,
+fix the cause and run `up -d` again. To go back to the data from before the restore instead,
+stop the containers, move `taasheera.db`, `passports/` and `activity-logs/` from that folder
+back into `/srv/taasheera/`, then run `up -d`.
 
 ## Rehearsal
 
 Rehearse after setup, and after any change to the tool or the storage layout. Prefer a
 quiet time and specimen data. Write down what really happened; don't fill rows in advance.
 
-1. Note the row counts: `sudo sqlite3 /srv/taasheera/taasheera.db 'select count(*) from traveler'`
+1. Note the row counts. The host has no `sqlite3` command, so use Python:
+   `sudo python3 -c "import sqlite3; print(sqlite3.connect('file:/srv/taasheera/taasheera.db?mode=ro', uri=True).execute('select count(*) from traveler').fetchone())"`
    (or read them from the check-only command's output).
 2. Run a backup (`systemctl start taasheera-backup.service`) and confirm the object in S3.
 3. Restore it with `--latest --yes`, timing it.

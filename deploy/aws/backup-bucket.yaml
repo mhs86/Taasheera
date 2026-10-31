@@ -36,8 +36,13 @@ Resources:
             Status: Enabled
             Prefix: db/
             ExpirationInDays: !Ref KeepDays
-            NoncurrentVersionExpiration: {NoncurrentDays: 7}
+            # An overwritten backup stays recoverable as an old version for as long as a current one would.
+            NoncurrentVersionExpiration: {NoncurrentDays: !Ref KeepDays}
             AbortIncompleteMultipartUpload: {DaysAfterInitiation: 7}
+          - Id: remove-expired-delete-markers
+            Status: Enabled
+            Prefix: db/
+            ExpiredObjectDeleteMarker: true
   BackupBucketPolicy:
     Type: AWS::S3::BucketPolicy
     Properties:

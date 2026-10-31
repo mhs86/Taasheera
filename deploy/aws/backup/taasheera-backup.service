@@ -7,6 +7,8 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
+# A stuck upload must not block every later run.
+TimeoutStartSec=1h
 EnvironmentFile=/etc/taasheera/backup.env
 ExecStart=/usr/bin/python3 /opt/taasheera/backend/scripts/backup_tools.py backup
 Nice=10

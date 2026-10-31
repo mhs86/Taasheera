@@ -20,17 +20,19 @@ See docs/BACKUPS.md.
 from __future__ import annotations
 
 import argparse
-from contextlib import closing
+from contextlib import closing, contextmanager
 import hashlib
 import io
 import json
 import os
+import re
 import shutil
 import sqlite3
 import subprocess
 import sys
 import tarfile
 import tempfile
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Sequence
@@ -40,13 +42,23 @@ DATABASE = "taasheera.db"
 FOLDERS = ("passports", "activity-logs")
 PREFIX = "db/"
 SUFFIX = ".tar.gz"
+# Only names the timer writes count for --latest, so a hand-named upload can't win by sorting last.
+SCHEDULED_KEY = re.compile(r"^db/\d{8}T\d{6}Z\.tar\.gz$")
+LOCK = Path("/run/taasheera-backup.lock")
 COUNTED_TABLES = ("traveler", "application", "applicationanswer")
 
 Runner = Callable[[Sequence[str]], None]
 
 
 class BackupError(Exception):
-    """Something is wrong with a backup or the place it goes. Nothing live was changed."""
+    """Something is wrong with a backup, the place it goes, or a restore step. The message says which."""
+
+
+class StepFailed(BackupError):
+    """A command failed. Only the step is named: the command line can hold the origin token."""
+
+    def __init__(self, step: str, code: int) -> None:
+        super().__init__(f"{step} failed (exit {code}).")
 
 
 def run_command(command: Sequence[str]) -> None:
@@ -129,22 +141,27 @@ def create_backup(data_dir: Path, out_dir: Path, now: Optional[datetime] = None)
         snapshot_database(database, copy)
         details = check_database(copy)
         files = {DATABASE: sha256(copy)}
+        # Copied first and archived from the copies: a log appended mid-backup then still matches its
+        # checksum, and hard links become plain files.
+        for folder in FOLDERS:
+            root = data_dir / folder
+            if not root.is_dir():
+                continue
+            for path in sorted(root.rglob("*")):
+                name = path.relative_to(data_dir).as_posix()
+                if not path.is_file() or path.is_symlink():
+                    continue
+                target = Path(staging) / name
+                target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+                try:
+                    shutil.copyfile(path, target)
+                except FileNotFoundError:
+                    continue  # removed while we walked the folder: nothing to keep
+                files[name] = sha256(target)
         partial = archive.with_name(archive.name + ".partial")
         with tarfile.open(partial, "w:gz") as tar:
-            tar.add(copy, arcname=DATABASE)
-            for folder in FOLDERS:
-                root = data_dir / folder
-                if not root.is_dir():
-                    continue
-                for path in sorted(root.rglob("*")):
-                    name = path.relative_to(data_dir).as_posix()
-                    try:
-                        if path.is_file() and not path.is_symlink():
-                            files[name] = sha256(path)
-                            tar.add(path, arcname=name, recursive=False)
-                    except FileNotFoundError:
-                        # Removed while we walked the folder: nothing to keep.
-                        files.pop(name, None)
+            for name in files:
+                tar.add(Path(staging) / name, arcname=name, recursive=False)
             manifest = json.dumps({
                 "created_at": stamp, "database": "sqlite", "revision": details["revision"],
                 "counts": details["counts"], "files": files,
@@ -164,6 +181,8 @@ def prune(directory: Path, keep: int) -> List[Path]:
     """Keep the newest `keep` archives (names sort by time) and their checksums; return what was removed."""
     if keep < 1:
         raise BackupError("Keep at least one backup.")
+    for leftover in directory.glob(f"*{SUFFIX}.partial"):
+        leftover.unlink()  # from a run that was killed mid-way
     archives = sorted(directory.glob(f"*{SUFFIX}"))
     removed = archives[:-keep]
     for archive in removed:
@@ -195,7 +214,7 @@ class AwsCliUploader:
     def keys(self) -> List[str]:
         text = self.output(["aws", "s3api", "list-objects-v2", "--bucket", self.bucket, "--prefix", PREFIX,
                             "--query", "Contents[].Key", "--output", "json"])
-        return [key for key in (json.loads(text) or []) if key.endswith(SUFFIX)]
+        return [key for key in (json.loads(text) or []) if SCHEDULED_KEY.match(key)]
 
 
 class LocalDirUploader:
@@ -213,7 +232,8 @@ class LocalDirUploader:
         shutil.copyfile(self.root / key, destination)
 
     def keys(self) -> List[str]:
-        return sorted(path.relative_to(self.root).as_posix() for path in (self.root / PREFIX).glob(f"*{SUFFIX}"))
+        keys = (path.relative_to(self.root).as_posix() for path in (self.root / PREFIX).glob("*"))
+        return sorted(key for key in keys if SCHEDULED_KEY.match(key))
 
 
 def upload_backup(uploader, archive: Path) -> str:
@@ -283,22 +303,49 @@ def _chown_tree(path: Path, uid: int, gid: int) -> None:
         os.chown(child, uid, gid)
 
 
+def _step(run: Runner, step: str, command: Sequence[str]) -> None:
+    try:
+        run(command)
+    except subprocess.CalledProcessError as error:
+        raise StepFailed(step, error.returncode) from None
+
+
+def _wait_until_ready(run: Runner, token: str, attempts: int = 10, pause: float = 3.0,
+                      sleep: Callable[[float], None] = time.sleep) -> None:
+    # The web container has no health check of its own, so nginx may need a moment after `up --wait`.
+    command = ["curl", "--fail", "--silent", "--show-error", "--max-time", "5",
+               "-H", f"X-Taasheera-Origin: {token}", "http://127.0.0.1/health/ready"]
+    for attempt in range(attempts):
+        try:
+            run(command)
+            return
+        except subprocess.CalledProcessError as error:
+            if attempt == attempts - 1:
+                raise StepFailed("The readiness check", error.returncode) from None
+            sleep(pause)
+
+
 def restore_backup(data_dir: Path, staging: Path, repo: Path, run: Runner = run_command,
-                   now: Optional[datetime] = None) -> Path:
+                   now: Optional[datetime] = None, sleep: Callable[[float], None] = time.sleep) -> Path:
     """Swap the verified backup in `staging` into place. Returns where the replaced data was kept.
 
-    The site is down from "stop" until the containers report healthy again.
+    The site is down from "stop" until the containers report healthy again. If a step after the
+    swap fails, the error says which and where the old data is (docs/BACKUPS.md, "If a restore fails").
     """
     stamp = (now or datetime.now(timezone.utc)).strftime("%Y%m%dT%H%M%SZ")
     kept = _private_directory(data_dir / "private" / f"pre-restore-{stamp}")
     owner = data_dir.stat()
-    run(_compose(repo, "stop", "web", "api"))
+    token = _origin_token(data_dir)  # read before anything stops
+    _step(run, "Stopping the containers", _compose(repo, "stop", "web", "api"))
     live = data_dir / DATABASE
-    if live.is_file():
-        # Kept, not deleted: anything written since the backup can still be recovered by hand.
-        snapshot_database(live, kept / DATABASE)
-    for name in (f"{DATABASE}-journal", f"{DATABASE}-wal", f"{DATABASE}-shm"):
-        (data_dir / name).unlink(missing_ok=True)
+    # Kept, not deleted, so anything written since the backup can still be recovered by hand. A plain
+    # copy, not SQLite's backup: the API is stopped, and a damaged database (the usual reason to
+    # restore) can't be opened at all.
+    for name in (DATABASE, f"{DATABASE}-journal", f"{DATABASE}-wal", f"{DATABASE}-shm"):
+        if (data_dir / name).is_file():
+            shutil.copy2(data_dir / name, kept / name)
+            if name != DATABASE:
+                (data_dir / name).unlink()
     os.replace(staging / DATABASE, live)
     for folder in FOLDERS:
         if (data_dir / folder).exists():
@@ -312,12 +359,37 @@ def restore_backup(data_dir: Path, staging: Path, repo: Path, run: Runner = run_
             _chown_tree(path, owner.st_uid, owner.st_gid)
         elif hasattr(os, "chown"):
             os.chown(path, owner.st_uid, owner.st_gid)
-    # A backup from an older schema is brought up to date before the API starts.
-    run(_compose(repo, "run", "--rm", "migrate"))
-    run(_compose(repo, "up", "-d", "--wait", "--wait-timeout", "180"))
-    run(["curl", "--fail", "--silent", "--show-error", "-H", f"X-Taasheera-Origin: {_origin_token(data_dir)}",
-         "http://127.0.0.1/health/ready"])
+    try:
+        # A backup from an older schema is brought up to date before the API starts.
+        _step(run, "The migration", _compose(repo, "run", "--rm", "migrate"))
+        _step(run, "Starting the containers", _compose(repo, "up", "-d", "--wait", "--wait-timeout", "180"))
+        _wait_until_ready(run, token, sleep=sleep)
+    except StepFailed as error:
+        raise BackupError(f"{error} The backup is in place; the replaced data is in {kept}.") from None
     return kept
+
+
+@contextmanager
+def _single_run(lock: Path):
+    """One backup or restore at a time: the timer must not fire in the middle of a restore."""
+    try:
+        import fcntl
+    except ImportError:  # Windows, in development: nothing else runs these there
+        yield
+        return
+    with open(lock, "w") as handle:
+        try:
+            fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise BackupError("Another backup or restore is running.") from None
+        yield
+
+
+def _positive(value: str) -> int:
+    number = int(value)
+    if number < 1:
+        raise argparse.ArgumentTypeError("keep at least one backup")
+    return number
 
 
 # --- Command line -------------------------------------------------------------------
@@ -327,9 +399,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser = argparse.ArgumentParser(description="Back up or restore Ta'asheera's database and passport files.")
     parser.add_argument("--data-dir", type=Path, default=Path(os.environ.get("TAASHEERA_DATA_DIR", "/srv/taasheera")))
     parser.add_argument("--repo", type=Path, default=Path(__file__).resolve().parents[2])
+    parser.add_argument("--lock", type=Path, default=LOCK, help=argparse.SUPPRESS)
     commands = parser.add_subparsers(dest="command", required=True)
     backup = commands.add_parser("backup", help="Make a backup and upload it to the private bucket.")
-    backup.add_argument("--keep", type=int, default=7, help="Archives to keep on the host (default 7).")
+    backup.add_argument("--keep", type=_positive, default=7, help="Archives to keep on the host (default 7).")
     backup.add_argument("--no-upload", action="store_true", help="Keep the backup on the host only.")
     restore = commands.add_parser("restore", help="Check a backup and, with --yes, put it in place.")
     which = restore.add_mutually_exclusive_group(required=True)
@@ -340,44 +413,64 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     args = parser.parse_args(argv)
 
     try:
-        bucket = os.environ.get("TAASHEERA_BACKUP_BUCKET", "")
-        if args.command == "backup":
-            # Checked first, so a missing bucket setting fails before any work is done.
-            uploader = None if args.no_upload else AwsCliUploader(bucket)
-            archive = create_backup(args.data_dir, args.data_dir / "private" / "backups" / "scheduled")
-            if uploader:
-                print(f"Uploaded {upload_backup(uploader, archive)}")
-            prune(archive.parent, args.keep)
-            print(f"Backup {archive.name} created.")
-            return 0
+        with _single_run(args.lock):
+            return _backup(args) if args.command == "backup" else _restore(args)
+    except subprocess.CalledProcessError as error:
+        # Never the command line itself, which can hold the origin token.
+        print(f"Backup tool failed: {Path(str(error.cmd[0])).name} exited {error.returncode}.", file=sys.stderr)
+    except OSError as error:
+        # The reason only: paths under passports/ contain traveler ids.
+        print(f"Backup tool failed: {error.strerror or type(error).__name__}.", file=sys.stderr)
+    except (BackupError, sqlite3.Error) as error:
+        print(f"Backup tool failed: {error}", file=sys.stderr)
+    return 1
 
-        work = _private_directory(args.data_dir / "private" / "restore")
-        staging = Path(tempfile.mkdtemp(prefix="staging-", dir=work))
-        if args.archive:
-            archive, checksum = args.archive, args.archive.with_name(args.archive.name + ".sha256")
-        else:
-            uploader = AwsCliUploader(bucket)
-            key = args.key or max(uploader.keys(), default="")
-            if not key.startswith(PREFIX) or not key.endswith(SUFFIX):
-                raise BackupError("No backup found in the bucket." if not key else "Give a key like db/<name>.tar.gz.")
-            archive, checksum = work / Path(key).name, work / (Path(key).name + ".sha256")
-            uploader.download(key, archive)
-            uploader.download(key + ".sha256", checksum)
+
+def _backup(args) -> int:
+    # Checked first, so a missing bucket setting fails before any work is done.
+    uploader = None if args.no_upload else AwsCliUploader(os.environ.get("TAASHEERA_BACKUP_BUCKET", ""))
+    archive = create_backup(args.data_dir, args.data_dir / "private" / "backups" / "scheduled")
+    # Restorable before it counts: unpacked and checked once, as a restore would.
+    with tempfile.TemporaryDirectory(dir=archive.parent) as check:
+        verify_backup(archive, archive.with_name(archive.name + ".sha256"), Path(check) / "staging")
+    if uploader:
+        print(f"Uploaded {upload_backup(uploader, archive)}")
+    prune(archive.parent, args.keep)
+    print(f"Backup {archive.name} created and checked.")
+    return 0
+
+
+def _restore(args) -> int:
+    work = _private_directory(args.data_dir / "private" / "restore")
+    downloaded: List[Path] = []
+    if args.archive:
+        archive, checksum = args.archive, args.archive.with_name(args.archive.name + ".sha256")
+    else:
+        uploader = AwsCliUploader(os.environ.get("TAASHEERA_BACKUP_BUCKET", ""))
+        key = args.key or max(uploader.keys(), default="")
+        if not key:
+            raise BackupError("No backup found in the bucket.")
+        if not key.startswith(PREFIX) or not key.endswith(SUFFIX) or ".." in key:
+            raise BackupError("Give a key like db/<name>.tar.gz.")
+        archive, checksum = work / Path(key).name, work / (Path(key).name + ".sha256")
+        downloaded = [archive, checksum]
+        uploader.download(key, archive)
+        uploader.download(key + ".sha256", checksum)
+    staging = Path(tempfile.mkdtemp(prefix="staging-", dir=work))
+    try:
         _check_space(work, archive.stat().st_size * 3)
         manifest = verify_backup(archive, checksum, staging)
         print(f"Backup {archive.name} is sound: schema {manifest['revision']}, rows {manifest['counts']}.")
         if not args.yes:
             print("Nothing changed. Run again with --yes to put it in place.")
-            shutil.rmtree(staging)
             return 0
         kept = restore_backup(args.data_dir, staging, args.repo)
-        shutil.rmtree(staging, ignore_errors=True)
         print(f"Restored and ready. The replaced data is kept in {kept}.")
         return 0
-    except (BackupError, subprocess.CalledProcessError, OSError) as error:
-        print(f"Backup tool failed: {error}", file=sys.stderr)
-        return 1
-
+    finally:
+        shutil.rmtree(staging, ignore_errors=True)
+        for path in downloaded:
+            path.unlink(missing_ok=True)
 
 if __name__ == "__main__":
     sys.exit(main())

@@ -5,7 +5,9 @@ from contextlib import closing
 import io
 import importlib.util
 import json
+import os
 import sqlite3
+import subprocess
 import tarfile
 import threading
 from datetime import datetime, timedelta, timezone
@@ -57,8 +59,8 @@ def test_script_runs_on_the_hosts_python_39():
     tree = ast.parse(SCRIPT.read_text(encoding="utf-8"), feature_version=(3, 9))
     imported = {alias.name.split(".")[0] for node in ast.walk(tree) if isinstance(node, ast.Import) for alias in node.names}
     imported |= {node.module.split(".")[0] for node in ast.walk(tree) if isinstance(node, ast.ImportFrom) and node.module}
-    assert imported <= {"__future__", "argparse", "contextlib", "hashlib", "io", "json", "os", "shutil", "sqlite3", "subprocess",
-                        "sys", "tarfile", "tempfile", "datetime", "pathlib", "typing"}
+    assert imported <= {"__future__", "argparse", "contextlib", "fcntl", "hashlib", "io", "json", "os", "re", "shutil",
+                        "sqlite3", "subprocess", "sys", "tarfile", "tempfile", "time", "datetime", "pathlib", "typing"}
 
 
 def test_backup_holds_the_database_files_and_a_manifest_but_no_secrets(data, tmp_path):
@@ -177,13 +179,16 @@ def test_prune_keeps_the_newest_backups_and_their_checksums(data, tmp_path):
 def test_backups_upload_through_the_aws_cli_encrypted_and_to_the_backup_prefix(data, tmp_path):
     commands = []
     uploader = backup_tools.AwsCliUploader("taasheera-backups-example", run=commands.append,
-                                           output=lambda command: json.dumps(["db/a.tar.gz", "db/a.tar.gz.sha256"]))
+                                           output=lambda command: json.dumps([
+                                               "db/20261030T030000Z.tar.gz", "db/20261030T030000Z.tar.gz.sha256",
+                                               "db/manual-copy.tar.gz"]))
     archive = backup_tools.create_backup(data, tmp_path / "out", NOW)
     assert backup_tools.upload_backup(uploader, archive) == "db/20261031T030000Z.tar.gz"
     assert commands[0] == ["aws", "s3", "cp", str(archive), "s3://taasheera-backups-example/db/20261031T030000Z.tar.gz",
                            "--sse", "AES256", "--only-show-errors"]
     assert commands[1][4].endswith(".tar.gz.sha256")
-    assert uploader.keys() == ["db/a.tar.gz"]
+    # Only the timer's own names count for --latest; a hand-named upload can't sort its way to the top.
+    assert uploader.keys() == ["db/20261030T030000Z.tar.gz"]
     with pytest.raises(backup_tools.BackupError):
         backup_tools.AwsCliUploader("")
 
@@ -191,13 +196,14 @@ def test_backups_upload_through_the_aws_cli_encrypted_and_to_the_backup_prefix(d
 def test_command_line_backup_and_verify_only_restore(data, tmp_path, monkeypatch, capsys):
     monkeypatch.delenv("TAASHEERA_BACKUP_BUCKET", raising=False)
     # Without a bucket the scheduled backup fails loudly, before doing any work.
-    assert backup_tools.main(["--data-dir", str(data), "backup"]) == 1
+    lock = ["--data-dir", str(data), "--lock", str(tmp_path / "lock")]
+    assert backup_tools.main([*lock, "backup"]) == 1
     assert not (data / "private" / "backups").exists()
-    assert backup_tools.main(["--data-dir", str(data), "backup", "--no-upload"]) == 0
+    assert backup_tools.main([*lock, "backup", "--no-upload"]) == 0
     archive = next((data / "private" / "backups" / "scheduled").glob("*.tar.gz"))
     # Without --yes, restore only checks the backup.
     before = (data / "taasheera.db").read_bytes()
-    assert backup_tools.main(["--data-dir", str(data), "restore", "--archive", str(archive)]) == 0
+    assert backup_tools.main([*lock, "restore", "--archive", str(archive)]) == 0
     assert "Nothing changed" in capsys.readouterr().out
     assert (data / "taasheera.db").read_bytes() == before
 
@@ -214,3 +220,61 @@ def test_systemd_units_run_daily_as_root_and_hold_no_secrets():
     assert "/opt/taasheera/" not in installer.replace("/opt/taasheera/deploy/aws/backup/install-backup-timer.sh", "")
     for text in (service, timer, installer):
         assert "AKIA" not in text and "SECRET" not in text
+
+
+def test_restore_over_a_damaged_database_keeps_the_damaged_file_and_brings_the_backup_back(data, tmp_path):
+    archive = backup_tools.create_backup(data, tmp_path / "out", NOW)
+    (data / "taasheera.db").write_bytes(b"not a database at all")
+    staging = tmp_path / "staging"
+    backup_tools.verify_backup(archive, archive.with_name(archive.name + ".sha256"), staging)
+    kept = backup_tools.restore_backup(data, staging, REPO, run=lambda command: None, now=NOW)
+    assert emails(data / "taasheera.db") == ["kept@example.com"]
+    assert (kept / "taasheera.db").read_bytes() == b"not a database at all"
+
+
+def test_readiness_is_retried_and_a_failure_never_shows_the_origin_token(data, tmp_path):
+    archive = backup_tools.create_backup(data, tmp_path / "out", NOW)
+
+    def restore(failures):
+        staging = tmp_path / f"staging-{failures}"
+        backup_tools.verify_backup(archive, archive.with_name(archive.name + ".sha256"), staging)
+        calls = []
+
+        def run(command):
+            calls.append(command[0])
+            if command[0] == "curl" and calls.count("curl") <= failures:
+                raise subprocess.CalledProcessError(7, command)
+        backup_tools.restore_backup(data, staging, REPO, run=run, now=NOW + timedelta(seconds=failures),
+                                    sleep=lambda seconds: None)
+        return calls
+
+    # nginx can need a moment after the containers report healthy.
+    assert restore(3).count("curl") == 4
+    with pytest.raises(backup_tools.BackupError) as failed:
+        restore(99)
+    assert "readiness check failed" in str(failed.value)
+    assert "pre-restore-" in str(failed.value)
+    assert "f" * 64 not in str(failed.value)
+
+
+def test_hard_linked_files_back_up_as_plain_files_that_restore(data, tmp_path):
+    original = data / "passports" / "1" / ("a" * 32)
+    try:
+        os.link(original, data / "passports" / "1" / ("b" * 32))
+    except OSError:
+        pytest.skip("No hard links on this file system.")
+    archive = backup_tools.create_backup(data, tmp_path / "out", NOW)
+    manifest = backup_tools.verify_backup(archive, archive.with_name(archive.name + ".sha256"), tmp_path / "staging")
+    assert f"passports/1/{'b' * 32}" in manifest["files"]
+
+
+def test_backup_checks_its_own_archive_and_rejects_keeping_none(data, tmp_path, capsys):
+    with pytest.raises(SystemExit):
+        backup_tools.main(["--data-dir", str(data), "--lock", str(tmp_path / "lock"), "backup", "--no-upload",
+                           "--keep", "0"])
+    out = data / "private" / "backups" / "scheduled"
+    out.mkdir(parents=True)
+    (out / "20261001T030000Z.tar.gz.partial").write_bytes(b"left by a killed run")
+    assert backup_tools.main(["--data-dir", str(data), "--lock", str(tmp_path / "lock"), "backup", "--no-upload"]) == 0
+    assert "created and checked" in capsys.readouterr().out
+    assert not list(out.glob("*.partial"))
