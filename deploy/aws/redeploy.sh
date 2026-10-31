@@ -32,6 +32,8 @@ import base64, json, os, shlex
 # Read the existing origin token on the host; it never crosses GitHub Actions logs.
 script = base64.b64encode(open('deploy/aws/bootstrap.sh','rb').read()).decode()
 names = ['TAASHEERA_SITE_URL','TAASHEERA_VOLUME_ID','TAASHEERA_REVISION']
+if os.environ.get('TAASHEERA_PRESERVE_CONFIG') == '1':
+    names.append('TAASHEERA_PRESERVE_CONFIG')
 if os.environ.get('TAASHEERA_GOOGLE_CLIENT_ID'):
     names.append('TAASHEERA_GOOGLE_CLIENT_ID')
 prefix = ' '.join(f'{n}={shlex.quote(os.environ[n])}' for n in names)

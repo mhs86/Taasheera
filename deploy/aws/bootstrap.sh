@@ -102,6 +102,16 @@ test -f deploy/aws/compose.yaml
 phase='prepare private application configuration'
 printf 'Setup: %s\n' "$phase"
 mkdir -p /srv/taasheera/private /etc/taasheera
+if [ "${TAASHEERA_PRESERVE_CONFIG:-0}" = 1 ]; then
+  # Existing production releases must retain the exact settings, including
+  # optional providers. Never regenerate secrets or rewrite OAuth/mail settings.
+  test -s /srv/taasheera/private/app.env
+  test -s /srv/taasheera/private/web.env
+  test -L /etc/taasheera/app.env
+  test -L /etc/taasheera/web.env
+  test "$(readlink -f /etc/taasheera/app.env)" = /srv/taasheera/private/app.env
+  test "$(readlink -f /etc/taasheera/web.env)" = /srv/taasheera/private/web.env
+else
 if [ ! -f /srv/taasheera/private/app.env ]; then
   python3 - <<'PY'
 import os, secrets
@@ -152,6 +162,7 @@ web.chmod(0o600)
 PY
 ln -sfn /srv/taasheera/private/app.env /etc/taasheera/app.env
 ln -sfn /srv/taasheera/private/web.env /etc/taasheera/web.env
+fi
 
 # Resolve the image's user rather than relying on a distribution-specific UID.
 phase='build application images'

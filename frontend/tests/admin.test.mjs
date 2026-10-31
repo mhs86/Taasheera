@@ -104,6 +104,38 @@ afterEach(async () => {
   document.body.querySelectorAll('[data-sonner-toaster]').forEach(node => node.remove())
 })
 
+for (const auth_type of ['email_password', 'google']) {
+  test(`admin finds and explicitly grants access to an existing ${auth_type} account by email`, async () => {
+    backend({
+      'POST /admin-api/admins/lookup': () => json({ ...MAYA, auth_type }),
+      'POST /admin-api/admins': () => json({ ...MAYA_DETAIL, auth_type, role: 'admin' }),
+    })
+    await render('/admin')
+    await type($('input[type=email]'), MAYA.email)
+    await click(button('Find account'))
+    assert.equal(requested('POST /admin-api/admins').length, 1)
+    assert.match(page(), /Confirm admin access for maya@example.com/)
+    await click(button('Confirm admin access for maya@example.com'))
+    assert.deepEqual(JSON.parse(requested('POST /admin-api/admins').at(-1).body), { email: MAYA.email, expected_user_id: MAYA.id })
+    assert.match(page(), /Maya Haddad is now an admin/)
+    assert.equal($('input[type=email]').value, '')
+    assert.equal(requested('GET /admin-api/users?').length, 2)
+  })
+}
+
+test('changing the admin email clears the previous confirmation and unknown accounts show a useful error', async () => {
+  backend({ 'POST /admin-api/admins/lookup': () => json(MAYA) })
+  await render('/admin')
+  await type($('input[type=email]'), MAYA.email)
+  await click(button('Find account'))
+  await type($('input[type=email]'), 'missing@example.com')
+  assert.equal(button('Confirm admin access for maya@example.com'), undefined)
+  handlers['POST /admin-api/admins/lookup'] = () => json({ detail: 'Account not found. Ask them to register first.' }, 404)
+  await click(button('Find account'))
+  assert.match(page(), /Ask them to register first/)
+  assert.equal(requested('POST /admin-api/admins').length, 2) // Both were lookups.
+})
+
 test('signed-out visitors are sent to sign-in before any admin request', async () => {
   backend({ 'POST /auth/refresh': () => json({ detail: 'Invalid or expired refresh token.' }, 401) })
   await render('/admin')

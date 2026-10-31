@@ -32,8 +32,10 @@ feature branch adds the Sprint 3 admin monitoring/privacy work (US 94, 88, 120,
   before branching; a narrow workspace fetch may leave that local reference stale.
 - `dev` is integration. Branch from `dev`; convention `<name>_<feature>_sprint<N>`.
 - Reference story numbers in review descriptions and explain behavior and validation.
-- Current user instruction: push this work only to its new feature branch; the user
-  must test locally before merging/pushing functional features into `dev` or deploying them.
+- The original Sprint 3 work required local testing before integration. On 31 October
+  2026 the user explicitly authorized releasing the Google sign-in, missing welcome
+  links and admin-by-email fixes directly to production. Keep the tested source on
+  `mohammad_prod_auth_admin_sprint3`; do not move dev/main merely to trigger deployment.
 - The user separately authorized US 1 public policy pages on AWS. The scoped publisher
   updates public assets/homepage links without releasing Sprint 3 API features.
 - Do not modify existing deployment/environment settings to test new features.
@@ -129,8 +131,9 @@ privilege; absent it, PostgreSQL cases are skipped. CI includes both DBs and ima
     review: specimen/demo data only until a suitable paid/provider arrangement exists.
 15. Lambda deployment workflow packages FastAPI/Tesseract with the AWS adapter; AWS
     OIDC/ECR/Lambda/API Gateway and durable storage remain external prerequisites.
-16. Google identities use verified sub, never email for linking. Existing password
-    users explicitly link with bearer auth/current password. GOOGLE_CLIENT_ID is public.
+16. Google identities use verified sub, never email alone for linking. Existing password
+    users explicitly link with bearer auth/current password, or prove a verified Google
+    ID token AND their existing password at `/auth/google/link-login`. GOOGLE_CLIENT_ID is public.
 17. Email recovery: ten-minute/five-attempt OTP, five-minute reset grant, revoke all
     sessions on reset; no Google-only password enabling. Limits are DB backed.
     SES is sandboxed. OAuth/SES administration uses sharafm032@gmail.com; project
@@ -174,6 +177,13 @@ privilege; absent it, PostgreSQL cases are skipped. CI includes both DBs and ima
     update only these public assets and the existing homepage, with backup/rollback.
     These pages were published via CloudShell and HTTPS-verified on 31 October 2026.
     Google ownership/branding verification remains pending; see docs/GOOGLE_APP_DOMAIN.md.
+30. Admin users can find an existing account by primary or linked Google email and
+    confirm its promotion under `/admin`. Lookup never grants privileges; grant rechecks
+    actor/target locks, account ID, ambiguity and status. No unverified-email invitations.
+    `deploy/aws/release_production.py --execute` uses authenticated AWS CLI/SSM, preserves
+    exact existing private config, backs up SQLite and verifies client/API/policies.
+    Optional `--admin-email` uses manage.py on the host; no hardcoded app admin allowlist.
+    See docs/PRODUCTION_AUTH_ADMIN_FIX.md for release steps and QA status.
 
 ## Personal instructions
 

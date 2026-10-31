@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Path, Query, Request, Response
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, StringConstraints
 from sqlalchemy import or_, update
 from sqlmodel import Session, func, select
 
@@ -121,6 +121,26 @@ class UserSearch(BaseModel):
 class RoleChange(BaseModel):
     model_config = ConfigDict(extra="forbid")
     role: Role
+
+
+class AdminEmailLookup(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    email: EmailStr = Field(max_length=254)
+
+
+class AdminEmailGrant(AdminEmailLookup):
+    expected_user_id: int = Field(gt=0, le=2_147_483_647)
+
+
+def find_admin_candidate(session: Session, email: str) -> Traveler:
+    email = email.strip().lower()
+    rows = session.exec(select(Traveler).where(or_(func.lower(Traveler.email) == email,
+                                                   func.lower(Traveler.sso_email) == email))).all()
+    if not rows:
+        raise HTTPException(404, "Account not found. Ask them to register with Google or email and password first.")
+    if len(rows) != 1:
+        raise HTTPException(409, "This email matches multiple accounts. Use the user details page to select the account.")
+    return rows[0]
 
 
 class MonitoringError(BaseModel):
@@ -261,6 +281,23 @@ def create_admin_router(get_session, current_traveler, passport_storage) -> APIR
         return AdminUserPage(items=[AdminUserSummary(**summary_fields(row)) for row in rows],
                              total=count(session, Traveler, *filters),
                              page=search.page, page_size=search.page_size)
+
+    @router.post("/admins/lookup", response_model=AdminUserSummary, dependencies=[Depends(check_origin)])
+    def lookup_admin(data: AdminEmailLookup, session: SessionDep):
+        return summary_fields(find_admin_candidate(session, data.email))
+
+    @router.post("/admins", response_model=AdminUserDetail, dependencies=[Depends(check_origin)])
+    def add_admin(data: AdminEmailGrant, request: Request, session: SessionDep, signed_in: AdminDep):
+        actor, target = lock_accounts(session, signed_in.id, data.expected_user_id)
+        candidate = find_admin_candidate(session, data.email)
+        if candidate.id != target.id:
+            raise HTTPException(409, "The selected account changed. Find the account again before adding an admin.")
+        if target.role == "admin":
+            raise HTTPException(409, "This account is already an admin.")
+        if target.status != "active":
+            raise HTTPException(409, "Reactivate this account before adding it as an admin.")
+        apply_change(session, request, actor, target, "role_change", "role", "admin")
+        return user_detail(session, passport_storage, target)
 
     @router.get("/users/{user_id}", response_model=AdminUserDetail)
     def get_user(user_id: UserId, session: SessionDep):

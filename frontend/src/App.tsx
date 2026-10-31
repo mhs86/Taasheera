@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { restoreSession, signIn, signInWithGoogle, signOut, type Traveler } from './auth'
+import { GoogleLinkRequiredError, restoreSession, signIn, signInWithGoogle, signOut, type Traveler } from './auth'
+import GoogleAccountLink from './GoogleAccountLink'
 import GoogleSignIn from './GoogleSignIn'
 import { disableGoogleAutoSelect } from './googleIdentity'
 import './App.css'
@@ -152,6 +153,7 @@ function SignIn({ onSignedIn, googleClientId, initialMessage, googleConfiguratio
 }) {
   const [message, setMessage] = useState(initialMessage)
   const [submitting, setSubmitting] = useState(false)
+  const [linkCredential, setLinkCredential] = useState<string | null>(null)
   const inProgress = useRef(false)
   const mounted = useRef(false)
   useEffect(() => {
@@ -167,6 +169,11 @@ function SignIn({ onSignedIn, googleClientId, initialMessage, googleConfiguratio
       const profile = await signInWithGoogle(credential)
       if (mounted.current) onSignedIn(profile)
     } catch (error) {
+      if (mounted.current && error instanceof GoogleLinkRequiredError) {
+        setLinkCredential(credential)
+        setMessage('')
+        return
+      }
       if (mounted.current) setMessage(error instanceof Error && error.name === 'Error'
         ? error.message : 'Could not complete Google sign-in. Please try again.')
     } finally {
@@ -174,6 +181,10 @@ function SignIn({ onSignedIn, googleClientId, initialMessage, googleConfiguratio
       if (mounted.current) setSubmitting(false)
     }
   }, [onSignedIn])
+
+  if (linkCredential) return <GoogleAccountLink credential={linkCredential}
+    onSignedIn={traveler => { setLinkCredential(null); onSignedIn(traveler) }}
+    onCancel={() => { setLinkCredential(null); setMessage('') }} />
 
   return (
     <section className="sign-in-card" aria-labelledby="sign-in-heading">

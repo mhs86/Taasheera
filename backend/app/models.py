@@ -139,9 +139,12 @@ class RegisterRequest(PasswordInput):
         return value.lower()
 
 
-class GoogleLinkRequest(PasswordInput):
+class GoogleLinkLoginRequest(PasswordInput):
     model_config = ConfigDict(extra="forbid")
     id_token: SecretStr = SchemaField(min_length=1, max_length=8192)
+
+
+class GoogleLinkRequest(GoogleLinkLoginRequest):
     expected_traveler_id: int = SchemaField(gt=0)
 
 

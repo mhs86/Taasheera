@@ -12,11 +12,11 @@ from sqlalchemy import update
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
-from .auth import check_origin, start_session
+from .auth import DUMMY_HASH, check_origin, start_session
 from .activity import record_activity
 from .security import audit, throttle
 from .models import (AccessTokenPublic, AuthConfigurationPublic, GoogleIdentity,
-                     GoogleLinkRequest, GoogleLoginRequest, Traveler, TravelerPublic)
+                     GoogleLinkRequest, GoogleLinkLoginRequest, GoogleLoginRequest, Traveler, TravelerPublic)
 
 
 def invalid_token():
@@ -183,6 +183,62 @@ def create_google_auth_router(get_session, current_traveler):
                             "registration", "google", "success")
         record_activity(session, request.app.state.activity_directory, traveler.id,
                         "sign_in", "google", "success")
+        return result
+
+    @router.post("/google/link-login", response_model=AccessTokenPublic,
+                 dependencies=[Depends(check_origin)])
+    def link_google_login(data: GoogleLinkLoginRequest, request: Request, response: Response,
+                          session: SessionDep):
+        # This is explicit proof of BOTH credentials, never an email-only merge.
+        throttle(request, session, "google-link-login", ip_limit=30)
+        client_id = request.app.state.auth_settings.google_client_id
+        if not client_id:
+            raise HTTPException(503, "Google sign-in is not configured.", headers={"Cache-Control": "no-store"})
+        claims = verify_google_token(data.id_token.get_secret_value(), client_id)
+        # Share the password login account budget; alternating endpoints cannot
+        # multiply password guesses. Provider verification happens before locks.
+        throttle(request, session, "login", account=claims["email"])
+        session.execute(update(Traveler).where(Traveler.email == claims["email"])
+                        .values(password_hash=Traveler.password_hash))
+        traveler = session.exec(select(Traveler).where(Traveler.email == claims["email"])
+                                .execution_options(populate_existing=True)).first()
+        enabled = traveler is not None and traveler.password_enabled
+        try:
+            correct = bcrypt.checkpw(data.password.get_secret_value().encode("utf-8"),
+                                     traveler.password_hash.encode("ascii") if enabled else DUMMY_HASH)
+        except (ValueError, UnicodeError):
+            correct = False
+        if not enabled or not correct:
+            audit(request, "google-link-login", "password_rejected", traveler.id if traveler else None)
+            raise HTTPException(401, "Check your existing account password and try again.",
+                                headers={"Cache-Control": "no-store"})
+        # start_session performs suspension checks before committing any identity.
+        # Do not add the link until that check has succeeded.
+        if traveler.status != "active":
+            return start_session(traveler, request, response, session, method="google")
+        linked = session.exec(select(GoogleIdentity).where(GoogleIdentity.traveler_id == traveler.id)).first()
+        subject = session.get(GoogleIdentity, claims["sub"])
+        if (linked and linked.subject != claims["sub"]) or (subject and subject.traveler_id != traveler.id):
+            raise HTTPException(409, "That Google account cannot be connected to this traveler.",
+                                headers={"Cache-Control": "no-store"})
+        created = subject is None
+        try:
+            with session.begin_nested():
+                if created:
+                    session.add(GoogleIdentity(subject=claims["sub"], traveler_id=traveler.id))
+                traveler.sso_email = claims["email"]
+                session.add(traveler)
+                session.flush()
+        except IntegrityError:
+            session.rollback()
+            raise collision() from None
+        result = start_session(traveler, request, response, session, method="google")
+        if created:
+            record_activity(session, request.app.state.activity_directory, traveler.id,
+                            "account_link", "google", "success")
+        record_activity(session, request.app.state.activity_directory, traveler.id,
+                        "sign_in", "google", "success")
+        audit(request, "google-link-login", "success", traveler.id)
         return result
 
     return router
