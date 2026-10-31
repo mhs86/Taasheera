@@ -221,3 +221,8 @@ jmespath==1.1.0
 python-dateutil==2.9.0.post0
 s3transfer==0.19.2
 six==1.17.0
+
+# Owner request serialization and opt-in privacy-filtered monitoring.
+filelock==3.20.3
+sentry-sdk==2.43.0
+psutil==7.1.3

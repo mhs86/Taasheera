@@ -6,16 +6,12 @@ export default defineConfig({
   plugins: [react()],
   server: {
     host: '127.0.0.1',
-    port: 5173,
+    port: Number(process.env.TAASHEERA_WEB_PORT || 5173),
     strictPort: true,
     // Same-origin browser requests; FastAPI needs no CORS middleware locally.
     proxy: {
-      '/auth': 'http://127.0.0.1:8000',
-      '/passports': 'http://127.0.0.1:8000',
-      '/profile': 'http://127.0.0.1:8000',
-      '/sessions': 'http://127.0.0.1:8000',
-      '/activity': 'http://127.0.0.1:8000',
-      '/assistant': 'http://127.0.0.1:8000',
+      ...Object.fromEntries(['auth', 'passports', 'profile', 'sessions', 'activity', 'assistant', 'admin', 'applications']
+        .map(route => [`/${route}`, process.env.TAASHEERA_API_TARGET || 'http://127.0.0.1:8000'])),
     },
   },
 })

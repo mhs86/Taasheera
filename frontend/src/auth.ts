@@ -143,6 +143,27 @@ let restoring: Promise<Traveler | null> | null = null
 
 export function hasAccessToken(): boolean { return accessToken !== null }
 
+export function forgetSession(): void {
+  accessToken = null
+  if (typeof window !== 'undefined') window.dispatchEvent(new window.Event('taasheera-auth-changed'))
+}
+
+// Destructive cookie/session changes share the cross-tab lock used by sign-in,
+// refresh and logout. Refresh directly inside the lock to avoid a nested lock.
+export function deleteAccountSession(payload: { confirmation: 'DELETE'; expected_traveler_id: number;
+  password?: string; google_id_token?: string }): Promise<Response> {
+  return sessionOperation(async () => {
+    if (!accessToken && !(await refresh())) throw new Error('Please sign in to continue.')
+    const send = () => request('account', { method: 'DELETE',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
+      body: JSON.stringify(payload) })
+    let response = await send()
+    if (response.status === 401 && await refresh()) response = await send()
+    if ([202, 204].includes(response.status)) forgetSession()
+    return response
+  })
+}
+
 // Options are apiFetch's, so a caller can pass `silent: true` and show its own error instead of a toast.
 export async function protectedFetch(path: string, options: Parameters<typeof apiFetch>[1] = {}): Promise<Response> {
   if (!accessToken && !(await restoreSession())) throw new Error('Please sign in to continue.')

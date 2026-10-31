@@ -4,14 +4,17 @@ import time
 from datetime import datetime, timedelta, timezone
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, FastAPI, HTTPException, Path, Query, Request
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Path, Query, Request, Response
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 from sqlalchemy import or_, update
 from sqlmodel import Session, func, select
 
 from .activity import record_activity
 from .auth import check_origin, revoke_all_sessions
-from .models import ROLES, ActivityEvent, AuthSession, GoogleIdentity, Role, Status, Traveler
+from .models import (ROLES, APPLICATION_STATUSES, AccountErasure, ActivityEvent, AuthSession,
+                     GoogleIdentity, Role, Status, Traveler, VisaApplication)
+from .account_lock import account_lock
+from .privacy import DeleteUser, erase_account, erasure_response
 
 
 PREFIX = "/admin"
@@ -101,7 +104,7 @@ class AdminOverview(BaseModel):
     total_users: int
     new_last_7_days: int
     suspended: int
-    applications_started: int | None  # None until applications are stored.
+    applications_started: int
 
 
 class UserSearch(BaseModel):
@@ -118,6 +121,22 @@ class UserSearch(BaseModel):
 class RoleChange(BaseModel):
     model_config = ConfigDict(extra="forbid")
     role: Role
+
+
+class MonitoringError(BaseModel):
+    id: int
+    occurred_at: datetime
+    event_type: str
+    outcome: str
+    source: str
+
+
+class MonitoringPublic(BaseModel):
+    applications_by_status: dict[str, int]
+    total_applications: int
+    recent_errors: list[MonitoringError]
+    agent_failures_available: bool
+    pending_erasures: int
 
 
 def count(session: Session, model, *conditions) -> int:
@@ -168,6 +187,8 @@ def lock_accounts(session: Session, actor_id: int, target_id: int) -> tuple[Trav
     target = rows.get(target_id)
     if target is None:
         raise HTTPException(404, NOT_FOUND)
+    if session.get(AccountErasure, target_id) is not None:
+        raise HTTPException(409, "Account erasure is pending; this user cannot be changed.")
     return actor, target
 
 
@@ -197,6 +218,23 @@ def create_admin_router(get_session, current_traveler, passport_storage) -> APIR
     def admin_me(signed_in: AdminDep):
         return signed_in
 
+    @router.get("/monitoring", response_model=MonitoringPublic)
+    def monitoring(session: SessionDep, limit: Annotated[int, Query(ge=1, le=100)] = 20):
+        counts = dict(session.exec(select(VisaApplication.status, func.count())
+                                  .group_by(VisaApplication.status)).all())
+        # Only metadata saved by backend code; never return arbitrary request/provider errors.
+        errors = session.exec(select(ActivityEvent).where(
+            ActivityEvent.outcome.in_(["failure", "error", "unavailable", "timeout", "unreadable"]))
+            .order_by(ActivityEvent.occurred_at.desc(), ActivityEvent.id.desc()).limit(limit)).all()
+        return {"applications_by_status": {value: counts.get(value, 0) for value in APPLICATION_STATUSES},
+                "total_applications": sum(counts.values()),
+                "recent_errors": [{"id": event.id, "occurred_at": event.occurred_at,
+                    "event_type": event.event_type, "outcome": event.outcome,
+                    "source": event.identifier if event.event_type == "api_error" else event.event_type}
+                    for event in errors],
+                "agent_failures_available": False,
+                "pending_erasures": count(session, AccountErasure)}
+
     @router.get("/overview", response_model=AdminOverview)
     def overview(session: SessionDep):
         week_ago = datetime.now(timezone.utc) - timedelta(days=7)
@@ -204,7 +242,7 @@ def create_admin_router(get_session, current_traveler, passport_storage) -> APIR
             total_users=count(session, Traveler),
             new_last_7_days=count(session, Traveler, Traveler.created_at >= week_ago),
             suspended=count(session, Traveler, Traveler.status == "suspended"),
-            applications_started=None,
+            applications_started=count(session, VisaApplication),
         )
 
     @router.get("/users", response_model=AdminUserPage)
@@ -260,5 +298,26 @@ def create_admin_router(get_session, current_traveler, passport_storage) -> APIR
             raise HTTPException(409, f"This account already has the {data.role} role.")
         apply_change(session, request, actor, target, "role_change", "role", data.role)
         return user_detail(session, passport_storage, target)
+
+    @router.delete("/users/{user_id}", status_code=204, response_class=Response,
+                   responses={202: {"description": "Account disabled; data erasure queued for retry"}},
+                   dependencies=[Depends(check_origin)])
+    def delete_user(user_id: UserId, data: DeleteUser, request: Request, session: SessionDep,
+                    signed_in: AdminDep):
+        if user_id != data.expected_user_id:
+            raise HTTPException(409, "The selected user changed. Reload before deleting.")
+        if user_id == signed_in.id:
+            raise HTTPException(409, "Use your account page to delete your own account.")
+        # Owner operations hold this same lock until their response finishes.
+        with account_lock(request.app.state.account_lock_directory, user_id):
+            actor, target = lock_accounts(session, signed_in.id, user_id)
+            if target.role == "admin":
+                raise HTTPException(409, "Transfer this user's admin role before deletion.")
+            complete = erase_account(session, target, passport_storage, request.app.state.activity_directory,
+                                     request.app.state.auth_settings.jwt_secret)
+            # Keep an administrative action record without retaining the deleted user's ID or data.
+            record_activity(session, request.app.state.activity_directory, actor.id,
+                            "account_erasure", "account", "success" if complete else "pending")
+            return erasure_response(complete)
 
     return router

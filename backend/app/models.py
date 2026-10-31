@@ -225,3 +225,35 @@ class ResetRateLimit(SQLModel, table=True):
     key: str = Field(primary_key=True, max_length=100)
     expires_at: int = Field(index=True)
     count: int = 1
+
+
+ApplicationStatus = Literal["DRAFT", "IN_PROGRESS", "READY", "SUBMITTED", "DECIDED", "FAILED"]
+APPLICATION_STATUSES = get_args(ApplicationStatus)
+
+
+class VisaApplication(SQLModel, table=True):
+    __table_args__ = (CheckConstraint(
+        "status IN ('DRAFT','IN_PROGRESS','READY','SUBMITTED','DECIDED','FAILED')",
+        name="ck_visaapplication_status"),)
+    id: str = Field(primary_key=True, max_length=32)
+    traveler_id: int = Field(foreign_key="traveler.id", index=True)
+    destination: str = Field(max_length=3)
+    nationality: str = Field(max_length=3)
+    visa_type: str = Field(max_length=80)
+    status: str = Field(default="DRAFT", max_length=20, index=True)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class DocumentAccess(SQLModel, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+    traveler_id: int = Field(foreign_key="traveler.id", index=True)
+    actor_id: int = Field(foreign_key="traveler.id", index=True)
+    upload_id: str = Field(max_length=32)
+    purpose: str = Field(max_length=30)
+    occurred_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), index=True)
+
+
+class AccountErasure(SQLModel, table=True):
+    # Durable work item: failed file/database cleanup is retried, never reported as complete.
+    traveler_id: int = Field(primary_key=True, foreign_key="traveler.id")
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

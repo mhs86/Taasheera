@@ -87,8 +87,8 @@ def create_passport_router(
     router = APIRouter(prefix="/passports", tags=["passports"])
     TravelerId = Annotated[int, Depends(current_traveler_id)]
 
-    def load_owned(traveler_id: int, upload_id: str) -> bytes:
-        image = storage.load(traveler_id, upload_id)
+    def load_owned(traveler_id: int, upload_id: str, purpose="image_view") -> bytes:
+        image = storage.load(traveler_id, upload_id, purpose=purpose)
         if image is None:
             # 404 whether it doesn't exist or belongs to someone else, so ids can't be probed.
             raise HTTPException(status_code=404, detail="Passport upload not found.")
@@ -118,7 +118,7 @@ def create_passport_router(
 
     @router.post("/{upload_id}/extract", response_model=ExtractionPublic)
     def extract(upload_id: str, traveler_id: TravelerId):
-        image = load_owned(traveler_id, upload_id)
+        image = load_owned(traveler_id, upload_id, "extraction")
         result = ExtractionPublic.from_extraction(extract_passport(image, reader=reader))
         if record_event:
             record_event(traveler_id, "passport_extraction", result.status)
@@ -126,7 +126,6 @@ def create_passport_router(
 
     @router.get("/{upload_id}/review", response_model=PassportFields)
     def get_review(upload_id: str, response: Response, traveler_id: TravelerId):
-        load_owned(traveler_id, upload_id)
         fields = storage.load_review(traveler_id, upload_id)
         if fields is None:
             raise HTTPException(status_code=404, detail="Passport review not found.")
@@ -135,7 +134,7 @@ def create_passport_router(
 
     @router.put("/{upload_id}/review", response_model=PassportFields)
     def save_review(upload_id: str, fields: PassportFields, response: Response, traveler_id: TravelerId):
-        load_owned(traveler_id, upload_id)
+        load_owned(traveler_id, upload_id, "review_update")
         storage.save_review(traveler_id, upload_id, fields.model_dump(mode="json"))
         if record_event:
             record_event(traveler_id, "passport_review", "success")

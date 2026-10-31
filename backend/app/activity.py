@@ -10,6 +10,7 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, ConfigDict
 from sqlmodel import Session
+from sqlalchemy import update
 
 from .models import ActivityEvent, Traveler
 
@@ -47,11 +48,17 @@ class FrontendActivity(BaseModel):
 
 
 def record_activity(session: Session, directory: Path, traveler_id: int, event_type: str,
-                    identifier: str, outcome: str) -> ActivityEvent:
+                    identifier: str, outcome: str) -> ActivityEvent | None:
+    # Serialize unauthenticated login/reset logging with erasure too. A completed
+    # deletion must not be followed by a late event recreating an owner's mirror.
+    locked = session.execute(update(Traveler).where(Traveler.id == traveler_id).values(status=Traveler.status))
+    if not locked.rowcount:
+        session.rollback()
+        return None
     event = ActivityEvent(traveler_id=traveler_id, event_type=event_type,
                           identifier=identifier, outcome=outcome)
     session.add(event)
-    session.commit()
+    session.flush()
     session.refresh(event)
     # The database is authoritative. A failed mirror must not turn a completed
     # registration, login, or upload into an apparent failure to the traveler.
@@ -78,6 +85,8 @@ def record_activity(session: Session, directory: Path, traveler_id: int, event_t
             }, separators=(",", ":")) + "\n")
     except OSError:
         log.error("Activity JSONL mirror failed; database event was saved")
+    # Keep the traveler row lock until the mirror write finishes.
+    session.commit()
     return event
 
 

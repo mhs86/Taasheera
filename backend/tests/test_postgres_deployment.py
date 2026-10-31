@@ -10,6 +10,9 @@ from alembic import command
 from fastapi.testclient import TestClient
 from sqlalchemy import inspect, make_url, text
 from sqlalchemy.exc import IntegrityError
+from alembic.autogenerate import compare_metadata
+from alembic.runtime.migration import MigrationContext
+from sqlmodel import SQLModel
 
 import manage
 import migrate
@@ -19,6 +22,18 @@ from app.schema import migration_config, schema_revision
 
 
 ROLE_PARENT_REVISION = "e6f81a73c902"  # The revision before roles; downgrading to it removes only role/status.
+
+
+@pytest.mark.skipif(not os.environ.get("TEST_POSTGRES_URL"), reason="needs disposable PostgreSQL")
+def test_migrated_postgres_schema_has_no_model_drift(monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", os.environ["TEST_POSTGRES_URL"])
+    migrate.upgrade()
+    engine = build_engine()
+    try:
+        with engine.connect() as connection:
+            assert compare_metadata(MigrationContext.configure(connection, opts={"compare_type": True}), SQLModel.metadata) == []
+    finally:
+        engine.dispose()
 
 
 @pytest.mark.skipif(not os.environ.get("TEST_POSTGRES_URL"), reason="needs disposable PostgreSQL")
@@ -252,7 +267,7 @@ def test_admin_user_management_on_postgres(monkeypatch):
                     "SELECT count(*), count(*) FILTER (WHERE created_at >= now() - interval '7 days'), "
                     "count(*) FILTER (WHERE status = 'suspended') FROM traveler")).one()
             assert overview == {"total_users": total, "new_last_7_days": recent, "suspended": suspended,
-                                "applications_started": None}
+                                "applications_started": 0}
             assert recent >= 3
 
             # Two admins demote each other at the same moment: the row locks let exactly one win.

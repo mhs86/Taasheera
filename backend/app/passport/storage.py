@@ -17,8 +17,13 @@ _UPLOAD_ID = re.compile(r"[0-9a-f]{32}")
 
 
 class PassportImageStorage:
-    def __init__(self, root: Path | str):
+    def __init__(self, root: Path | str, *, on_access=None):
         self.root = Path(root)
+        self.on_access = on_access
+
+    def audit_access(self, owner_id: int, upload_id: str, purpose: str):
+        if self.on_access is not None:
+            self.on_access(owner_id, upload_id, purpose)
 
     def _path(self, owner_id: int, upload_id: str) -> Path | None:
         # Rejecting anything but our own id format rules out path tricks like "../".
@@ -36,10 +41,11 @@ class PassportImageStorage:
             file.write(jpeg)
         return upload_id
 
-    def load(self, owner_id: int, upload_id: str) -> bytes | None:
+    def load(self, owner_id: int, upload_id: str, *, purpose: str = "image_view") -> bytes | None:
         path = self._path(owner_id, upload_id)
         if path is None or not path.is_file():
             return None
+        self.audit_access(owner_id, upload_id, purpose)
         return path.read_bytes()
 
     def save_review(self, owner_id: int, upload_id: str, fields: dict) -> None:
@@ -63,6 +69,7 @@ class PassportImageStorage:
         review_path = image_path.with_suffix(".json")
         if not review_path.is_file():
             return None
+        self.audit_access(owner_id, upload_id, "review_read")
         return json.loads(review_path.read_text(encoding="utf-8"))
 
     def upload_count(self, owner_id: int) -> int:
@@ -81,4 +88,5 @@ class PassportImageStorage:
         if not reviews:
             return None
         newest = max(reviews, key=lambda path: path.stat().st_mtime_ns)
+        self.audit_access(owner_id, newest.stem, "assistant_context")
         return json.loads(newest.read_text(encoding="utf-8"))

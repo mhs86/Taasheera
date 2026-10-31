@@ -10,6 +10,8 @@ import ConnectGoogle from './ConnectGoogle'
 import ChangePassword from './ChangePassword'
 import ProfileForm from './ProfileForm'
 import Sessions from './Sessions'
+import DocumentHistory from './DocumentHistory'
+import DeleteAccount from './DeleteAccount'
 import { readNavigation, type Navigation } from './navigation'
 
 const pageTitles = {
@@ -93,9 +95,17 @@ function App({ initialNavigation, accountPage = false, googleClientId = import.m
               onConnected={setTraveler} />
             {traveler.password_enabled === true && <ChangePassword />}
             <Sessions />
+            <DocumentHistory />
+            <DeleteAccount traveler={traveler} clientId={googleClientId} onDeleted={complete => {
+              setTraveler(null)
+              setRegistrationMessage(complete ? 'Your account and data have been deleted.' : 'Your account is disabled. Data erasure is queued for retry.')
+              setRoute(previous => ({ ...previous, page: 'sign-in', version: previous.version + 1 }))
+            }} />
           </> : <>
             <p className="intro">You are signed in.</p>
             <a href="/account" className="account-link">Edit your account details</a>
+            <a href="/my-applications" className="account-link">Your applications</a>
+            <a href="/backoffice" className="account-link">Staff dashboard</a>
             <a href="/passport" className="primary-button passport-link">Upload your passport</a>
           </>}
           <button className="primary-button" data-activity-id="logout-button" disabled={loggingOut} onClick={async () => {

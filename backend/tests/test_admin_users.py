@@ -431,7 +431,7 @@ def test_overview_counts_users_new_this_week_and_suspended(api):
     response = api.client.get("/admin/overview", headers=api.admin)
     assert response.status_code == 200
     # Maya, Omar and Sara joined in the last 7 days; Adam earlier; Rana's sign-up time is unknown.
-    assert response.json() == {"total_users": 5, "new_last_7_days": 3, "suspended": 1, "applications_started": None}
+    assert response.json() == {"total_users": 5, "new_last_7_days": 3, "suspended": 1, "applications_started": 0}
 
 
 def test_new_accounts_record_their_sign_up_time(api):
@@ -476,9 +476,12 @@ def test_admin_schemas_forbid_extra_input_and_carry_no_passport_fields(api):
             if body is not None:
                 bodies += 1
                 assert components[body["schema"]["$ref"].rsplit("/", 1)[-1]]["additionalProperties"] is False
+            if method == "delete":
+                assert {"202", "204"} <= set(operation["responses"])
+                continue
             response = operation["responses"]["200"]["content"]["application/json"]["schema"]
             # The upload count is the one passport-related number the API reports.
             names = set(schema_properties(response, components)) - {"passport_uploads"}
             assert names, (method, path)
             assert not [name for name in names if any(word in name for word in PASSPORT_WORDS)], (method, path)
-    assert bodies == 1
+    assert bodies == 2
