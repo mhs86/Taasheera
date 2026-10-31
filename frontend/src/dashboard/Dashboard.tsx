@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router'
 import { listApplications, type ApplicationSummary } from '../application/api'
-import { formatShortDate } from '../application/format'
 import ApplicationActions from './ApplicationActions'
-import { applicationName, DISCLAIMER, formatDateTime, useTraveler } from './helpers'
+import { applicationLabel, applicationName, DISCLAIMER, formatDateTime, tripWhen, useTraveler } from './helpers'
 import { Flag, SignedOut, StatusChip } from './shared'
 import '../ui.css'
 import './dashboard.css'
@@ -18,6 +17,9 @@ export default function Dashboard() {
   // null while loading; an Error when the list could not be loaded.
   const [applications, setApplications] = useState<ApplicationSummary[] | Error | null>(null)
   const [attempt, setAttempt] = useState(0)
+  const heading = useRef<HTMLHeadingElement>(null)
+
+  useEffect(() => { document.title = 'Your applications | Taasheera' }, [])
 
   useEffect(() => {
     if (!traveler) return
@@ -32,8 +34,10 @@ export default function Dashboard() {
   const viewRef = useRef(view)
   useEffect(() => { viewRef.current = view }, [view])
 
+  // A removed card takes the focus with it, so it moves to the page heading instead of being lost.
   const drop = useCallback((id: string) => {
     setApplications(current => Array.isArray(current) ? current.filter(application => application.id !== id) : current)
+    heading.current?.focus()
   }, [])
   // Archiving moves an application to the other tab; Undo brings it back to this one.
   const place = useCallback((updated: ApplicationSummary) => {
@@ -43,6 +47,7 @@ export default function Dashboard() {
       const others = current.filter(application => application.id !== updated.id)
       return belongsHere ? [...others, updated].sort((a, b) => b.updated_at.localeCompare(a.updated_at)) : others
     })
+    if (!belongsHere) heading.current?.focus()
   }, [])
 
   if (traveler === undefined) return <section className="dash-page container"><p className="dash-status" role="status">Checking your session…</p></section>
@@ -51,7 +56,7 @@ export default function Dashboard() {
   return <section className="dash-page container" aria-labelledby="dash-title">
     <div className="dash-head">
       <div>
-        <h1 id="dash-title">Your applications</h1>
+        <h1 id="dash-title" ref={heading} tabIndex={-1}>Your applications</h1>
         <p className="dash-lede">Where each visa application stands, and where to pick up.</p>
       </div>
       <Link to="/apply" className="button button-primary" data-activity-id="application-new">New application</Link>
@@ -84,7 +89,7 @@ export default function Dashboard() {
           </h2>
           <p className="dash-meta">
             {application.visa_label}
-            {application.trip_date && <> · Arriving {formatShortDate(application.trip_date)}</>}
+            {' · '}{tripWhen(application)}
             {application.group_size > 1 && <> · Group of {application.group_size}</>}
           </p>
           <p className="dash-meta">
@@ -94,7 +99,7 @@ export default function Dashboard() {
         </div>
         <div className="dash-card-side">
           {view === 'active' && <Link to={`/apply/${application.id}`} className="button button-primary dash-small"
-            data-activity-id="application-resume" aria-label={`Resume ${applicationName(application)}`}>
+            data-activity-id="application-resume" aria-label={`${application.status === 'ANSWERS_COMPLETE' ? 'Review answers for' : 'Resume'} ${applicationLabel(application)}`}>
             {application.status === 'ANSWERS_COMPLETE' ? 'Review answers' : 'Resume'}
           </Link>}
           <ApplicationActions application={application} onArchiveChange={place} onDeleted={drop} />

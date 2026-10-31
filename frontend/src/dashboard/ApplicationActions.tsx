@@ -1,7 +1,7 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { deleteApplication, setArchived, type ApplicationSummary } from '../application/api'
-import { applicationName } from './helpers'
+import { applicationLabel, applicationName } from './helpers'
 
 type Props = {
   application: ApplicationSummary
@@ -14,7 +14,17 @@ export default function ApplicationActions({ application, onArchiveChange, onDel
   const [busy, setBusy] = useState(false)
   const [confirming, setConfirming] = useState(false)
   const name = applicationName(application)
+  const label = applicationLabel(application)
   const archived = application.archived_at !== null
+  const cancelButton = useRef<HTMLButtonElement>(null)
+  const deleteButton = useRef<HTMLButtonElement>(null)
+  // The question takes focus when it opens, so keyboard and screen reader users land on it.
+  useEffect(() => { if (confirming) cancelButton.current?.focus() }, [confirming])
+  const cancel = () => {
+    setConfirming(false)
+    // After the render that re-enables the button.
+    setTimeout(() => deleteButton.current?.focus())
+  }
 
   async function toggleArchive(archive: boolean, undo = false) {
     setBusy(true)
@@ -49,21 +59,22 @@ export default function ApplicationActions({ application, onArchiveChange, onDel
     <div className="dash-actions">
       <button type="button" className="button button-secondary dash-small" disabled={busy || confirming}
         data-activity-id={archived ? 'application-restore' : 'application-archive'}
-        aria-label={`${archived ? 'Restore' : 'Archive'} ${name}`}
+        aria-label={`${archived ? 'Restore' : 'Archive'} ${label}`}
         onClick={() => void toggleArchive(!archived)}>{archived ? 'Restore' : 'Archive'}</button>
-      <button type="button" className="button dash-small dash-delete" disabled={busy || confirming}
-        data-activity-id="application-delete" aria-label={`Delete ${name}`}
+      <button ref={deleteButton} type="button" className="button dash-small dash-delete" disabled={busy || confirming}
+        data-activity-id="application-delete" aria-label={`Delete ${label}`}
         onClick={() => setConfirming(true)}>Delete</button>
     </div>
-    {confirming && <div className="dash-confirm" role="alertdialog" aria-labelledby={confirmId}>
-      <p id={confirmId}>Delete {name} and all its answers? This can't be undone.</p>
+    {confirming && <div className="dash-confirm" role="alertdialog" aria-labelledby={confirmId}
+      onKeyDown={event => { if (event.key === 'Escape' && !busy) cancel() }}>
+      <p id={confirmId}>Delete {label} and all its answers? This can't be undone.</p>
       <div className="dash-actions">
         <button type="button" className="button dash-small dash-danger" disabled={busy} aria-busy={busy}
           data-activity-id="application-delete-confirm" onClick={() => void remove()}>
           {busy ? 'Deleting…' : 'Yes, delete'}
         </button>
-        <button type="button" className="button button-secondary dash-small" disabled={busy}
-          data-activity-id="application-delete-cancel" onClick={() => setConfirming(false)}>Cancel</button>
+        <button ref={cancelButton} type="button" className="button button-secondary dash-small" disabled={busy}
+          data-activity-id="application-delete-cancel" onClick={cancel}>Cancel</button>
       </div>
     </div>}
   </div>

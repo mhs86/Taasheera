@@ -116,7 +116,8 @@ test('the dashboard lists each application with its status, last update and a re
   assert.equal(cards[0].querySelector('a[data-activity-id="application-resume"]').getAttribute('href'), `/apply/${APP}`)
   assert.equal(cards[0].querySelector('.dash-card-title a').getAttribute('href'), `/dashboard/${APP}`)
   // No country chosen yet: named by the destination. Complete: the button says what it does.
-  assert.match(cards[1].textContent, /Schengen area.*Answers complete/)
+  assert.match(cards[1].textContent, /Schengen area.*Started 18 Oct 2026.*Answers complete/)
+  assert.equal(document.title, 'Your applications | Taasheera')
   assert.ok([...cards[1].querySelectorAll('a')].some(link => link.textContent === 'Review answers'))
 })
 
@@ -148,15 +149,21 @@ test('delete asks first, and cancelling keeps the application', async () => {
   })
   await render('/dashboard')
   await click(button('Delete'))
-  assert.match(container.querySelector('[role="alertdialog"]').textContent, /Delete France and all its answers\? This can't be undone\./)
-  await click(button('Cancel'))
+  assert.match(container.querySelector('[role="alertdialog"]').textContent, /Delete France, arriving 10 Jan 2027 and all its answers\? This can't be undone\./)
+  // The question takes the focus; Escape closes it like Cancel.
+  assert.equal(document.activeElement, button('Cancel'))
+  await act(async () => container.querySelector('[role="alertdialog"]')
+    .dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+  await settle()
   assert.equal(container.querySelector('[role="alertdialog"]'), null)
+  assert.equal(document.activeElement, button('Delete'))
   assert.ok(!calls.includes(`DELETE /applications/${APP}`))
 
   await click(button('Delete'))
   await click(button('Yes, delete'))
   assert.ok(calls.includes(`DELETE /applications/${APP}`))
   assert.equal(container.querySelectorAll('.dash-card').length, 0)
+  assert.equal(document.activeElement, container.querySelector('h1'))
 })
 
 test('a failed load says so and can be retried', async () => {
@@ -225,4 +232,16 @@ test('signed out, the dashboard asks the traveler to sign in', async () => {
   }
   await render('/dashboard')
   assert.match(text(), /Please sign in to see your applications/)
+})
+
+test('an archived application opened in the chat is read-only and stays off the sidebar', async () => {
+  handlers = signedIn({
+    'GET /applications': () => json([]),
+    [`GET /applications/${APP}`]: () => json(detail({ archived_at: '2026-10-31T10:00:00Z' })),
+  })
+  await render(`/apply/${APP}`)
+  assert.match(text(), /This application is archived, so its answers can't be changed\./)
+  assert.equal(button('See it and restore it').getAttribute('href'), `/dashboard/${APP}`)
+  assert.equal(container.querySelector('.apps-item'), null)
+  assert.equal(container.querySelector('.chat-answer'), null)
 })

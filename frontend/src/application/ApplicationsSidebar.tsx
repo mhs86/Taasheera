@@ -59,7 +59,7 @@ export default function ApplicationsSidebar({ applications, currentId }: Props) 
         All applications and history
       </Link>
       {applications === null && <p className="apps-empty" role="status">Loading…</p>}
-      {applications?.length === 0 && <p className="apps-empty">Applications you start appear here, so you can pick up where you left off.</p>}
+      {applications?.length === 0 && <p className="apps-empty">Applications you start appear here, so you can pick up where you left off. Archived ones are on your dashboard.</p>}
       {active.length > 0 && <>
         <h2 className="apps-heading">In progress</h2>
         <ul className="apps-list">{active.map(item)}</ul>

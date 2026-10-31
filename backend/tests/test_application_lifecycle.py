@@ -131,8 +131,43 @@ def test_timeline_of_a_complete_stopped_and_archived_application(api):
     assert put(client, headers[0], stopped["id"], "stay_over_90_days", True).json()["status"] == "INELIGIBLE"
     timeline = client.get(f"/applications/{stopped['id']}/timeline", headers=headers[0]).json()
     assert timeline["events"][-1]["kind"] == "stopped"
+    assert "90 days" in timeline["events"][-1]["text"]
     assert timeline["next"]["kind"] == "change"
-    assert "90 days" in timeline["next"]["text"]
+    # The reason is said once, in the timeline, not repeated as the next step.
+    assert "90 days" not in timeline["next"]["text"]
+
+
+def test_an_archived_application_is_read_only_until_restored(api):
+    client, app, headers, _ = api
+    application = start(client, headers[0])
+    put(client, headers[0], application["id"], "main_destination", "FRA")
+    archived = client.post(f"/applications/{application['id']}/archive", headers=headers[0]).json()
+
+    response = put(client, headers[0], application["id"], "purpose", "tourism")
+    assert response.status_code == 409
+    assert "archived" in response.json()["detail"]
+    # Reading it, even when an answer no longer applies, stores nothing.
+    with Session(app.state.engine) as session:
+        session.delete(session.get(ApplicationAnswer, (application["id"], "main_destination")))
+        session.add(ApplicationAnswer(application_id=application["id"], question_id="arrival_date",
+                                      value="2000-01-01", source="traveler"))
+        session.commit()
+    state = client.get(f"/applications/{application['id']}", headers=headers[0]).json()
+    assert state["updated_at"] == archived["updated_at"]
+    with Session(app.state.engine) as session:
+        assert session.get(ApplicationAnswer, (application["id"], "arrival_date")) is not None
+
+    client.post(f"/applications/{application['id']}/unarchive", headers=headers[0])
+    assert put(client, headers[0], application["id"], "main_destination", "FRA").status_code == 200
+
+
+def test_request_logs_name_the_full_route_template(api, caplog):
+    client, _, headers, _ = api
+    application = start(client, headers[0])
+    with caplog.at_level("INFO"):
+        client.get(f"/applications/{application['id']}/timeline", headers=headers[0])
+    routes = [record.activity["route"] for record in caplog.records if hasattr(record, "activity")]
+    assert "/applications/{application_id}/timeline" in routes
 
 
 def test_archived_at_migration_keeps_existing_applications_active(tmp_path, monkeypatch):

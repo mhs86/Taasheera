@@ -24,6 +24,9 @@ function Detail({ applicationId }: { applicationId: string }) {
   const [loaded, setLoaded] = useState<Loaded | 'missing' | Error | null>(null)
   const [attempt, setAttempt] = useState(0)
 
+  const name = loaded && typeof loaded === 'object' && !(loaded instanceof Error) ? applicationName(loaded.application) : null
+  useEffect(() => { document.title = `${name ?? 'Your application'} | Taasheera` }, [name])
+
   useEffect(() => {
     if (!traveler) return
     let active = true

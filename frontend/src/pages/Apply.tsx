@@ -69,7 +69,8 @@ export default function Apply() {
 function merge(older: ApplicationSummary[], newer: ApplicationSummary[]): ApplicationSummary[] {
   const byId = new Map(older.map(application => [application.id, application]))
   for (const application of newer) byId.set(application.id, application)
-  return [...byId.values()].sort((a, b) => b.updated_at.localeCompare(a.updated_at))
+  // An archived one opened from a link stays off the sidebar, as it is on the dashboard.
+  return [...byId.values()].filter(application => !application.archived_at).sort((a, b) => b.updated_at.localeCompare(a.updated_at))
 }
 
 function SignedOut() {
@@ -169,6 +170,11 @@ function ApplicationChat({ applicationId, onChange }: ChatProps) {
   if (!application) {
     return message ? <p className="passport-message" role="alert">{message}</p>
       : <p className="apply-status" role="status">Loading your application…</p>
+  }
+  // Archived applications are read-only (US 79); restoring happens on the dashboard.
+  if (application.archived_at) {
+    return <p className="apply-status">This application is archived, so its answers can't be changed.{' '}
+      <Link to={`/dashboard/${application.id}`} data-activity-id="application-details">See it and restore it</Link>.</p>
   }
 
   const { progress } = application

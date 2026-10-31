@@ -1,7 +1,7 @@
 """Archive, delete and the timeline of one application (US 79, US 20).
 
-Included from the applications router, so every path here sits under
-/applications and shares its owner check: another traveler's id is a 404,
+Added to the applications router, so every path here sits under
+/applications (and logs with that full route template) and has its owner check: another traveler's id is a 404,
 the same as an id that doesn't exist.
 
 The timeline is worked out from what is already stored (when the application
@@ -50,15 +50,15 @@ def delete_application(session: Session, application: Application) -> None:
     session.delete(application)
 
 
-def create_lifecycle_router(
+def add_lifecycle_routes(
+    router: APIRouter,
     get_session,
     current_traveler,
     *,
     today: Callable[[], date] = date.today,
-) -> APIRouter:
+) -> None:
     from ..auth import check_origin
 
-    router = APIRouter()
     SessionDep = Annotated[Session, Depends(get_session)]
     TravelerDep = Annotated[Traveler, Depends(current_traveler)]
 
@@ -135,7 +135,9 @@ def create_lifecycle_router(
         if application.archived_at:
             next_step = NextStep(kind="archived", text="This application is archived. Restore it to pick up where you left off.")
         elif status == "INELIGIBLE":
-            next_step = NextStep(kind="change", text=f"{stopped} Change the answer that stopped it to carry on.")
+            # The reason itself is the timeline's last entry; this says what to do about it.
+            next_step = NextStep(kind="change", text="An answer stopped this application. Change that answer, or "
+                                                     "start an application for a different visa.")
         elif current:
             step = questionnaire.step_of(current.id)
             number = questionnaire.steps.index(step) + 1
@@ -147,5 +149,3 @@ def create_lifecycle_router(
         response.headers["Cache-Control"] = "private, no-store"
         return Timeline(id=application.id, archived_at=_utc(application.archived_at) if application.archived_at else None,
                         events=events, next=next_step)
-
-    return router

@@ -171,7 +171,7 @@ def create_applications_router(
     today: Callable[[], date] = date.today,
 ) -> APIRouter:
     from ..auth import check_origin
-    from .lifecycle import create_lifecycle_router
+    from .lifecycle import add_lifecycle_routes
 
     router = APIRouter(prefix="/applications", tags=["applications"])
     SessionDep = Annotated[Session, Depends(get_session)]
@@ -196,6 +196,9 @@ def create_applications_router(
         any more (a trip date now in the past) is asked again instead of trusted.
         """
         answers, cleared = flow.reconcile(questionnaire, {key: row.value for key, row in rows.items()}, today())
+        if application.archived_at is not None:
+            # Archived applications are read-only (US 79): shown re-checked, but nothing is stored.
+            return answers, cleared
         for question_id in cleared:
             session.delete(rows.pop(question_id))
         status = _status(questionnaire, answers)
@@ -308,6 +311,8 @@ def create_applications_router(
     def answer(application_id: str, question_id: str, data: AnswerRequest, traveler: TravelerDep,
                session: SessionDep, response: Response):
         application = owned(session, traveler, application_id)
+        if application.archived_at is not None:
+            raise HTTPException(status_code=409, detail="This application is archived. Restore it from your dashboard to carry on.")
         questionnaire = flow.load_questionnaire(application.questionnaire_id)
         question = questionnaire.question(question_id)
         if question is None:
@@ -354,5 +359,5 @@ def create_applications_router(
         return state(session, traveler, application, questionnaire, answers, rows, cleared)
 
     # Archive, delete and the timeline (US 79, US 20) live in their own file.
-    router.include_router(create_lifecycle_router(get_session, current_traveler, today=today))
+    add_lifecycle_routes(router, get_session, current_traveler, today=today)
     return router

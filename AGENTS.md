@@ -251,7 +251,7 @@ What we decided, why, and what we rejected. Newest at the bottom. Add an entry w
 28. **Applications dashboard (US 19, 20, 79).** Pages `/dashboard` and `/dashboard/:id` (`frontend/src/dashboard/`),
     not `/applications`, which is the API prefix. `application.archived_at` (null = active) hides an application from
     the dashboard and sidebar; `GET /applications?archived=true` lists archived ones; archiving leaves `updated_at`
-    alone. Delete is a hard delete of the application and its answers (answers first, for PostgreSQL); passport
+    alone, and an archived application is read-only (answers get 409, reads store nothing) until restored. Delete is a hard delete of the application and its answers (answers first, for PostgreSQL); passport
     uploads stay. `delete_application` in `applications/lifecycle.py` is there for account deletion to reuse. The
     timeline is derived from stored timestamps (started, each answer's last save, archived), so a changed answer shows
     once; "what happens next" comes from the flow engine, not the AI. *Rejected: an application event table (more
