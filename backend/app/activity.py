@@ -26,7 +26,7 @@ def activity_directory_from_environment() -> Path:
 
 # Only static UI identifiers may cross the browser boundary. In particular,
 # URLs, element text, form fields, error messages and Google responses are excluded.
-Page = Literal["home", "faq", "passport", "apply", "sign-in", "create-account", "forgot-password", "reset-password", "not-found"]
+Page = Literal["home", "faq", "passport", "apply", "dashboard", "sign-in", "create-account", "forgot-password", "reset-password", "not-found"]
 Control = Literal[
     "home-link", "how-it-works-link", "destinations-link", "privacy-link", "faq-link",
     "login-link", "get-started-link", "skip-link", "menu-toggle", "password-toggle",
@@ -39,6 +39,8 @@ Control = Literal[
     "application-cancel-change", "application-passport-upload", "application-passport-manual",
     "application-return", "application-ask", "application-new", "applications-toggle",
     "start-application-link", "application-use-suggestion", "application-change-suggestion",
+    "dashboard-link", "dashboard-filter", "application-details", "application-archive", "application-restore",
+    "application-delete", "application-delete-confirm", "application-delete-cancel",
 ]
 
 

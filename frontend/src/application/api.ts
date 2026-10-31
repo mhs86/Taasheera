@@ -46,6 +46,8 @@ export type ApplicationSummary = {
   total: number
   created_at: string
   updated_at: string
+  // Set while archived (US 79): hidden from the dashboard and sidebar until restored.
+  archived_at: string | null
 }
 export type ApplicationState = ApplicationSummary & {
   steps: { id: string; title: string }[]
@@ -86,8 +88,8 @@ export async function getVisaOptions(): Promise<VisaOption[]> {
   return response.json()
 }
 
-export async function listApplications(): Promise<ApplicationSummary[]> {
-  const response = await protectedFetch('/applications', { cache: 'no-store' })
+export async function listApplications(archived = false): Promise<ApplicationSummary[]> {
+  const response = await protectedFetch(archived ? '/applications?archived=true' : '/applications', { cache: 'no-store' })
   if (!response.ok) throw new Error('Could not load your applications.')
   return response.json()
 }
@@ -121,4 +123,36 @@ export async function saveAnswer(id: string, questionId: string, answer: AnswerI
   }
   if (!response.ok) throw new Error('Could not save your answer. Please try again.')
   return response.json()
+}
+
+// Archive, delete and the timeline (US 79, US 20). Mirrors backend/app/applications/lifecycle.py.
+export type TimelineEvent = {
+  kind: 'started' | 'answered' | 'stopped' | 'complete' | 'archived'
+  at: string
+  text: string
+  question_id: string | null
+  step_title: string | null
+}
+export type NextStep = { kind: 'answer' | 'change' | 'complete' | 'archived'; text: string }
+export type Timeline = { id: string; archived_at: string | null; events: TimelineEvent[]; next: NextStep }
+
+export async function getTimeline(id: string): Promise<Timeline | null> {
+  const response = await protectedFetch(`/applications/${id}/timeline`, { cache: 'no-store' })
+  if (response.status === 404) return null
+  if (!response.ok) throw new Error('Could not load the history of this application.')
+  return response.json()
+}
+
+export async function setArchived(id: string, archived: boolean): Promise<ApplicationSummary> {
+  const response = await protectedFetch(`/applications/${id}/${archived ? 'archive' : 'unarchive'}`, {
+    method: 'POST', cache: 'no-store', silent: true,
+  })
+  if (!response.ok) throw new Error(await detail(response, archived ? 'Could not archive the application.' : 'Could not restore the application.'))
+  return response.json()
+}
+
+export async function deleteApplication(id: string): Promise<void> {
+  const response = await protectedFetch(`/applications/${id}`, { method: 'DELETE', cache: 'no-store', silent: true })
+  // Already gone counts as deleted: the traveler wanted it removed.
+  if (!response.ok && response.status !== 404) throw new Error(await detail(response, 'Could not delete the application.'))
 }

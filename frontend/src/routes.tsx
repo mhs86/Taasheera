@@ -10,6 +10,8 @@ import Home from './pages/Home'
 import Passport from './pages/Passport'
 import Apply from './pages/Apply'
 import NotFound from './pages/NotFound'
+import Dashboard from './dashboard/Dashboard'
+import ApplicationDetail from './dashboard/ApplicationDetail'
 import ServerError from './pages/ServerError'
 
 // The root errorElement catches a crash in the layout itself; the pathless
@@ -29,6 +31,9 @@ export const routes: RouteObject[] = [
           // Not /applications: that prefix is the API, proxied to the backend.
           { path: 'apply', element: <Apply /> },
           { path: 'apply/:applicationId', element: <Apply /> },
+          // Every application and one application's timeline (US 19, US 20). Same reason as above.
+          { path: 'dashboard', element: <Dashboard /> },
+          { path: 'dashboard/:applicationId', element: <ApplicationDetail /> },
           { path: '*', element: <NotFound /> },
         ],
       },
