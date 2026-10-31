@@ -1,5 +1,5 @@
 import { useEffect, useState, type KeyboardEvent, type MouseEvent } from 'react'
-import { Link, NavLink, Outlet, ScrollRestoration, useNavigate } from 'react-router'
+import { Link, NavLink, Outlet, ScrollRestoration, useLocation, useNavigate } from 'react-router'
 import { toast, Toaster } from 'sonner'
 import { ArrowIcon, MenuIcon } from './icons'
 import ActivityTracker from './ActivityTracker'
@@ -19,13 +19,15 @@ function MainLinks() {
   )
 }
 
+export type LayoutContext = { traveler: Traveler | null }
+
 type AccountProps = { traveler: Traveler | null; loggingOut: boolean; onLogOut: () => void; inMenu?: boolean }
 
-// Signed out: Log in / Get started. Signed in: Log out / Your passport.
+// Signed out: Log in / Get started. Signed in: Log out / Start an application.
 function AccountLinks({ traveler, loggingOut, onLogOut, inMenu = false }: AccountProps) {
   const cta = traveler
-    ? <Link to="/passport" className="header-cta" data-activity-id="passport-link">
-        <span className="mini-circle"><ArrowIcon /></span>Your passport
+    ? <Link to="/apply" className="header-cta" data-activity-id="start-application-link">
+        <span className="mini-circle"><ArrowIcon /></span>Start an application
       </Link>
     : <Link to={createAccountPath} reloadDocument className="header-cta" data-activity-id="get-started-link">
         <span className="mini-circle"><ArrowIcon /></span>Get started
@@ -39,6 +41,7 @@ function AccountLinks({ traveler, loggingOut, onLogOut, inMenu = false }: Accoun
 
 export default function Layout() {
   const navigate = useNavigate()
+  const location = useLocation()
   // Below 1000px the nav links collapse into this menu (see site.css).
   const [menuOpen, setMenuOpen] = useState(false)
   const [traveler, setTraveler] = useState<Traveler | null>(null)
@@ -56,6 +59,14 @@ export default function Layout() {
     restoreSession().then(profile => { if (active) setTraveler(profile) }).catch(() => {})
     return () => { active = false }
   }, [])
+
+  // A page that sent the visitor here (e.g. the admin dashboard) can leave a notice to show once.
+  const notice = (location.state as { notice?: unknown } | null)?.notice
+  useEffect(() => {
+    if (typeof notice !== 'string') return
+    toast.error(notice, { id: 'route-notice' })
+    navigate(`${location.pathname}${location.search}${location.hash}`, { replace: true, state: null })
+  }, [notice, navigate, location.pathname, location.search, location.hash])
 
   async function logOut() {
     setLoggingOut(true)
@@ -110,7 +121,8 @@ export default function Layout() {
         )}
       </header>
 
-      <main id="main"><Outlet /></main>
+      {/* Pages read the signed-in traveler from here, e.g. the homepage's main button. */}
+      <main id="main"><Outlet context={{ traveler } satisfies LayoutContext} /></main>
 
       <footer className="site-footer">
         <div className="container">
@@ -122,7 +134,10 @@ export default function Layout() {
               <Link to="/#how-it-works" data-activity-id="how-it-works-link">How it works</Link>
               <Link to="/faq" data-activity-id="faq-link">FAQ</Link>
               {traveler
-                ? <Link to="/passport" data-activity-id="passport-link">Your passport</Link>
+                ? <>
+                    <Link to="/apply" data-activity-id="start-application-link">Your applications</Link>
+                    <Link to="/passport" data-activity-id="passport-link">Your passport</Link>
+                  </>
                 : <Link to={signInPath} data-activity-id="login-link">Log in</Link>}
             </nav>
           </div>

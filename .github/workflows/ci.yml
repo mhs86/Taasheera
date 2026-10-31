@@ -102,6 +102,33 @@ jobs:
       - uses: actions/checkout@v7
       - name: Build backend image
         run: docker build -t taasheera-backend-ci backend
+      # Public ECR rate-limits shared GitHub runners (429 "Data limit exceeded"), so the adapter
+      # image is pulled once, kept in the Actions cache, and loaded from there on later runs.
+      - name: Restore Lambda adapter image
+        id: adapter-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/lambda-adapter.tar
+          key: lambda-adapter-1.1.0-amd64
+      - name: Load Lambda adapter image
+        env:
+          ADAPTER: public.ecr.aws/awsguru/aws-lambda-adapter:1.1.0
+          CACHED: ${{ steps.adapter-cache.outputs.cache-hit }}
+          ARCHIVE: ${{ runner.temp }}/lambda-adapter.tar
+        run: |
+          if [ "$CACHED" = "true" ]; then
+            docker load --input "$ARCHIVE"
+            exit 0
+          fi
+          for attempt in 1 2 3 4 5; do
+            if docker pull --platform linux/amd64 "$ADAPTER"; then
+              docker save --output "$ARCHIVE" "$ADAPTER"
+              exit 0
+            fi
+            echo "Public ECR refused the pull (attempt $attempt/5); waiting before retrying"
+            sleep $((attempt * 20))
+          done
+          exit 1
       - name: Build Lambda image
         run: docker build --platform linux/amd64 -f backend/Dockerfile.lambda -t taasheera-lambda-ci backend
       - name: Migrate and smoke-test backend image

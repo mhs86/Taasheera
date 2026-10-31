@@ -46,7 +46,7 @@ export default function AdminDashboard() {
   }, [load])
 
   return <main className="dashboard-page">
-    <header className="dashboard-header"><a href="/">Taasheera</a><nav aria-label="Admin navigation"><a href="/account">Your account</a><a href="/sign-in">Sign in</a></nav></header>
+    <header className="dashboard-header"><a href="/">Taasheera</a><nav aria-label="Admin navigation"><a href="/admin">User management</a><a href="/account">Your account</a><a href="/sign-in">Sign in</a></nav></header>
     <div className="dashboard-content">
       <p className="eyebrow">OPERATIONS</p><h1>Admin dashboard</h1>
       <p>Application status, recent errors, and account management.</p>

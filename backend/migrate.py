@@ -74,12 +74,12 @@ def upgrade() -> None:
                         ("add_column", "authsession", "created_at"),
                         ("add_column", "authsession", "last_active_at"),
                     }
-                    # Unversioned databases predate migrations, so none has the columns added since.
+                    # Unversioned databases predate migrations, so none has the columns or tables added since.
                     migrated_only = {("add_column", "traveler", "role"), ("add_column", "traveler", "status"),
                                      ("add_column", "traveler", "created_at"),
-                                     ("add_table", "visaapplication"),
-                                     ("add_index", "ix_visaapplication_traveler_id"),
-                                     ("add_index", "ix_visaapplication_status"),
+                                     ("add_table", "application"),
+                                     ("add_index", "ix_application_traveler_id"),
+                                     ("add_table", "applicationanswer"),
                                      ("add_table", "documentaccess"),
                                      ("add_index", "ix_documentaccess_traveler_id"),
                                      ("add_index", "ix_documentaccess_actor_id"),

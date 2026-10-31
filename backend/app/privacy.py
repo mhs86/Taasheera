@@ -22,7 +22,7 @@ from .auth import COOKIE_NAME, check_origin, clear_refresh_cookie, revoke_all_se
 from .google_auth import verify_google_token
 from .models import (AccountErasure, ActivityEvent, AuthSession, DocumentAccess, GoogleIdentity,
                      PasswordResetChallenge, PasswordResetToken, RefreshToken, ResetRateLimit,
-                     Traveler, TravelerProfile, VisaApplication)
+                     Traveler, TravelerProfile, Application, ApplicationAnswer)
 from .security import throttle
 
 log = logging.getLogger(__name__)
@@ -60,10 +60,12 @@ def complete_erasure(session: Session, traveler_id: int, storage, directory: Pat
     traveler = session.get(Traveler, traveler_id)
     remove_owner_folder(storage.root, traveler_id)
     remove_owner_folder(directory, traveler_id)
+    application_ids = select(Application.id).where(Application.traveler_id == traveler_id)
+    session.execute(delete(ApplicationAnswer).where(ApplicationAnswer.application_id.in_(application_ids)))
     session_ids = select(AuthSession.id).where(AuthSession.traveler_id == traveler_id)
     session.execute(delete(RefreshToken).where(RefreshToken.session_id.in_(session_ids)))
     for model in (AuthSession, GoogleIdentity, PasswordResetChallenge, PasswordResetToken,
-                  TravelerProfile, VisaApplication, ActivityEvent):
+                  TravelerProfile, Application, ActivityEvent):
         session.execute(delete(model).where(model.traveler_id == traveler_id))
     session.execute(delete(DocumentAccess).where(or_(DocumentAccess.traveler_id == traveler_id,
                                                    DocumentAccess.actor_id == traveler_id)))

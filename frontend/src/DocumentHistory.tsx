@@ -2,7 +2,8 @@ import { useRef, useState } from 'react'
 import { loadDocumentAccess, type AccessPage } from './privacy'
 
 const purposes: Record<string, string> = { image_view: 'Viewed passport image', extraction: 'Read for passport extraction',
-  review_read: 'Read confirmed details', review_update: 'Read for review update', assistant_context: 'Read for assistant context' }
+  review_read: 'Read confirmed details', review_update: 'Read for review update', assistant_context: 'Read for assistant context',
+  application_prefill: 'Read for application prefill' }
 
 export default function DocumentHistory() {
   const [opened, setOpened] = useState(false)

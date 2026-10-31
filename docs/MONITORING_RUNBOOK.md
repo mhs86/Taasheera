@@ -13,7 +13,7 @@ authoritative in `activityevent` in the configured database. Private best-effort
 JSONL mirrors live under `$ACTIVITY_LOG_DIR/<traveler_id>/YYYY-MM-DD.jsonl`, default
 `backend/storage/activity-logs/`. Passport access records live in `documentaccess`;
 travelers see only their own entries at `/account`. Preview logs/files are separate
-under `backend/storage/feature-preview/`.
+under `backend/storage/feature-preview-sprint3/`.
 
 **Sentry:** provision frontend/backend projects and set backend `SENTRY_DSN` and
 frontend build-time `VITE_SENTRY_DSN`. No DSN means no reporting. Both SDKs discard

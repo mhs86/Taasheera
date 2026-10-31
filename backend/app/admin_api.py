@@ -12,7 +12,7 @@ from sqlmodel import Session, func, select
 from .activity import record_activity
 from .auth import check_origin, revoke_all_sessions
 from .models import (ROLES, APPLICATION_STATUSES, AccountErasure, ActivityEvent, AuthSession,
-                     GoogleIdentity, Role, Status, Traveler, VisaApplication)
+                     GoogleIdentity, Role, Status, Traveler, Application)
 from .account_lock import account_lock
 from .privacy import DeleteUser, erase_account, erasure_response
 
@@ -220,13 +220,13 @@ def create_admin_router(get_session, current_traveler, passport_storage) -> APIR
 
     @router.get("/monitoring", response_model=MonitoringPublic)
     def monitoring(session: SessionDep, limit: Annotated[int, Query(ge=1, le=100)] = 20):
-        counts = dict(session.exec(select(VisaApplication.status, func.count())
-                                  .group_by(VisaApplication.status)).all())
+        counts = dict(session.exec(select(Application.status, func.count())
+                                  .group_by(Application.status)).all())
         # Only metadata saved by backend code; never return arbitrary request/provider errors.
         errors = session.exec(select(ActivityEvent).where(
             ActivityEvent.outcome.in_(["failure", "error", "unavailable", "timeout", "unreadable"]))
             .order_by(ActivityEvent.occurred_at.desc(), ActivityEvent.id.desc()).limit(limit)).all()
-        return {"applications_by_status": {value: counts.get(value, 0) for value in APPLICATION_STATUSES},
+        return {"applications_by_status": {value: counts.get(value, 0) for value in dict.fromkeys((*APPLICATION_STATUSES, *counts))},
                 "total_applications": sum(counts.values()),
                 "recent_errors": [{"id": event.id, "occurred_at": event.occurred_at,
                     "event_type": event.event_type, "outcome": event.outcome,
@@ -242,7 +242,7 @@ def create_admin_router(get_session, current_traveler, passport_storage) -> APIR
             total_users=count(session, Traveler),
             new_last_7_days=count(session, Traveler, Traveler.created_at >= week_ago),
             suspended=count(session, Traveler, Traveler.status == "suspended"),
-            applications_started=count(session, VisaApplication),
+            applications_started=count(session, Application),
         )
 
     @router.get("/users", response_model=AdminUserPage)

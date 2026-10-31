@@ -21,7 +21,7 @@ from app.main import create_app
 from app.schema import migration_config, schema_revision
 
 
-ROLE_PARENT_REVISION = "e6f81a73c902"  # The revision before roles; downgrading to it removes only role/status.
+ROLE_PARENT_REVISION = "e6f81a73c902"  # The revision before roles; downgrading also removes the later application tables.
 
 
 @pytest.mark.skipif(not os.environ.get("TEST_POSTGRES_URL"), reason="needs disposable PostgreSQL")
@@ -266,8 +266,9 @@ def test_admin_user_management_on_postgres(monkeypatch):
                 total, recent, suspended = connection.execute(text(
                     "SELECT count(*), count(*) FILTER (WHERE created_at >= now() - interval '7 days'), "
                     "count(*) FILTER (WHERE status = 'suspended') FROM traveler")).one()
+                applications = connection.execute(text("SELECT count(*) FROM application")).scalar_one()
             assert overview == {"total_users": total, "new_last_7_days": recent, "suspended": suspended,
-                                "applications_started": 0}
+                                "applications_started": applications}
             assert recent >= 3
 
             # Two admins demote each other at the same moment: the row locks let exactly one win.

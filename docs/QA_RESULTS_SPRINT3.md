@@ -1,7 +1,7 @@
 # Sprint 3 branch QA — 31 October 2026
 
-Review branch: `mohammad_admin_monitoring_privacy_sprint3`, based on `dev` at
-`14ce6a6`. No merge to `dev`/`main`, deployment, live Google consent publication,
+Review branch: `mohammad_admin_monitoring_privacy_sprint3`, integrated with the current `dev` at
+`3948935`. No merge to `dev`/`main`, deployment, live Google consent publication,
 or live team alert is included in this local validation.
 
 ## Delivered behavior
@@ -21,24 +21,27 @@ Additional checks reject malformed JWT claims, cross-account deletion hints/cook
 and stale browser account switches. All private APIs are covered by an anonymous
 request inventory test; bootstrap/recovery/config/health endpoints remain public.
 
-The application registry supplies real draft creation/list/read and server-controlled
-status storage. It does not implement embassy submission or an agent processor.
-Demo progress/failure rows are explicitly synthetic local fixtures.
+The existing application questionnaire, group selection, branching, eligibility,
+passport/profile suggestions and sidebar are preserved. Monitoring counts the
+existing Application rows (DRAFT, INELIGIBLE, ANSWERS_COMPLETE), and erasure removes
+their copied answers too. Existing admin user-management pages keep their original
+routes and controls; their user detail now offers deletion. The new monitoring
+page uses the established `/admin-api` browser rewrite.
 
 ## Verification
 
 | Check | Result |
 |---|---|
-| Complete backend suite, SQLite and disposable PostgreSQL 17 | 548 passed, no skips |
-| Frontend unit and DOM interaction suite | 113 passed |
-| Real Chromium + Vite + FastAPI/OCR browser flows | 2 passed |
+| Complete backend suite, SQLite and disposable PostgreSQL 17 | 652 passed, no skips |
+| Frontend unit and DOM interaction suite | 155 passed |
+| Real Chromium + Vite + FastAPI/OCR browser flows | 3 passed |
 | ESLint, TypeScript and production Vite build | Passed |
 | New privacy/monitoring interaction tests after final timestamp display fix | 7 passed |
 | Launcher tests, including exited-process port restart | 3 passed |
 | PostgreSQL `alembic check` | No new upgrade operations detected |
 | Python compilation and `git diff --check` | Passed |
 | Production Dockerfile build | Passed |
-| Container smoke | Non-root execution, migrations, OCR readiness, registration/login, private APIs, role denial, application creation and deletion passed |
+| Container smoke | Non-root execution, migrations, OCR readiness, registration/login, private APIs, role denial, existing application answers, passport auditing and deletion passed |
 | Live isolated localhost preview / readiness probe | Passed on 8000/5173; restart freed the required ports and preserved unrelated listeners |
 
 Coverage includes input-validation/JWT units; feature/API tests; ownership and
@@ -80,7 +83,7 @@ images/build caches and using a smaller disposable test database container.
 ## Local handoff
 
 Use [the startup commands and acceptance checklist](LOCAL_FEATURE_TESTING.md).
-The preview uses separate ignored state under `backend/storage/feature-preview/`.
+The preview uses separate ignored state under `backend/storage/feature-preview-sprint3/`.
 Do not run migrations against the existing database just to test this branch.
 No existing `.env.local`, OAuth client ID, AWS deployment workflow, domain,
 database or upload directory was changed by QA.

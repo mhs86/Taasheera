@@ -24,7 +24,7 @@ The public Google Web Client ID is already in `frontend/.env.development` and `b
 
 Open http://127.0.0.1:5173/sign-in#create-account. You can also follow Get started from the homepage. If port 5173 is occupied, stop the old Vite server before starting this one. Restart Vite after changing its configuration.
 
-The browser calls `/auth`, `/passports`, `/profile`, `/sessions`, `/activity`, and `/assistant` on the frontend origin. Vite forwards these requests to http://127.0.0.1:8000. No backend CORS allowance is needed. A production host must route all six prefixes to the API and use HTTPS with secure cookies. Use `127.0.0.1` consistently locally so the origin matches the backend allowlist. `/account` is a page; `/profile` and `/sessions` are protected APIs it uses.
+The browser calls `/auth`, `/passports`, `/profile`, `/sessions`, `/activity`, and `/assistant` on the frontend origin. Vite forwards these requests to http://127.0.0.1:8000. No backend CORS allowance is needed. A production host must route all six prefixes to the API and use HTTPS with secure cookies. The admin dashboard's pages live at `/admin`, so its API calls go to `/admin-api/*`, which Vite, nginx and Netlify rewrite to the backend's `/admin/*`; a host must not send `/admin` itself to the API. Use `127.0.0.1` consistently locally so the origin matches the backend allowlist. `/account` is a page; `/profile` and `/sessions` are protected APIs it uses.
 
 ## Edit traveler profile
 

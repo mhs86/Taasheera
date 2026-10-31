@@ -62,14 +62,14 @@ class PassportImageStorage:
         finally:
             temporary.unlink(missing_ok=True)
 
-    def load_review(self, owner_id: int, upload_id: str) -> dict | None:
+    def load_review(self, owner_id: int, upload_id: str, *, purpose: str = "review_read") -> dict | None:
         image_path = self._path(owner_id, upload_id)
         if image_path is None or not image_path.is_file():
             return None
         review_path = image_path.with_suffix(".json")
         if not review_path.is_file():
             return None
-        self.audit_access(owner_id, upload_id, "review_read")
+        self.audit_access(owner_id, upload_id, purpose)
         return json.loads(review_path.read_text(encoding="utf-8"))
 
     def upload_count(self, owner_id: int) -> int:
@@ -77,7 +77,7 @@ class PassportImageStorage:
         folder = self.root / str(int(owner_id))
         return sum(1 for path in folder.glob("*.jpg") if _UPLOAD_ID.fullmatch(path.stem)) if folder.is_dir() else 0
 
-    def latest_review(self, owner_id: int) -> dict | None:
+    def latest_review(self, owner_id: int, *, purpose: str = "assistant_context") -> dict | None:
         """The traveler's most recently confirmed passport details, or None.
 
         Only confirmed reviews count: the assistant must never answer from an
@@ -88,5 +88,5 @@ class PassportImageStorage:
         if not reviews:
             return None
         newest = max(reviews, key=lambda path: path.stat().st_mtime_ns)
-        self.audit_access(owner_id, newest.stem, "assistant_context")
+        self.audit_access(owner_id, newest.stem, purpose)
         return json.loads(newest.read_text(encoding="utf-8"))

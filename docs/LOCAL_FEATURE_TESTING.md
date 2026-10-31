@@ -1,6 +1,6 @@
 # Sprint 3 local feature testing
 
-Branch: `mohammad_admin_monitoring_privacy_sprint3`, based on `dev`. Do not merge
+Branch: `mohammad_admin_monitoring_privacy_sprint3`, integrated with `dev` at `3948935`. Do not merge
 or push this work into `dev` or `main` until the user finishes testing. No deployment
 is part of this change. Existing deployment workflows and environment files stay in place.
 
@@ -38,7 +38,7 @@ py -3.12 -m venv .venv
 
 Open **http://127.0.0.1:5173/sign-in**. The launcher starts both processes; Ctrl+C
 stops both. `/backoffice` is the admin dashboard, `/account` holds deletion and
-passport access history, and `/my-applications` creates and lists traveler drafts.
+passport access history, and `/apply` creates and lists traveler drafts.
 API documentation is at **http://127.0.0.1:8000/docs**; its private operations require
 a bearer access token. Login, registration, refresh-cookie exchange, recovery,
 public Google client configuration, and minimal health checks are deliberately public.
@@ -48,7 +48,7 @@ Unrelated ports are preserved. Choose other ports with
 `--api-port 8001 --web-port 5174`; their matching proxy/origin settings are automatic.
 Without `--free-ports`, occupied ports produce a clear error and no process is stopped.
 
-All preview state is under ignored `backend/storage/feature-preview/`: a separate
+All preview state is under ignored `backend/storage/feature-preview-sprint3/`: a separate
 SQLite database, private uploads, activity mirrors, locks and a persistent local
 JWT secret. `.env.local`, the existing database, existing uploads and deployed
 settings are not loaded or modified. This is a fresh local dataset; existing
@@ -65,7 +65,7 @@ the shell, without loading any production environment file.
 | `qa-delete-me@example.com` | Disposable account for deletion |
 
 All three use **`Local-preview-only-123!`**. They exist only in the preview
-database. Demo applications include explicit sample DRAFT, IN_PROGRESS and FAILED
+database. Demo applications include explicit sample DRAFT, INELIGIBLE and ANSWERS_COMPLETE
 rows; no agent or embassy submission actually runs. Create a fresh traveler from
 the registration form to test with an empty account. The seed command will recreate
 a deleted demo user on the next launch, so verify deletion before restarting with
@@ -80,7 +80,7 @@ python preview.py admin --email your-local-account@example.com
 ## Acceptance checklist
 
 1. Sign in as the traveler; reload and confirm the cookie restores the session.
-   Create a draft at `/my-applications`. The destination and visa type persist.
+   Create a draft at `/apply`. The destination and visa type persist.
 2. Upload a **synthetic specimen image**, view it, and confirm its review fields.
    At `/account`, click **Refresh access history**. Image, extraction, review and
    assistant-context reads are recorded before content is returned. Another
@@ -101,11 +101,18 @@ python preview.py admin --email your-local-account@example.com
 6. Test narrow-screen dashboard layout and keyboard access to search, confirmation
    and pagination. Cancellation must not send a delete request.
 
-The application registry is intentionally small: travelers can create/list/read
-drafts; status is server controlled. This sprint does not implement the embassy
-agent, submission, or fabricate agent failures. Existing applications stored by a
-future workflow should use `VisaApplication`; `/admin/monitoring` already aggregates
-all six stored lifecycle statuses. See the monitoring runbook for live services.
+The existing `/apply` questionnaire, group-size selection, branching, eligibility,
+passport/profile suggestions and application sidebar are preserved. Monitoring reads
+those same `Application` rows, and deletion also removes their `ApplicationAnswer`
+copies. The current statuses are DRAFT, INELIGIBLE and ANSWERS_COMPLETE. Embassy
+submission and agent failure ingestion remain separate future workflows.
+The existing user-management pages at `/admin` retain search/filter/suspend/role
+controls and now include deletion on a user detail page. `/backoffice` is linked
+as Monitoring; browser calls use the existing `/admin-api` rewrite.
+
+The earlier preliminary preview dataset is left intact; the integrated branch uses
+`feature-preview-sprint3` and `e2e-preview-sprint3-*` so no old or existing local data
+is silently migrated into a different application schema.
 
 ## Automated verification
 
@@ -127,7 +134,7 @@ Python must have the backend requirements, or set `TAASHEERA_TEST_PYTHON` to its
 absolute path. If Chromium is already installed, export
 `PLAYWRIGHT_CHROMIUM_EXECUTABLE` to its executable instead of downloading a browser.
 Browser tests start their own API/frontend on **8100/5273** and use a different
-ignored `backend/storage/e2e-preview/` dataset. They never reuse an existing server.
+ignored `backend/storage/e2e-preview-sprint3-*/` dataset. They never reuse an existing server.
 
 Set `TEST_POSTGRES_URL` to a **disposable test PostgreSQL database** to include the
 PostgreSQL suite. Its user must be able to create/drop temporary databases. Tests

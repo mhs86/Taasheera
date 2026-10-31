@@ -9,7 +9,7 @@ from sqlmodel import Session, func, select
 from .activity import record_activity
 from .models import DocumentAccess, Traveler
 
-PURPOSES = frozenset({"image_view", "extraction", "review_read", "review_update", "assistant_context"})
+PURPOSES = frozenset({"image_view", "extraction", "review_read", "review_update", "assistant_context", "application_prefill"})
 
 
 def record_document_access(engine, directory, owner_id: int, upload_id: str, purpose: str):

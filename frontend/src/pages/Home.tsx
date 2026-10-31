@@ -1,9 +1,24 @@
 import { useEffect } from 'react'
-import { Link } from 'react-router'
+import { Link, useOutletContext } from 'react-router'
+import type { LayoutContext } from '../Layout'
 import { destinations, faqs, privacyPoints, requiredDocuments, steps, trustBadges, whatWeDo } from '../content'
 import { ArrowIcon, CheckIcon } from '../icons'
 import { createAccountPath } from '../paths'
 import FaqList from './FaqList'
+
+// Signed in, the main buttons start an application (US 4); signed out, they create an account.
+function MainButton() {
+  const traveler = useOutletContext<LayoutContext | undefined>()?.traveler
+  return traveler
+    ? <Link to="/apply" className="pill-button pill-primary" data-activity-id="start-application-link">
+        <span className="pill-icon"><ArrowIcon /></span>
+        <span className="pill-label">Start an application</span>
+      </Link>
+    : <Link to={createAccountPath} reloadDocument className="pill-button pill-primary" data-activity-id="get-started-link">
+        <span className="pill-icon"><ArrowIcon /></span>
+        <span className="pill-label">Get started</span>
+      </Link>
+}
 
 export default function Home() {
   useEffect(() => {
@@ -22,10 +37,7 @@ export default function Home() {
             cover letter and give you a document checklist, ready for you to review and submit.
           </p>
           <div className="hero-buttons">
-            <Link to={createAccountPath} reloadDocument className="pill-button pill-primary" data-activity-id="get-started-link">
-              <span className="pill-icon"><ArrowIcon /></span>
-              <span className="pill-label">Get started</span>
-            </Link>
+            <MainButton />
             <a href="#how-it-works" className="pill-button pill-secondary" data-activity-id="how-it-works-link">
               <span className="pill-label">How it works</span>
             </a>
@@ -127,10 +139,7 @@ export default function Home() {
       <section className="section section-raised" aria-labelledby="cta-heading">
         <div className="container final-cta">
           <h2 id="cta-heading">Ready to start your visa application?</h2>
-          <Link to={createAccountPath} reloadDocument className="pill-button pill-primary" data-activity-id="get-started-link">
-            <span className="pill-icon"><ArrowIcon /></span>
-            <span className="pill-label">Get started</span>
-          </Link>
+          <MainButton />
         </div>
       </section>
     </>

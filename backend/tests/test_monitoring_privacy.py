@@ -28,7 +28,7 @@ from app.auth import COOKIE_NAME
 from app.database import build_engine
 from app.main import create_app
 from app.models import (APPLICATION_STATUSES, AccountErasure, ActivityEvent, AuthSession, DocumentAccess,
-    GoogleIdentity, PasswordResetChallenge, PasswordResetToken, RefreshToken, Traveler, TravelerProfile, VisaApplication)
+    GoogleIdentity, PasswordResetChallenge, PasswordResetToken, RefreshToken, Traveler, TravelerProfile, Application, ApplicationAnswer)
 from app.monitoring import configure_monitoring, scrub_event
 from app.passport.extraction import Extraction, ExtractionStatus
 from app.privacy import retry_erasures
@@ -96,7 +96,7 @@ def deletion_data(api, key='one'):
 
 def test_application_registry_and_dashboard_show_real_owner_scoped_data(api):
     draft = api.client.post('/applications', headers=api.headers('one'), json={
-        'destination': 'FRA', 'nationality': 'LBN', 'visa_type': 'Tourist'})
+        'destination': 'SCHENGEN', 'visa_type': 'short_stay'})
     assert draft.status_code == 201 and draft.json()['status'] == 'DRAFT'
     app_id = draft.json()['id']
     assert api.client.get(f'/applications/{app_id}', headers=api.headers('two')).status_code == 404
@@ -104,13 +104,13 @@ def test_application_registry_and_dashboard_show_real_owner_scoped_data(api):
     assert len(api.client.get('/applications', headers=api.headers('one')).json()) == 1
     with Session(api.app.state.engine) as session:
         for status in APPLICATION_STATUSES[1:]:
-            session.add(VisaApplication(id=uuid4().hex, traveler_id=api.ids['two'], destination='DEU',
-                                       nationality='LBN', visa_type='Tourist', status=status))
+            session.add(Application(id=uuid4().hex, traveler_id=api.ids['two'], destination='SCHENGEN',
+                questionnaire_id='schengen-short-stay', questionnaire_version=1, visa_type='short_stay', status=status))
         session.commit()
     response = api.client.get('/admin/monitoring', headers=api.headers('admin'))
     assert response.status_code == 200 and response.headers['cache-control'] == 'no-store'
     assert response.json()['applications_by_status'] == {status: 1 for status in APPLICATION_STATUSES}
-    assert response.json()['total_applications'] == 6
+    assert response.json()['total_applications'] == len(APPLICATION_STATUSES)
     assert response.json()['agent_failures_available'] is False
     assert not {'traveler_id', 'email', 'destination'} & set(response.json())
 
@@ -175,7 +175,12 @@ def test_delete_account_removes_all_related_rows_files_and_invalidates_both_toke
         session.add(GoogleIdentity(subject='synthetic-google-sub', traveler_id=owner))
         session.add(PasswordResetChallenge(traveler_id=owner, nonce='n', code_digest='digest', expires_at=int(time.time()) + 90))
         session.add(PasswordResetToken(token_hash='test-grant', traveler_id=owner, expires_at=int(time.time()) + 90))
-        session.add(VisaApplication(id=uuid4().hex, traveler_id=owner, destination='FRA', nationality='LBN', visa_type='Tourist'))
+        application_id = uuid4().hex
+        session.add(Application(id=application_id, traveler_id=owner, destination='SCHENGEN',
+            questionnaire_id='schengen-short-stay', questionnaire_version=1, visa_type='short_stay'))
+        session.flush()
+        session.add(ApplicationAnswer(application_id=application_id, question_id='main_destination',
+            value='FR', source='traveler'))
         session.commit()
     response = api.client.request('DELETE', '/auth/account', json=deletion_data(api), headers=api.headers('one'))
     assert response.status_code == 204 and response.headers['cache-control'] == 'no-store'
@@ -185,8 +190,9 @@ def test_delete_account_removes_all_related_rows_files_and_invalidates_both_toke
     with Session(api.app.state.engine) as session:
         assert session.get(Traveler, owner) is None
         for model in (TravelerProfile, ActivityEvent, GoogleIdentity, PasswordResetToken, PasswordResetChallenge,
-                      AuthSession, VisaApplication, DocumentAccess, AccountErasure):
+                      AuthSession, Application, DocumentAccess, AccountErasure):
             assert not session.exec(select(model).where(model.traveler_id == owner)).all(), model
+        assert not session.exec(select(ApplicationAnswer).where(ApplicationAnswer.application_id == application_id)).all()
         assert session.get(Traveler, api.ids['two']) is not None
     assert api.client.get('/auth/me', headers=api.headers('one')).status_code == 401
     api.client.cookies.set(COOKIE_NAME, api.cookies['one'], domain='testserver.local', path='/auth')

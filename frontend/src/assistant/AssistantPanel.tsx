@@ -6,6 +6,7 @@ import './assistant.css'
 const suggestions: Record<AssistantStep, string[]> = {
   passport_upload: ['What kind of photo works best?', 'Which page should I photograph?', 'Is my passport kept private?'],
   passport_review: ['When does my passport expire?', 'What is a check digit?', 'Why is a field marked Confirm?'],
+  application: ['Why does the embassy ask this?', 'What if I am not sure yet?'],
 }
 const MAX_LENGTH = 1000
 

@@ -28,6 +28,8 @@ feature branch adds the Sprint 3 admin monitoring/privacy work (US 94, 88, 120,
 135 follow-ups, and the US 1 Google consent owner checklist).
 
 - `main` is production; merge only tested `dev` work into it.
+- Fetch `dev` explicitly (`git fetch origin refs/heads/dev:refs/remotes/origin/dev`)
+  before branching; a narrow workspace fetch may leave that local reference stale.
 - `dev` is integration. Branch from `dev`; convention `<name>_<feature>_sprint<N>`.
 - Reference story numbers in review descriptions and explain behavior and validation.
 - Current user instruction: push this work only to its new feature branch; the user
@@ -69,23 +71,23 @@ exact HTTPS origins, and `SCHEMA_AUTO_CREATE=false`. Only tests use create_all.
 
 For this feature use the isolated preview instead: `python preview.py run --seed-demo
 --free-ports` (on one command line) from backend. It starts API and frontend with a
-separate DB/secret/files under ignored `backend/storage/feature-preview/`, never loads
+separate DB/secret/files under ignored `backend/storage/feature-preview-sprint3/`, never loads
 `.env.local`, and stops listeners only on its chosen API/web ports when requested.
 Optional `--api-port`/`--web-port` configure matching proxies/origins. Mail/Gemini are
 disabled; Sentry requires explicit `--enable-monitoring` plus exported DSNs.
 Seeded credentials and Windows/macOS/Linux instructions: `docs/LOCAL_FEATURE_TESTING.md`.
 
 UI routes: `/sign-in`, `/reset-password`, `/account`, `/passport/:uploadId`,
-`/my-applications`, `/backoffice` (admin). UI paths are separate from API prefixes:
+`/apply`, `/admin` (existing staff UI), `/backoffice` (monitoring). API prefixes:
 `/auth`, `/profile`, `/sessions`, `/passports`, `/activity`, `/assistant`, `/applications`,
-`/admin`. Vite/Netlify proxy these through the browser origin; cookies stay first-party.
+`/admin` (backend; browser calls `/admin-api`). Vite/Netlify proxy APIs through the browser origin; cookies stay first-party.
 Public APIs are limited to sign-in/registration/recovery/refresh/logout/config and
 minimal health checks; traveler data APIs require bearer auth. Admin APIs require admin.
 The frontend discovers staff identity via `/admin/me`; `/auth/me` retains its old schema.
 
 Checks: backend `python -m pytest -q`; frontend `npm test`, `npm run lint`,
 `npm run build`, `npm run test:e2e` (install Chromium first). Browser tests need the
-backend Python on PATH or `TAASHEERA_TEST_PYTHON`, use 8100/5273 and separate e2e-preview
+backend Python on PATH or `TAASHEERA_TEST_PYTHON`, use 8100/5273 and separate e2e-preview-sprint3-*
 storage. `TEST_POSTGRES_URL` must point to a disposable test DB with create/drop DB
 privilege; absent it, PostgreSQL cases are skipped. CI includes both DBs and images.
 
@@ -144,8 +146,18 @@ privilege; absent it, PostgreSQL cases are skipped. CI includes both DBs and ima
 23. Admin changes lock actor/target rows in ID order, recheck actor privileges,
     reject self-suspension/self-role change, revoke sessions on status changes,
     and commit with metadata-only role/status events. No passport/profile fields in admin APIs.
-24. Sprint 3 privacy/monitoring: VisaApplication provides a small real draft registry
-    and status aggregation; workflow progression stays server controlled. Storage
+24. Guided application chat uses validated JSON questionnaires and a pure deterministic
+    flow engine (`applications/flow.py`), not LLM-chosen questions. API `/applications`,
+    UI `/apply`; only current/previous answers are writable, and each copy is saved.
+25. Destination/visa/group size select the question file before creation. Group size
+    is recorded until group applications arrive; the sidebar derives place/date from answers.
+26. Prefill uses the owner's latest confirmed passport/profile, recomputed server-side
+    when accepted. ConfirmedPassportFields applies profile country/birth-date rules;
+    OCR output stays looser. Suggestions/editing never change the original profile.
+27. Existing admin UI is `/admin`, API is `/admin-api/*` rewritten to `/admin/*` by
+    Vite/nginx/Netlify. Preserve its layout guard, user search/filter/suspend/role controls.
+28. Sprint 3 privacy/monitoring: aggregate the existing Application statuses
+    (DRAFT, INELIGIBLE, ANSWERS_COMPLETE), and erase ApplicationAnswer copies too. Storage
     callbacks audit every passport image/review/assistant read before returning bytes.
     Portable per-owner file locks serialize requests with deletion across workers
     sharing local storage. Erasure first suspends/revokes and persists AccountErasure,

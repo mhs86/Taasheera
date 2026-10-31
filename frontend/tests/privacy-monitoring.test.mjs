@@ -130,7 +130,7 @@ test('document history loads on request, exposes empty/error states and paginate
 })
 
 test('non-admin cannot load dashboard data even with a client-side route', async () => {
-  const calls = apiMock(url => { assert.equal(url, '/admin/me'); return Response.json({}, { status: 403 }) })
+  const calls = apiMock(url => { assert.equal(url, '/admin-api/me'); return Response.json({}, { status: 403 }) })
   await mount(AdminDashboard)
   assert.match(document.querySelector('[role="alert"]').textContent, /active admin/)
   assert.equal(calls.some(call => call.url.includes('/users') || call.url.includes('/monitoring')), false)
@@ -140,11 +140,11 @@ test('non-admin cannot load dashboard data even with a client-side route', async
 test('admin sees genuine empty status counts, safe errors, and must confirm selected-user deletion', async () => {
   let users = [{ id: 9, name: 'Synthetic User', email: 'synthetic@example.com', role: 'traveler', status: 'active' }]
   const calls = apiMock((url, options) => {
-    if (url === '/admin/me') return Response.json({ id: 7, name: 'Admin', role: 'admin' })
-    if (url === '/admin/monitoring') return Response.json({ total_applications: 0,
+    if (url === '/admin-api/me') return Response.json({ id: 7, name: 'Admin', role: 'admin' })
+    if (url === '/admin-api/monitoring') return Response.json({ total_applications: 0,
       applications_by_status: { DRAFT: 0, FAILED: 0 }, recent_errors: [], agent_failures_available: false, pending_erasures: 0 })
-    if (url.startsWith('/admin/users?')) return Response.json({ items: users, total: users.length, page: 1, page_size: 20 })
-    if (url === '/admin/users/9' && options.method === 'DELETE') { users = []; return new Response(null, { status: 204 }) }
+    if (url.startsWith('/admin-api/users?')) return Response.json({ items: users, total: users.length, page: 1, page_size: 20 })
+    if (url === '/admin-api/users/9' && options.method === 'DELETE') { users = []; return new Response(null, { status: 204 }) }
     assert.fail(`Unexpected request ${url}`)
   })
   await mount(AdminDashboard)

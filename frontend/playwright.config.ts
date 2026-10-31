@@ -7,7 +7,7 @@ export default defineConfig({
     launchOptions: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE } : {} },
   webServer: {
     command: `${process.env.TAASHEERA_TEST_PYTHON || 'python'} ../backend/preview.py run --seed-demo --api-port 8100 --web-port 5273`,
-    env: { TAASHEERA_PREVIEW_NAME: 'e2e-preview' },
+    env: { TAASHEERA_PREVIEW_NAME: `e2e-preview-sprint3-${Date.now()}` },
     url: 'http://127.0.0.1:5273/sign-in', reuseExistingServer: false, timeout: 60000,
   },
 })

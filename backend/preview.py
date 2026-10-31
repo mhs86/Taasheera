@@ -15,8 +15,8 @@ import time
 from pathlib import Path
 
 BACKEND = Path(__file__).resolve().parent
-DATA = BACKEND / "storage" / os.environ.get("TAASHEERA_PREVIEW_NAME", "feature-preview")
-if DATA.name != os.environ.get("TAASHEERA_PREVIEW_NAME", "feature-preview") or DATA.name in {".", ".."}:
+DATA = BACKEND / "storage" / os.environ.get("TAASHEERA_PREVIEW_NAME", "feature-preview-sprint3")
+if DATA.name != os.environ.get("TAASHEERA_PREVIEW_NAME", "feature-preview-sprint3") or DATA.name in {".", ".."}:
     raise SystemExit("TAASHEERA_PREVIEW_NAME must be a single directory name.")
 
 
@@ -58,7 +58,7 @@ def seed_demo():
     from sqlmodel import Session, select
     from uuid import uuid4
     from app.database import build_engine
-    from app.models import ActivityEvent, Traveler, VisaApplication
+    from app.models import ActivityEvent, Traveler, Application
     engine = build_engine()
     with Session(engine) as session:
         for label, role in (("admin", "admin"), ("traveler", "traveler"), ("delete-me", "traveler")):
@@ -69,9 +69,9 @@ def seed_demo():
                 password_hash=bcrypt.hashpw(b"Local-preview-only-123!", bcrypt.gensalt()).decode())
             session.add(traveler); session.flush()
             if role == "traveler":
-                for status in ("DRAFT", "IN_PROGRESS", "FAILED"):
-                    session.add(VisaApplication(id=uuid4().hex, traveler_id=traveler.id,
-                        destination="FRA", nationality="LBN", visa_type="Demo tourist", status=status))
+                for status in ("DRAFT", "INELIGIBLE", "ANSWERS_COMPLETE"):
+                    session.add(Application(id=uuid4().hex, traveler_id=traveler.id, questionnaire_id="schengen-short-stay",
+                        questionnaire_version=1, destination="SCHENGEN", visa_type="short_stay", status=status))
                 session.add(ActivityEvent(traveler_id=traveler.id, event_type="passport_extraction",
                                           identifier="passport", outcome="unreadable"))
         session.commit()

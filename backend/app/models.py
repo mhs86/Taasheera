@@ -1,10 +1,10 @@
 from datetime import date, datetime, timezone
-from typing import Annotated, Literal, get_args
+from typing import Annotated, Any, Literal, get_args
 
 from pydantic import BaseModel, ConfigDict, EmailStr, SecretStr, StringConstraints, field_validator
 from pydantic import Field as SchemaField
 from sqlmodel import Field, SQLModel
-from sqlalchemy import CheckConstraint, Text
+from sqlalchemy import JSON, CheckConstraint, Column, Text
 
 
 # Stored as plain strings guarded by named CHECK constraints (portable; no database enum types).
@@ -60,6 +60,36 @@ class TravelerProfile(SQLModel, table=True):
     address_region: str | None = Field(default=None, sa_type=Text, repr=False)
     address_postal_code: str | None = Field(default=None, sa_type=Text, repr=False)
     address_country: str | None = Field(default=None, max_length=3, repr=False)
+
+
+class Application(SQLModel, table=True):
+    # Random hex ids, like passport uploads, so ids can't be guessed or counted.
+    id: str = Field(primary_key=True, max_length=32)
+    traveler_id: int = Field(foreign_key="traveler.id", index=True)
+    # Which question file (and version) the answers belong to.
+    questionnaire_id: str = Field(max_length=60)
+    questionnaire_version: int
+    destination: str = Field(max_length=20)
+    visa_type: str = Field(max_length=40)
+    # How many people travel together, counting the traveler (US 4). Recorded only, for now:
+    # each application is for one person until group applications (US 81).
+    group_size: int = Field(default=1, sa_column_kwargs={"server_default": "1"})
+    # DRAFT while answering, INELIGIBLE when an answer stops the flow, ANSWERS_COMPLETE when nothing is left.
+    status: str = Field(default="DRAFT", max_length=20)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class ApplicationAnswer(SQLModel, table=True):
+    """One answer, saved as soon as it is given. A copy, so later passport or profile edits don't change it."""
+
+    application_id: str = Field(primary_key=True, foreign_key="application.id", max_length=32)
+    question_id: str = Field(primary_key=True, max_length=40)
+    value: Any = Field(sa_column=Column(JSON, nullable=False), repr=False)
+    # "traveler" (typed or chosen in the chat), "passport_upload" (a passport confirmed for this
+    # application), or "passport" / "profile" (a saved passport or profile the traveler confirmed here).
+    source: str = Field(max_length=20)
+    answered_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class ActivityEvent(SQLModel, table=True):
@@ -227,21 +257,7 @@ class ResetRateLimit(SQLModel, table=True):
     count: int = 1
 
 
-ApplicationStatus = Literal["DRAFT", "IN_PROGRESS", "READY", "SUBMITTED", "DECIDED", "FAILED"]
-APPLICATION_STATUSES = get_args(ApplicationStatus)
-
-
-class VisaApplication(SQLModel, table=True):
-    __table_args__ = (CheckConstraint(
-        "status IN ('DRAFT','IN_PROGRESS','READY','SUBMITTED','DECIDED','FAILED')",
-        name="ck_visaapplication_status"),)
-    id: str = Field(primary_key=True, max_length=32)
-    traveler_id: int = Field(foreign_key="traveler.id", index=True)
-    destination: str = Field(max_length=3)
-    nationality: str = Field(max_length=3)
-    visa_type: str = Field(max_length=80)
-    status: str = Field(default="DRAFT", max_length=20, index=True)
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+APPLICATION_STATUSES = ("DRAFT", "INELIGIBLE", "ANSWERS_COMPLETE")
 
 
 class DocumentAccess(SQLModel, table=True):

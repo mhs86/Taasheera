@@ -12,7 +12,7 @@ export type Monitoring = {
 export class AdminAccessError extends Error {}
 
 export async function adminRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const response = await protectedFetch(`/admin${path}`, { ...options, cache: 'no-store', silent: true })
+  const response = await protectedFetch(`/admin-api${path}`, { ...options, cache: 'no-store', silent: true })
   if ([401, 403].includes(response.status)) throw new AdminAccessError('An active admin account is required. Sign in with an authorized account.')
   if (!response.ok) {
     const messages: Record<number, string> = { 404: 'This user no longer exists. Refresh the list.',

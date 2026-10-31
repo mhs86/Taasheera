@@ -104,7 +104,7 @@ function App({ initialNavigation, accountPage = false, googleClientId = import.m
           </> : <>
             <p className="intro">You are signed in.</p>
             <a href="/account" className="account-link">Edit your account details</a>
-            <a href="/my-applications" className="account-link">Your applications</a>
+            <a href="/apply" className="account-link">Your applications</a>
             <a href="/backoffice" className="account-link">Staff dashboard</a>
             <a href="/passport" className="primary-button passport-link">Upload your passport</a>
           </>}
