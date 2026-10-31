@@ -27,7 +27,8 @@ SQLite and private passport images are on a separate encrypted EBS volume;
 the API's port is private. Administration uses Systems Manager, without SSH.
 The origin accepts CloudFront addresses and requires a private origin header.
 Traffic between CloudFront and EC2 uses HTTP; viewer traffic uses HTTPS.
-This is a course/demo deployment, with one host and no automatic backups or HA.
+This is a course/demo deployment, with one host and no HA. A daily backup to a
+private S3 bucket, and how to restore it, are in `docs/BACKUPS.md`.
 Use specimen data. If stronger transport protection or availability is required,
 plan those infrastructure changes before collecting real traveler documents.
 
@@ -151,6 +152,7 @@ the Elastic IP but **does not delete the data volume**; retained EBS continues
 to consume credits or incur charges. Back up and explicitly remove it when it is
 no longer needed. Host replacement creates a new volume: manually reattach and
 restore the retained volume before traffic resumes; no automatic recovery is
-claimed. Migration rollback and database backups are manual in this demo setup.
+claimed. Migration rollback is manual; daily backups and restore follow
+`docs/BACKUPS.md`.
 Keep a backup before deploying schema changes. Container updates rerun migrations
 and keep the same database, JWT, images, and reviews.
