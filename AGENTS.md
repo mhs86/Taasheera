@@ -48,14 +48,14 @@ Product rules that come from the domain:
 
 Group 7: Mohammad Sharafeddin, Dani Salman, Ahmad Zeid, Ahmad Al Hariri.
 
-Current sprint: **Sprint 2** (Oct 6 to 20; Scrum Master Ahmad Zeid). Goal (from Jira): the app runs on AWS;
-a traveler signs in with Google or email, recovers a forgotten password, manages their profile, and starts
-an application through a guided chat (destination, visa type, passport, personal and trip details).
-Admins can find and suspend users.
-Areas: Sharafeddin (AWS move, US 1 Google sign-in, US 56 password reset), Zeid (guided application
-chat: US 4, 9, 10), Salman (admin roles, API and dashboard: US 131 to 133), Al Hariri (US 43 profile,
-US 119 sessions, US 30 privacy policy). Testers: Zeid tests Sharafeddin, Al Hariri tests Zeid,
-Salman tests Al Hariri, Sharafeddin tests Salman (code review by Zeid).
+Current sprint: **Sprint 3** (Oct 20 to Nov 3). Goal (from Jira): Google or email sign-in and a reset code that
+really arrives; an assistant that knows the whole application and acts with the traveler's approval; travelers
+manage all their applications from one dashboard; admins monitor applications and delete users; merging to
+main reaches the live site.
+Areas: Sharafeddin (admin pages, logging, monitoring, account deletion), Al Hariri (sign-in and account
+security), Zeid (agentic assistant, deploy pipeline), Salman (applications dashboard US 19, 20, 79;
+backups US 126; branch protection). Testers (also the GitHub reviewer): Salman tests Zeid, Zeid tests
+Al Hariri, Al Hariri tests Sharafeddin, Sharafeddin tests Salman. The admin files now belong to Sharafeddin.
 Shared code: Sharafeddin owns the sign-in, Google and reset routes. Ending a traveler's other sessions
 goes through `revoke_other_sessions` in `backend/app/auth.py`; don't write a second one. The suspended-user
 check belongs in the single current-traveler loader. Alembic must keep one head: before merging a PR
@@ -248,6 +248,14 @@ What we decided, why, and what we rejected. Newest at the bottom. Add an entry w
     Vite, nginx and Netlify rewrite to `/admin/*`, so page loads never hit the API. The layout asks `/admin/me`
     first: signed-out visitors go to sign-in, everyone else refused goes home with a notice. This only hides pages;
     the backend is the protection. Every action needs a confirmation and ends in a toast.
+28. **Applications dashboard (US 19, 20, 79).** Pages `/dashboard` and `/dashboard/:id` (`frontend/src/dashboard/`),
+    not `/applications`, which is the API prefix. `application.archived_at` (null = active) hides an application from
+    the dashboard and sidebar; `GET /applications?archived=true` lists archived ones; archiving leaves `updated_at`
+    alone. Delete is a hard delete of the application and its answers (answers first, for PostgreSQL); passport
+    uploads stay. `delete_application` in `applications/lifecycle.py` is there for account deletion to reuse. The
+    timeline is derived from stored timestamps (started, each answer's last save, archived), so a changed answer shows
+    once; "what happens next" comes from the flow engine, not the AI. *Rejected: an application event table (more
+    schema, more to delete) and reusing `ActivityEvent` (no application id, outlives the application).*
 
 ## Personal instructions
 

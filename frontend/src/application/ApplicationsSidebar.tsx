@@ -55,6 +55,9 @@ export default function ApplicationsSidebar({ applications, currentId }: Props) 
         aria-current={currentId ? undefined : 'page'} data-activity-id="application-new">
         <span aria-hidden="true">+</span> New application
       </Link>
+      <Link to="/dashboard" className="apps-all" onClick={() => setOpen(false)} data-activity-id="dashboard-link">
+        All applications and history
+      </Link>
       {applications === null && <p className="apps-empty" role="status">Loading…</p>}
       {applications?.length === 0 && <p className="apps-empty">Applications you start appear here, so you can pick up where you left off.</p>}
       {active.length > 0 && <>

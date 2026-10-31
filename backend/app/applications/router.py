@@ -109,6 +109,8 @@ class ApplicationSummary(BaseModel):
     total: int
     created_at: datetime
     updated_at: datetime
+    # Set while archived (US 79): hidden from the dashboard and sidebar until restored.
+    archived_at: datetime | None
 
 
 class ApplicationState(ApplicationSummary):
@@ -140,6 +142,7 @@ def _summary(application: Application, questionnaire: flow.Questionnaire,
         place=flow.summary_place(questionnaire, answers), trip_date=trip_date,
         answered=progress.answered, total=progress.total,
         created_at=_utc(application.created_at), updated_at=_utc(application.updated_at),
+        archived_at=_utc(application.archived_at) if application.archived_at else None,
     )
 
 
@@ -168,6 +171,7 @@ def create_applications_router(
     today: Callable[[], date] = date.today,
 ) -> APIRouter:
     from ..auth import check_origin
+    from .lifecycle import create_lifecycle_router
 
     router = APIRouter(prefix="/applications", tags=["applications"])
     SessionDep = Annotated[Session, Depends(get_session)]
@@ -274,9 +278,11 @@ def create_applications_router(
         return state(session, traveler, application, questionnaire, {}, {}, [])
 
     @router.get("", response_model=list[ApplicationSummary])
-    def list_applications(traveler: TravelerDep, session: SessionDep, response: Response):
+    def list_applications(traveler: TravelerDep, session: SessionDep, response: Response, archived: bool = False):
         response.headers["Cache-Control"] = "private, no-store"
-        applications = session.exec(select(Application).where(Application.traveler_id == traveler.id)
+        # Active ones by default (the dashboard and sidebar); ?archived=true lists the archived ones (US 79).
+        shown = Application.archived_at.is_not(None) if archived else Application.archived_at.is_(None)
+        applications = session.exec(select(Application).where(Application.traveler_id == traveler.id, shown)
                                     .order_by(Application.updated_at.desc())).all()
         # One query for every application's answers, not one per application.
         answers: dict[str, flow.Answers] = {application.id: {} for application in applications}
@@ -347,4 +353,6 @@ def create_applications_router(
         response.headers["Cache-Control"] = "private, no-store"
         return state(session, traveler, application, questionnaire, answers, rows, cleared)
 
+    # Archive, delete and the timeline (US 79, US 20) live in their own file.
+    router.include_router(create_lifecycle_router(get_session, current_traveler, today=today))
     return router

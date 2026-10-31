@@ -100,7 +100,7 @@ test('signed-in travelers see Log out and Start an application instead of Log in
   assert.equal(header.querySelector('a.header-cta')?.getAttribute('href'), '/apply')
   assert.equal(container.querySelector('a[href^="/sign-in"]'), null, 'no Log in or Get started anywhere')
   assert.ok(container.querySelector('.footer-links a[href="/passport"]'))
-  assert.ok(container.querySelector('.footer-links a[href="/apply"]'))
+  assert.ok(container.querySelector('.footer-links a[href="/dashboard"]'))
 
   await click(container.querySelector('.menu-button'))
   const items = [...container.querySelectorAll('#mobile-menu a, #mobile-menu button')].map(el => el.textContent.trim())

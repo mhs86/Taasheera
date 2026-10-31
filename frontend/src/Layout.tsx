@@ -135,7 +135,7 @@ export default function Layout() {
               <Link to="/faq" data-activity-id="faq-link">FAQ</Link>
               {traveler
                 ? <>
-                    <Link to="/apply" data-activity-id="start-application-link">Your applications</Link>
+                    <Link to="/dashboard" data-activity-id="dashboard-link">Your applications</Link>
                     <Link to="/passport" data-activity-id="passport-link">Your passport</Link>
                   </>
                 : <Link to={signInPath} data-activity-id="login-link">Log in</Link>}
