@@ -88,6 +88,28 @@ their logs privately. Do not rerun a still-running release.
 
 ## Acceptance checks after release
 
+If a signed-in designated admin sees "An active admin account is required", run
+the role assignment independently from the build/release, in AWS CloudShell:
+
+```bash
+cd ~/Taasheera-prod-fix &&
+git pull --ff-only origin mohammad_prod_auth_admin_sprint3 &&
+python3 deploy/aws/release_production.py --admin-only --execute --admin-email sharafm032@gmail.com
+```
+
+This calls the operator role command inside the running API container and then
+reads the account back to verify `role=admin, status=active`. It does not rebuild,
+restart, deploy, change a password, create an account or reactivate a suspension.
+The same existing session gains access on the next request; refresh `/backoffice`.
+The full release only assigns the designated admin after its public verification
+completes, so an interrupted release may leave the application updated while the
+role assignment remains pending. Google linking preserves roles and never grants
+admin access by email alone.
+Role-only recovery validation: 101 operator, release and admin API tests passed,
+including real SQLite promotion of both Google and password accounts and reuse of
+the same authenticated session. An SSM success without verified active admin
+metadata is treated as a failure.
+
 1. Hard-refresh `/sign-in`, choose Google as `sharafm032@gmail.com`, and confirm
    the existing Taasheera password at the new prompt. If forgotten, cancel and
    use password recovery first. Google linking preserves admin access; it does

@@ -1,5 +1,8 @@
 """Release guardrails: preserve private config and verify both client/API versions."""
 import importlib.util
+import contextlib
+import io
+import json
 from pathlib import Path
 import subprocess
 import sys
@@ -89,3 +92,95 @@ def test_release_plan_is_read_only_and_execution_uses_configuration_preservation
     release.main()
     assert calls[0][1]['env']['TAASHEERA_PRESERVE_CONFIG'] == '1'
     assert verified == ['https://travel.example']
+
+
+def test_admin_only_plan_and_execution_cannot_redeploy_or_rebuild(release, monkeypatch):
+    monkeypatch.setattr(release, 'revision', lambda: 'a' * 40)
+    aws = object()
+    monkeypatch.setattr(release, 'Aws', lambda **kwargs: aws)
+    monkeypatch.setattr(release, 'inspect_target', lambda *args: ('i-1234567890abcdef0', 'https://travel.example'))
+    monkeypatch.setattr(release.subprocess, 'run', lambda *args, **kwargs: pytest.fail('Admin-only must not redeploy'))
+    monkeypatch.setattr(release, 'verify', lambda *args: pytest.fail('Admin-only must not require a frontend release'))
+    grants = []
+    monkeypatch.setattr(release, 'promote', lambda *args: grants.append(args))
+    monkeypatch.setattr(sys, 'argv', ['release_production.py', '--admin-only', '--admin-email', 'admin@example.com'])
+    release.main()
+    assert grants == []
+    monkeypatch.setattr(sys, 'argv', [*sys.argv, '--execute'])
+    release.main()
+    assert grants == [(aws, 'i-1234567890abcdef0', 'admin@example.com')]
+
+
+def test_admin_only_requires_an_explicit_account_before_accessing_aws(release, monkeypatch):
+    monkeypatch.setattr(release, 'Aws', lambda **kwargs: pytest.fail('No account was selected'))
+    monkeypatch.setattr(sys, 'argv', ['release_production.py', '--admin-only', '--execute'])
+    with pytest.raises(SystemExit): release.main()
+
+
+@pytest.mark.parametrize('google', [False, True])
+def test_remote_admin_program_updates_the_existing_account_and_verifies_staff_access(
+        release, monkeypatch, tmp_path, capsys, google):
+    import bcrypt
+    import migrate
+    from fastapi.testclient import TestClient
+    from sqlmodel import Session, select
+    from app.main import create_app
+    from app.models import GoogleIdentity, Traveler
+
+    monkeypatch.setenv('DATABASE_URL', f'sqlite:///{tmp_path / "admin-role.db"}')
+    migrate.upgrade()
+    app = create_app()
+    email, password = 'operator-target@example.com', 'Synthetic-test-password-123'
+    if google:
+        monkeypatch.setenv('GOOGLE_CLIENT_ID', 'synthetic.apps.googleusercontent.com')
+        monkeypatch.setattr('app.google_auth.verify_google_token', lambda *args: {
+            'sub': 'synthetic-operator-subject', 'email': email, 'name': 'Provider name'})
+        app = create_app()
+    with TestClient(app) as client:
+        with Session(app.state.engine) as session:
+            target = Traveler(name='Existing target', email=email, auth_type='google' if google else 'email_password',
+                password_hash='' if google else bcrypt.hashpw(password.encode(), bcrypt.gensalt(rounds=4)).decode())
+            session.add(target); session.flush()
+            if google: session.add(GoogleIdentity(subject='synthetic-operator-subject', traveler_id=target.id))
+            session.commit()
+            owner_id, original_hash = target.id, target.password_hash
+        signed_in = (client.post('/auth/google', json={'id_token': 'synthetic'}) if google else
+                     client.post('/auth/login', json={'email': email, 'password': password}))
+        headers = {'Authorization': 'Bearer ' + signed_in.json()['access_token']}
+        assert client.get('/admin/me', headers=headers).status_code == 403
+        captured = {}
+        def aws(*args):
+            if args[:2] == ('ssm', 'send-command'):
+                parameters = Path(args[args.index('--parameters') + 1].removeprefix('file://'))
+                command = json.loads(parameters.read_text())['commands'][0]
+                code = command.split("<<'TAASHEERA_ADMIN'\n", 1)[1].rsplit('\nTAASHEERA_ADMIN', 1)[0]
+                output = io.StringIO()
+                with contextlib.redirect_stdout(output): exec(code, {})
+                captured['stdout'] = output.getvalue()
+                return {'Command': {'CommandId': 'synthetic-command'}}
+            if args[:2] == ('ssm', 'list-command-invocations'):
+                return {'CommandInvocations': [{'Status': 'Success'}]}
+            if args[:2] == ('ssm', 'get-command-invocation'):
+                return {'StandardOutputContent': captured['stdout']}
+            pytest.fail('Unexpected AWS call')
+        release.promote(aws, 'i-1234567890abcdef0', email.upper())
+        assert client.get('/admin/me', headers=headers).status_code == 200  # Same session; no JWT role claims.
+        with Session(app.state.engine) as session:
+            owners = session.exec(select(Traveler)).all()
+            assert len(owners) == 1
+            assert owners[0].id == owner_id and owners[0].password_hash == original_hash
+            assert owners[0].role == 'admin' and owners[0].status == 'active'
+        output = capsys.readouterr().out
+        assert 'role=admin, status=active' in output
+        assert email not in output and password not in output
+
+
+@pytest.mark.parametrize('output', ['', 'TAASHEERA_ADMIN_RESULT={"id":1,"role":"traveler","status":"active"}',
+    'TAASHEERA_ADMIN_RESULT={"id":1,"role":"admin","status":"suspended"}'])
+def test_admin_setup_never_reports_success_without_verified_active_role(release, tmp_path, output):
+    def aws(*args):
+        if args[:2] == ('ssm', 'send-command'): return {'Command': {'CommandId': 'synthetic-command'}}
+        if args[:2] == ('ssm', 'list-command-invocations'): return {'CommandInvocations': [{'Status': 'Success'}]}
+        return {'StandardOutputContent': output}
+    with pytest.raises(RuntimeError, match='verified active access'):
+        release.promote(aws, 'i-1234567890abcdef0', 'admin@example.com')

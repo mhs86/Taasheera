@@ -183,6 +183,8 @@ privilege; absent it, PostgreSQL cases are skipped. CI includes both DBs and ima
     `deploy/aws/release_production.py --execute` uses authenticated AWS CLI/SSM, preserves
     exact existing private config, backs up SQLite and verifies client/API/policies.
     Optional `--admin-email` uses manage.py on the host; no hardcoded app admin allowlist.
+    Add `--admin-only --execute --admin-email <email>` to repair/verify active admin
+    access independently of deployment, with no rebuild or restart.
     See docs/PRODUCTION_AUTH_ADMIN_FIX.md for release steps and QA status.
 31. Production builds use build_images.py: API then web, with COMPOSE_BAKE=false;
     migration shares taasheera-api. Retry only disconnected sessions once. Build logs

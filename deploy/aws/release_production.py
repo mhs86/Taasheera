@@ -46,8 +46,20 @@ def promote(aws, instance, email):
     encoded = base64.b64encode(email.encode()).decode()
     command = ("set -eu\ncd /opt/taasheera\n"
         "docker compose -f deploy/aws/compose.yaml exec -T api python - <<'TAASHEERA_ADMIN'\n"
-        "import base64\nfrom manage import set_role\n"
-        f"print(set_role(base64.b64decode('{encoded}').decode(), 'admin'))\nTAASHEERA_ADMIN\n")
+        "import base64,json\nfrom manage import set_role\n"
+        "from pydantic import EmailStr,TypeAdapter\n"
+        "from sqlmodel import Session,select\n"
+        "from app.database import build_engine\nfrom app.models import Traveler\n"
+        f"email=str(TypeAdapter(EmailStr).validate_python(base64.b64decode('{encoded}').decode())).lower()\n"
+        "print(set_role(email, 'admin'))\n"
+        "engine=build_engine()\n"
+        "try:\n"
+        "    with Session(engine) as session:\n"
+        "        account=session.exec(select(Traveler).where(Traveler.email==email)).one()\n"
+        "        if account.role!='admin' or account.status!='active':\n"
+        "            raise SystemExit('The designated account does not have active admin access. Check its status.')\n"
+        "        print('TAASHEERA_ADMIN_RESULT='+json.dumps({'id':account.id,'role':account.role,'status':account.status}))\n"
+        "finally:\n    engine.dispose()\nTAASHEERA_ADMIN\n")
     with tempfile.TemporaryDirectory(prefix="taasheera-admin-") as folder:
         parameters = Path(folder) / "parameters.json"
         parameters.write_text(json.dumps({"commands": [command], "executionTimeout": ["120"]}))
@@ -57,6 +69,15 @@ def promote(aws, instance, email):
     command_id = reply["Command"]["CommandId"]
     print("Admin setup SSM command:", command_id)
     wait_command(aws, instance, command_id)
+    invocation = aws("ssm", "get-command-invocation", "--command-id", command_id, "--instance-id", instance)
+    for line in invocation.get("StandardOutputContent", "").splitlines():
+        if line.startswith("TAASHEERA_ADMIN_RESULT="):
+            result = json.loads(line.split("=", 1)[1])
+            if (set(result) == {"id", "role", "status"} and type(result["id"]) is int and result["id"] > 0
+                    and result["role"] == "admin" and result["status"] == "active"):
+                print(f"Verified account {result['id']}: role=admin, status=active.")
+                return
+    raise RuntimeError(f"Admin assignment did not return verified active access. Inspect SSM command {command_id} privately.")
 
 
 def get(url, data=None):
@@ -98,18 +119,28 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--execute", action="store_true")
     parser.add_argument("--admin-email", help="Optional existing account to promote using the operator CLI")
+    parser.add_argument("--admin-only", action="store_true",
+                        help="Assign and verify an existing admin without deploying or rebuilding the application")
     parser.add_argument("--region", default="us-east-1")
     parser.add_argument("--stack", default="taasheera")
     args = parser.parse_args()
+    if args.admin_only and not args.admin_email:
+        parser.error("--admin-only requires --admin-email.")
     if args.admin_email and not re.fullmatch(r"[A-Za-z0-9.!#$%&'*+/=?^_`{|}~@-]{3,254}", args.admin_email):
         parser.error("Enter an existing account email address.")
     commit = revision()
     aws = Aws(region=args.region)
     instance, origin = inspect_target(aws, args.stack)
     print(json.dumps({"revision": commit, "instance": instance, "site": origin,
-                      "preserve_existing_configuration": True, "set_designated_admin": bool(args.admin_email)}, indent=2))
+                      "preserve_existing_configuration": True, "set_designated_admin": bool(args.admin_email),
+                      "admin_only": args.admin_only}, indent=2))
     if not args.execute:
-        print("Read-only plan. Add --execute to release this commit.")
+        print("Read-only plan. Add --execute to assign and verify this admin." if args.admin_only
+              else "Read-only plan. Add --execute to release this commit.")
+        return
+    if args.admin_only:
+        promote(aws, instance, args.admin_email)
+        print("Admin access configured. Refresh", origin + "/backoffice")
         return
     subprocess.run(["bash", "deploy/aws/redeploy.sh"], cwd=ROOT, check=True,
         env={**os.environ, "TAASHEERA_PRESERVE_CONFIG": "1", "TAASHEERA_STACK": args.stack,
