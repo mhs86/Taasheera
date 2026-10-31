@@ -18,6 +18,7 @@ test('Netlify proxies API requests before the SPA fallback', () => {
     '/assistant/* https://api.example.com/assistant/:splat 200',
     '/applications https://api.example.com/applications 200',
     '/applications/* https://api.example.com/applications/:splat 200',
+    '/admin-api/* https://api.example.com/admin/:splat 200',
     '/* /index.html 200',
     '',
   ].join('\n'))

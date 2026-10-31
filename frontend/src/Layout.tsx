@@ -1,5 +1,5 @@
 import { useEffect, useState, type KeyboardEvent, type MouseEvent } from 'react'
-import { Link, NavLink, Outlet, ScrollRestoration, useNavigate } from 'react-router'
+import { Link, NavLink, Outlet, ScrollRestoration, useLocation, useNavigate } from 'react-router'
 import { toast, Toaster } from 'sonner'
 import { ArrowIcon, MenuIcon } from './icons'
 import ActivityTracker from './ActivityTracker'
@@ -44,6 +44,7 @@ function AccountLinks({ traveler, loggingOut, onLogOut, inMenu = false }: Accoun
 
 export default function Layout() {
   const navigate = useNavigate()
+  const location = useLocation()
   // Below 1000px the nav links collapse into this menu (see site.css).
   const [menuOpen, setMenuOpen] = useState(false)
   const [traveler, setTraveler] = useState<Traveler | null>(null)
@@ -61,6 +62,14 @@ export default function Layout() {
     restoreSession().then(profile => { if (active) setTraveler(profile) }).catch(() => {})
     return () => { active = false }
   }, [])
+
+  // A page that sent the visitor here (e.g. the admin dashboard) can leave a notice to show once.
+  const notice = (location.state as { notice?: unknown } | null)?.notice
+  useEffect(() => {
+    if (typeof notice !== 'string') return
+    toast.error(notice, { id: 'route-notice' })
+    navigate(`${location.pathname}${location.search}${location.hash}`, { replace: true, state: null })
+  }, [notice, navigate, location.pathname, location.search, location.hash])
 
   async function logOut() {
     setLoggingOut(true)

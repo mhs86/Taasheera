@@ -1,5 +1,8 @@
 import type { RouteObject } from 'react-router'
 import AuthRoute from './AuthRoute'
+import AdminLayout from './admin/AdminLayout'
+import AdminUser from './admin/AdminUser'
+import AdminUsers from './admin/AdminUsers'
 import { readNavigation } from './navigation'
 import Layout from './Layout'
 import Faq from './pages/Faq'
@@ -29,6 +32,17 @@ export const routes: RouteObject[] = [
           { path: '*', element: <NotFound /> },
         ],
       },
+    ],
+  },
+  // Every /admin page, including unknown ones, sits behind the admin layout's access check.
+  {
+    path: 'admin',
+    element: <AdminLayout />,
+    errorElement: <ServerError standalone />,
+    children: [
+      { index: true, element: <AdminUsers /> },
+      { path: 'users/:userId', element: <AdminUser /> },
+      { path: '*', element: <NotFound /> },
     ],
   },
   { path: 'sign-in', loader: () => readNavigation(window), element: <AuthRoute /> },

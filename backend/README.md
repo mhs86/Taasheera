@@ -180,7 +180,7 @@ Every `/admin` route needs `Authorization: Bearer <access_token>` of an active a
 | `POST /admin/users/{id}/suspend` | none | `200`: the updated user; every session of that account ends |
 | `POST /admin/users/{id}/reactivate` | none | `200`: the updated user |
 | `PUT /admin/users/{id}/role` | `{"role": "traveler" \| "support" \| "admin"}` | `200`: the updated user |
-| `GET /admin/overview` | none | `200`: `total_users`, `new_last_7_days`, `suspended`, `applications_started` (`null` until applications are stored) |
+| `GET /admin/overview` | none | `200`: `total_users`, `new_last_7_days`, `suspended`, `applications_started` (every application created, whatever its status) |
 
 Without a valid access token, `/admin` routes return `401` like `/auth/me`. Active travelers and
 support staff get the same `403` with `Admin access required.` Every response under `/admin`,
