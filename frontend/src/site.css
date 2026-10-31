@@ -769,6 +769,13 @@
   }
 }
 
+/* Keep the extra signed-in link in the menu when the header gets crowded. */
+@media (max-width: 700px) {
+  .nav-right > .header-account {
+    display: none;
+  }
+}
+
 /* Too narrow for the header buttons (signed in, they need about 456px); both are in the menu. */
 @media (max-width: 460px) {
   .nav-right > .login-link,

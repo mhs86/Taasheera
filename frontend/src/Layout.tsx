@@ -23,7 +23,7 @@ export type LayoutContext = { traveler: Traveler | null }
 
 type AccountProps = { traveler: Traveler | null; loggingOut: boolean; onLogOut: () => void; inMenu?: boolean }
 
-// Signed out: Log in / Get started. Signed in: Log out / Start an application.
+// Signed out: Log in / Get started. Signed in: Account / Log out / Start an application.
 function AccountLinks({ traveler, loggingOut, onLogOut, inMenu = false }: AccountProps) {
   const cta = traveler
     ? <Link to="/apply" className="header-cta" data-activity-id="start-application-link">
@@ -33,8 +33,11 @@ function AccountLinks({ traveler, loggingOut, onLogOut, inMenu = false }: Accoun
         <span className="mini-circle"><ArrowIcon /></span>Get started
       </Link>
   const account = traveler
-    ? <button type="button" className={`logout-button${inMenu ? '' : ' login-link'}`} data-activity-id="logout-button"
-        disabled={loggingOut} onClick={onLogOut}>{loggingOut ? 'Logging out…' : 'Log out'}</button>
+    ? <>
+        <Link to="/account" className={inMenu ? undefined : 'login-link header-account'}>Account</Link>
+        <button type="button" className={`logout-button${inMenu ? '' : ' login-link'}`} data-activity-id="logout-button"
+          disabled={loggingOut} onClick={onLogOut}>{loggingOut ? 'Logging out…' : 'Log out'}</button>
+      </>
     : <Link to={signInPath} className={inMenu ? undefined : 'login-link'} data-activity-id="login-link">Log in</Link>
   return <>{account}{cta}</>
 }
