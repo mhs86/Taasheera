@@ -1,0 +1,11 @@
+# Runs the backup once a day; a day missed while the host was off runs at the next boot.
+[Unit]
+Description=Daily Taasheera backup
+
+[Timer]
+OnCalendar=*-*-* 03:00:00 UTC
+RandomizedDelaySec=15m
+Persistent=true
+
+[Install]
+WantedBy=timers.target

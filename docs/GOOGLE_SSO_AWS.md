@@ -41,6 +41,7 @@ The deployment briefly stops API/web containers, makes a SQLite online backup
 under `/srv/taasheera/private/backups/`, and upgrades the schema before starting
 the new API. The backup remains private on encrypted EBS and contains sensitive
 application data. Manage retained backups deliberately; they use disk space.
+The daily off-host backup and restore are described in `docs/BACKUPS.md`.
 Never run an older application/schema deployment against this database without
 a reviewed rollback procedure. Do not redeploy the old `main` application onto
 the migrated database: functional changes remain off `main` under the user's rule.

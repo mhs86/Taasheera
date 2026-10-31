@@ -1,0 +1,74 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >-
+  Private, encrypted bucket for Taasheera's daily backups (US 126), and a policy that
+  lets the host write and read backups but never delete them. See docs/BACKUPS.md.
+Parameters:
+  HostRoleName:
+    Type: String
+    Description: Name of the EC2 host's IAM role (the HostRole created by stack.yaml).
+  KeepDays:
+    Type: Number
+    Default: 30
+    MinValue: 7
+    Description: Days a backup is kept before S3 removes it.
+Resources:
+  BackupBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Sub taasheera-backups-${AWS::AccountId}
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault: {SSEAlgorithm: AES256}
+      VersioningConfiguration: {Status: Enabled}
+      LifecycleConfiguration:
+        Rules:
+          - Id: expire-backups
+            Status: Enabled
+            Prefix: db/
+            ExpirationInDays: !Ref KeepDays
+            NoncurrentVersionExpiration: {NoncurrentDays: 7}
+            AbortIncompleteMultipartUpload: {DaysAfterInitiation: 7}
+  BackupBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref BackupBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: '*'
+            Action: 's3:*'
+            Resource: [!GetAtt BackupBucket.Arn, !Sub '${BackupBucket.Arn}/*']
+            Condition: {Bool: {'aws:SecureTransport': 'false'}}
+  HostBackupPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: taasheera-host-backups
+      Roles: [!Ref HostRoleName]
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          # No DeleteObject: a compromised host can add backups but not erase them; S3 expires old ones.
+          - Sid: WriteAndReadBackups
+            Effect: Allow
+            Action: ['s3:PutObject', 's3:GetObject']
+            Resource: !Sub '${BackupBucket.Arn}/db/*'
+          - Sid: ListBackups
+            Effect: Allow
+            Action: 's3:ListBucket'
+            Resource: !GetAtt BackupBucket.Arn
+            Condition: {StringLike: {'s3:prefix': ['db/*']}}
+Outputs:
+  BucketName:
+    Value: !Ref BackupBucket
