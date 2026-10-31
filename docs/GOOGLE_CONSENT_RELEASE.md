@@ -5,10 +5,11 @@ owner, control of a production domain, and a real Google sign-in check. No Googl
 Cloud owner session or domain-management connection is available to this coding
 environment. Existing OAuth client IDs and development origins were preserved.
 
-Public policy pages and a targeted AWS publisher are now prepared. See
+Public policy pages were published through AWS CloudShell and independently
+verified on 31 October 2026. See
 [the exact app-domain URLs and publishing steps](GOOGLE_APP_DOMAIN.md). Their AWS
-publication is separate from releasing the Sprint 3 app; it requires an authenticated
-AWS connection. Google ownership/branding verification remains an owner action.
+publication is separate from releasing the Sprint 3 app. Google ownership/branding
+verification remains an owner action.
 
 Use the existing project/client described in [GOOGLE_SSO_AWS.md](GOOGLE_SSO_AWS.md),
 with **sharafm032@gmail.com** for OAuth support/developer administration as specified

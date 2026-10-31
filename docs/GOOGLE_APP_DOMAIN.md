@@ -91,7 +91,7 @@ Official references:
 - [Google site ownership verification](https://support.google.com/webmasters/answer/9008080)
 - [Public Suffix List](https://github.com/publicsuffix/list/blob/master/public_suffix_list.dat)
 
-## Validation and current blocker
+## Validation and publication status
 
 Validation covers complete no-script public documents, links without authentication,
 mobile layout with JavaScript disabled, unchanged application asset references,
@@ -99,8 +99,13 @@ idempotent homepage patches, account checks, read-only planning, bounded SSM pay
 public-file backups and rollback on partial writes or public verification failure.
 Existing frontend tests, ESLint and the production build also pass.
 
-At preparation time, this cloud environment had **no configured AWS credentials**.
-The STS identity check and the publisher's plan both refused unauthenticated access.
-Therefore the new policy URLs have **not** been claimed as published or verified
-on the live AWS site. Connect the intended account here, or execute the prepared
-command from that account's CloudShell, before using these new URLs in the form.
+At preparation time, this cloud environment had no configured AWS credentials;
+the STS check and publisher correctly refused unauthenticated access. The user
+then published the prepared assets from authenticated AWS CloudShell on
+31 October 2026, using SSM command `f7c5b35e-fc05-4c65-95d8-6ba772c9a06b`.
+
+Independent HTTPS checks confirmed the homepage, `/privacy.html`, `/terms.html`
+and `/health/ready` all returned 200, the policy documents contained their actual
+headings, the homepage contained both policy links, and API readiness remained
+`ok`. The three URL values above are now live. Google Search Console ownership
+and Google Auth Platform brand verification are separate, still-pending steps.

@@ -172,7 +172,8 @@ privilege; absent it, PostgreSQL cases are skipped. CI includes both DBs and ima
     with shared legal.css and links in index.html outside the React root. No auth/JS
     is needed. `deploy/aws/publish_public_policies.py --execute` uses AWS CLI/SSM to
     update only these public assets and the existing homepage, with backup/rollback.
-    Missing AWS credentials block publication; see docs/GOOGLE_APP_DOMAIN.md.
+    These pages were published via CloudShell and HTTPS-verified on 31 October 2026.
+    Google ownership/branding verification remains pending; see docs/GOOGLE_APP_DOMAIN.md.
 
 ## Personal instructions
 
