@@ -260,6 +260,9 @@ What we decided, why, and what we rejected. Newest at the bottom. Add an entry w
     after a successful reply) per traveler and application (null outside one). `GET/DELETE /assistant/history` are
     owner-scoped. When the store is wired, the server sends the model the stored last turns and ignores the
     browser's `history`, so a client can't plant a fake assistant turn. Account erasure must delete these rows too.
+30. **Assistant from anywhere (US 23).** `Layout.tsx` mounts `GlobalAssistant` for signed-in travelers on every page
+    except `/passport` and `/apply`, which keep their own assistant with that page's context. It uses step `general`
+    (passport context only) and reloads the outside-an-application history on first open.
 27. **Admin dashboard (US 132).** Pages at `/admin` (`frontend/src/admin/`) call the API as `/admin-api/*`, which
     Vite, nginx and Netlify rewrite to `/admin/*`, so page loads never hit the API. The layout asks `/admin/me`
     first: signed-out visitors go to sign-in, everyone else refused goes home with a notice. This only hides pages;
