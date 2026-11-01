@@ -50,11 +50,13 @@ log = logging.getLogger(__name__)
 DEFAULT_MODEL = "gemini-3.5-flash-lite"
 MAX_HISTORY_TURNS = 10
 
-Step = Literal["passport_upload", "passport_review", "application"]
+Step = Literal["passport_upload", "passport_review", "application", "general"]
 STEP_DESCRIPTIONS: dict[str, str] = {
     "passport_upload": "uploading a photo of their passport's details page so it can be read automatically",
     "passport_review": "checking and confirming the details that were read from their passport",
     "application": "answering the questions of their visa application, one at a time, in a guided chat",
+    # The assistant button on every other signed-in page (US 23).
+    "general": "browsing Ta'asheera (home, account, FAQ or their list of applications), not on a specific step",
 }
 FIELD_LABELS = {
     "surname": "Surname",

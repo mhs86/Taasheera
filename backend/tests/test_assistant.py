@@ -409,3 +409,10 @@ def test_the_tools_adapter_declares_the_tools_and_returns_the_first_known_call()
 def test_the_tools_adapter_reports_nothing_as_unavailable():
     with pytest.raises(AssistantUnavailable):
         gemini_ask_tools(FakeGemini(tool_reply()))("system", [{"role": "user", "content": "x"}])
+
+
+def test_the_assistant_on_other_pages_uses_the_general_step(tmp_path):
+    model = FakeModel("Ta'asheera reads your passport and asks the embassy's questions.")
+    client, _ = make_client(tmp_path, model)
+    assert ask_question(client, message="How does this work?", step="general").status_code == 200
+    assert "browsing Ta'asheera" in model.calls[0][0] and "<application>" not in model.calls[0][0]

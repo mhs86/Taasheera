@@ -2,7 +2,7 @@ import { ApiError } from '../api'
 import { protectedFetch } from '../auth'
 import type { AnswerValue, CheckReport } from '../application/api'
 
-export type AssistantStep = 'passport_upload' | 'passport_review' | 'application'
+export type AssistantStep = 'passport_upload' | 'passport_review' | 'application' | 'general'
 export type ChatTurn = { role: 'user' | 'assistant'; content: string }
 // An action the traveler asked the assistant for (US 110), checked by the server but not saved.
 // Mirrors backend/app/applications/actions.py.
