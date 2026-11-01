@@ -209,6 +209,11 @@ async function isSuspended(response: Response): Promise<boolean> {
   return payload?.detail?.code === 'account_suspended'
 }
 
+// Tells listeners (ActivityTracker, and the idle guard) that someone signed in or out.
+function announceAuthChange() {
+  if (typeof window !== 'undefined') window.dispatchEvent(new window.Event('taasheera-auth-changed'))
+}
+
 async function profile(): Promise<Traveler> {
   const response = await request('me', {
     headers: { Authorization: `Bearer ${accessToken}` },
@@ -218,7 +223,7 @@ async function profile(): Promise<Traveler> {
     throw new Error('Could not load your traveler profile. Please sign in again.')
   }
   const traveler = await response.json()
-  if (typeof window !== 'undefined') window.dispatchEvent(new window.Event('taasheera-auth-changed'))
+  announceAuthChange()
   return traveler
 }
 
@@ -299,6 +304,7 @@ export function signOut(): Promise<void> {
     const response = await request('logout', { method: 'POST' })
     if (!response.ok) throw new Error('Could not log out. Please try again.')
     accessToken = null
+    announceAuthChange()
   })
 }
 
