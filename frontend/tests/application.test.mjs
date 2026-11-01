@@ -494,3 +494,63 @@ test('a ready application says so, and a failed check is reported', async () => 
   assert.ok($('.completeness [role="alert"]'))
   assert.ok(!text().includes('Nothing is missing'))
 })
+
+// --- Assistant actions (US 110) -------------------------------------------------
+
+const CHANGE = {
+  action: 'change_answer', question_id: 'purpose', question: "What's the main purpose of your trip?",
+  value: 'business', display: 'Business', current_display: 'Tourism', report: null,
+}
+
+async function askFor(proposal, message = 'Change my purpose to business') {
+  handlers[`GET /applications/${APP}`] ??= () => json(state([[PURPOSE, 'tourism']], LONG_STAY))
+  handlers['POST /assistant/messages'] = () => json({ reply: "Here's the change. Confirm it below to save it.",
+    used_passport: false, proposal })
+  await render(`/apply/${APP}`)
+  const box = $('#chat-ask-input')
+  await type(box, message)
+  await submit(box.form)
+}
+
+test('an assistant change is only saved when the traveler confirms it', async () => {
+  handlers = signedIn({
+    [`PUT /applications/${APP}/answers/purpose`]: () => json(state([[PURPOSE, 'business']], LONG_STAY)),
+  })
+  await askFor(CHANGE)
+  assert.match($('[aria-label="Proposed change"]').textContent, /Tourism → Business/)
+  assert.equal(calls.filter(call => call.key.startsWith('PUT')).length, 0)
+  await click(button('Confirm change'))
+  assert.deepEqual(bodyOf(`PUT /applications/${APP}/answers/purpose`), { value: 'business' })
+  assert.match(text(), /Saved\./)
+})
+
+test('declining an assistant change saves nothing, and a refused save is shown', async () => {
+  handlers = signedIn({
+    [`PUT /applications/${APP}/answers/purpose`]: () => json({ detail: 'Choose one of the options.' }, 422),
+  })
+  await askFor(CHANGE)
+  await click(button('Confirm change'))
+  assert.match($('[aria-label="Proposed change"] [role="alert"]').textContent, /Choose one of the options\./)
+  await click(button('Not now'))
+  assert.match(text(), /Left as it was\./)
+})
+
+test('the assistant can open an answered question and show the completeness check', async () => {
+  handlers = signedIn({})
+  await askFor({ ...CHANGE, action: 'go_to_question', value: null, display: null, current_display: null })
+  await click(button('Go to this question'))
+  assert.ok(button('Keep my answer'), 'the answer opens for changing')
+  afterEachCleanup()
+  handlers = signedIn({})
+  await askFor({ action: 'check', question_id: null, question: null, value: null, display: null, current_display: null,
+    report: { ready: false, answered: 1, total: 4, issues: [{ kind: 'missing', severity: 'blocking',
+      message: 'Not answered yet: Will you stay more than 90 days?', question_id: 'stay_over_90_days', step_id: 'eligibility' }] } },
+  'Is anything missing?')
+  assert.match(text(), /1 to fix before you can submit\.Must fix Not answered yet/)
+})
+
+function afterEachCleanup() {
+  if (root) act(() => root.unmount())
+  container?.remove()
+  root = container = undefined
+}
