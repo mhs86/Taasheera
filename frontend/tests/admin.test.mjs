@@ -241,6 +241,10 @@ test('an unknown user shows not found', async () => {
   backend({ 'GET /admin-api/users/99': () => json({ detail: 'User not found.' }, 404) })
   await render('/admin/users/99')
   assert.match(page(), /User not found\./)
+  // render() replaces `root`, and afterEach unmounts only the last one; close the first page here
+  // so its timers and listeners (the idle guard's) do not outlive the test.
+  await act(async () => root.unmount())
+  container.remove()
   await render('/admin/users/abc')
   assert.match(page(), /User not found\./)
   assert.equal(requested('GET /admin-api/users/abc').length, 0)
