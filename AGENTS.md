@@ -248,6 +248,14 @@ What we decided, why, and what we rejected. Newest at the bottom. Add an entry w
     unanswered visible questions and a `stop_if` answer are blocking; a passport answer that differs from the
     traveler's latest confirmed passport or profile is a warning (answers are copies, so the traveler decides).
     `GET /applications/{id}/check` returns it; the assistant gets the same report as text. Fix links are US 14.
+28. **Assistant context and actions (US 47, US 110).** Inside an application the server builds the context on every
+    call: answers, current step, a catalog of reachable question ids, and the completeness report. Gemini function
+    calling offers `change_answer`, `go_to_question` and `run_completeness_check` (`assistant_tools.py`; no submit
+    tool). A call is only a request: `applications/actions.py` checks it with the engine's order and answer rules
+    and returns a proposal, which the page shows as a card; only the traveler's Confirm saves it through the normal
+    `PUT /applications/{id}/answers/{q}`, which checks it again. Multi-part answers (passport, address) stay in the
+    chat. *Rejected: letting the model write answers directly (not auditable, skips confirmation), and a second
+    model call to phrase the result (cost and latency for no new information).*
 27. **Admin dashboard (US 132).** Pages at `/admin` (`frontend/src/admin/`) call the API as `/admin-api/*`, which
     Vite, nginx and Netlify rewrite to `/admin/*`, so page loads never hit the API. The layout asks `/admin/me`
     first: signed-out visitors go to sign-in, everyone else refused goes home with a notice. This only hides pages;
