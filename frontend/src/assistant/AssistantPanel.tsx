@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
-import { askAssistant, type AssistantStep, type ChatTurn } from './api'
+import { askAssistant, getHistory, type AssistantStep, type ChatTurn } from './api'
 import '../ui.css'
 import './assistant.css'
 
@@ -7,10 +7,15 @@ const suggestions: Record<AssistantStep, string[]> = {
   passport_upload: ['What kind of photo works best?', 'Which page should I photograph?', 'Is my passport kept private?'],
   passport_review: ['When does my passport expire?', 'What is a check digit?', 'Why is a field marked Confirm?'],
   application: ['Why does the embassy ask this?', 'What if I am not sure yet?'],
+  general: ['How does Ta\'asheera prepare my application?', 'When does my passport expire?', 'Is my data private?'],
 }
+// Outside the passport page the same panel is the general assistant on every signed-in page (US 23).
+const copy = (step: AssistantStep) => step === 'general'
+  ? { title: 'Ta\'asheera assistant', intro: 'Ask about your passport, your applications or how this works.', open: 'Ask the assistant' }
+  : { title: 'Passport assistant', intro: 'Ask about your passport or this step.', open: 'Ask about your passport' }
 const MAX_LENGTH = 1000
 
-// The chat lives only in this page: closing the tab forgets it (no history between visits in Sprint 1).
+// Earlier turns outside an application are kept by the server (US 111) and load when the panel first opens.
 type Props = {
   step: AssistantStep
   // Controlled by the page, so other parts of it (e.g. the confirmation message) can open the chat.
@@ -29,6 +34,13 @@ export default function AssistantPanel({ step, open, onOpenChange }: Props) {
   const log = useRef<HTMLDivElement>(null)
 
   useEffect(() => { if (open) input.current?.focus() }, [open])
+  const loaded = useRef(false)
+  useEffect(() => {
+    if (!open || loaded.current) return
+    loaded.current = true
+    getHistory().then(earlier => { if (earlier.length) setTurns(current => current.length ? current : earlier) })
+      .catch(() => { /* No history is just a fresh chat. */ })
+  }, [open])
   // Escape closes from anywhere: clicking a suggestion removes it, so focus may have left the panel.
   useEffect(() => {
     if (!open) return
@@ -79,7 +91,7 @@ export default function AssistantPanel({ step, open, onOpenChange }: Props) {
     {open && <section id={panelId} className="assistant-panel" aria-labelledby={`${panelId}-title`}>
       <header className="assistant-header">
         <div>
-          <h2 id={`${panelId}-title`}>Passport assistant</h2>
+          <h2 id={`${panelId}-title`}>{copy(step).title}</h2>
           <p>Answers use the details you confirmed. Not legal or immigration advice.</p>
         </div>
         <button type="button" className="assistant-close" onClick={close} aria-label="Close assistant"
@@ -90,7 +102,7 @@ export default function AssistantPanel({ step, open, onOpenChange }: Props) {
 
       <div className="assistant-log" ref={log} aria-live="polite">
         {turns.length === 0 && <div className="assistant-empty">
-          <p>Ask about your passport or this step. For example:</p>
+          <p>{copy(step).intro} For example:</p>
           <ul>
             {suggestions[step].map(question => <li key={question}>
               <button type="button" className="assistant-suggestion" onClick={() => void send(question)}
@@ -122,7 +134,7 @@ export default function AssistantPanel({ step, open, onOpenChange }: Props) {
       aria-expanded={open} aria-controls={open ? panelId : undefined}
       onClick={() => (open ? close() : onOpenChange(true))} data-activity-id="assistant-open">
       <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 4.5h12v8H9l-3.5 3v-3H4z" /></svg>
-      {open ? 'Close assistant' : 'Ask about your passport'}
+      {open ? 'Close assistant' : copy(step).open}
     </button>
   </div>
 }

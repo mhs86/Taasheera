@@ -3,6 +3,7 @@ import { Link, NavLink, Outlet, ScrollRestoration, useLocation, useNavigate } fr
 import { toast, Toaster } from 'sonner'
 import { ArrowIcon, MenuIcon } from './icons'
 import ActivityTracker from './ActivityTracker'
+import GlobalAssistant from './assistant/GlobalAssistant'
 import { restoreSession, signOut, type Traveler } from './auth'
 import { disableGoogleAutoSelect } from './googleIdentity'
 import { createAccountPath, signInPath } from './paths'
@@ -126,6 +127,8 @@ export default function Layout() {
 
       {/* Pages read the signed-in traveler from here, e.g. the homepage's main button. */}
       <main id="main"><Outlet context={{ traveler } satisfies LayoutContext} /></main>
+      {/* The passport and application pages have their own assistant with that page's context. */}
+      {traveler && !/^\/(passport|apply)(\/|$)/.test(location.pathname) && <GlobalAssistant />}
 
       <footer className="site-footer">
         <div className="container">

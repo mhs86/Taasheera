@@ -210,3 +210,27 @@ test('failed API calls raise a toast; client errors and silent calls do not', as
   })
   await assert.rejects(apiFetch('/auth/me', { silent: true }), { status: 500 })
 })
+
+test('signed-in travelers get the assistant on every page, with its earlier conversation', async (t) => {
+  t.mock.method(globalThis, 'fetch', async (url) => {
+    if (url === '/auth/refresh') return Response.json({ access_token: 'test-access-token' })
+    if (url === '/auth/me') return Response.json({ id: 1, name: 'Anna', email: 'anna@example.com' })
+    if (url === '/assistant/history') return Response.json([
+      { role: 'user', content: 'Is my data private?' }, { role: 'assistant', content: 'Yes, only you can see it.' }])
+    return new Response(null, { status: 204 })
+  })
+  await render('/faq')
+  await settle()
+  const launcher = [...container.querySelectorAll('button')].find(b => b.textContent.includes('Ask the assistant'))
+  assert.ok(launcher, 'the assistant button is on the FAQ page')
+  await click(launcher)
+  await settle()
+  assert.match(container.querySelector('.assistant-panel').textContent, /Ta'asheera assistant.*Yes, only you can see it\./s)
+})
+
+test('signed-out visitors get no assistant button', async (t) => {
+  t.mock.method(globalThis, 'fetch', async () => new Response(null, { status: 401 }))
+  await render('/faq')
+  await settle()
+  assert.equal(container.querySelector('.assistant-launcher'), null)
+})
