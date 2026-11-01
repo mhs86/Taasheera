@@ -2,7 +2,8 @@ export type Page = 'sign-in' | 'create-account' | 'forgot-password' | 'set-new-p
 export type Navigation = { page: Page; resetToken: string | null }
 
 // Called before React mounts and on navigation, never from a render initializer.
-// The backend emails RESET_FRONTEND_URL + '#token=...'. Scrub the fragment
+// The normal reset flow is the six-digit emailed code (see ForgotPassword). A
+// '#token=...' link is an older route that still works. Scrub the fragment
 // immediately; retain the token only in the current page's React state.
 export function readNavigation(browser: Pick<Window, 'location' | 'history'>): Navigation {
   const { location, history } = browser
