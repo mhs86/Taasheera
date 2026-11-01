@@ -87,7 +87,7 @@ test('Google callback signs in through protected profile; reload and logout use 
 for (const [status, pattern] of [[409, /Use your existing sign-in method\. Accounts have not been linked/], [401, /could not be verified/], [422, /could not be verified/], [503, /temporarily unavailable/], [500, /temporarily unavailable/]]) {
   test(`Google HTTP ${status} gives a safe message and permits retry`, async () => {
     await signedOut(); await click('Mock official Google button')
-    replies.push({ status, body: { detail: { code: 'google_link_required', message: 'Private backend detail' } } })
+    replies.push({ status, body: { detail: { code: 'other_conflict', message: 'Private backend detail' } } })
     await credential()
     assert.match(text(), pattern)
     assert.doesNotMatch(text(), /Private backend detail/)
@@ -105,6 +105,65 @@ test('network failure permits retry without displaying raw error details', async
   replies.push({ status: 200, body: { access_token: 'mock-access' } }, { status: 200, body: traveler })
   await credential()
   assert.match(text(), /Welcome, Google Traveler/)
+})
+
+for (const page of ['sign-in', 'create-account']) {
+  test(`${page}: Google collision offers explicit password linking and preserves the signed-in account`, async () => {
+    replies.push({ status: 401 })
+    root = createRoot(document.getElementById('root'))
+    await act(async () => root.render(createElement(App, {
+      initialNavigation: { page, resetToken: null }, googleClientId: 'public-test-client',
+    })))
+    await click('Mock official Google button')
+    replies.push({ status: 409, body: { detail: { code: 'google_link_required' } } })
+    await credential()
+    assert.match(text(), /Connect Google to your account/)
+    assert.equal(calls.length, 2) // Nothing is connected until explicit confirmation.
+    document.querySelector('[name=password]').value = 'Existing-password-123'
+    replies.push({ status: 401 })
+    await act(async () => document.querySelector('form').dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true })))
+    assert.match(text(), /Check your password/)
+    assert.equal(document.querySelector('[name=password]').value, '')
+    document.querySelector('[name=password]').value = 'Existing-password-123'
+    replies.push({ status: 200, body: { access_token: 'linked-access' } }, { status: 200, body: traveler })
+    await act(async () => document.querySelector('form').dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true })))
+    assert.equal(calls.at(-2).url, '/auth/google/link-login')
+    assert.deepEqual(JSON.parse(calls.at(-2).body), { id_token: 'mock-id-credential', password: 'Existing-password-123' })
+    assert.equal(calls.at(-1).headers.Authorization, 'Bearer linked-access')
+    assert.match(text(), /Welcome, Google Traveler/)
+    assert.equal(document.querySelector('a[href="/apply"]').textContent, 'Your applications')
+    assert.equal(document.querySelector('a[href="/backoffice"]').textContent, 'Staff dashboard')
+    assert.doesNotMatch(document.body.innerHTML, /mock-id-credential|Existing-password-123/)
+  })
+}
+
+test('canceling the link challenge discards the credential and restores password sign-in', async () => {
+  await signedOut(); await click('Mock official Google button')
+  replies.push({ status: 409, body: { detail: { code: 'google_link_required' } } })
+  await credential()
+  await click('Use another sign-in method')
+  assert.match(text(), /Welcome back/)
+  assert.equal(calls.length, 2)
+  assert.equal(document.querySelector('[name=password]').value, '')
+  assert.equal(document.querySelector('button[type=submit]').disabled, false)
+})
+
+test('link confirmation ignores duplicate submissions and late Google callbacks', async () => {
+  await signedOut(); await click('Mock official Google button')
+  const state = buttonOptions.state
+  replies.push({ status: 409, body: { detail: { code: 'google_link_required' } } })
+  await credential()
+  await credential(state)
+  assert.equal(calls.length, 2)
+  let resolve
+  replies.push(() => new Promise(done => { resolve = done }))
+  document.querySelector('[name=password]').value = 'Existing-password-123'
+  const submit = () => document.querySelector('form').dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }))
+  await act(async () => { submit(); submit() })
+  assert.equal(calls.length, 3)
+  assert.equal([...document.querySelectorAll('button')].find(button => button.textContent === 'Use another sign-in method').disabled, true)
+  await act(async () => resolve(response({ status: 401 })))
+  assert.equal(document.querySelector('[name=password]').value, '')
 })
 test('duplicate callbacks and email submissions cannot overlap a Google exchange', async () => {
   await signedOut(); await click('Mock official Google button')
