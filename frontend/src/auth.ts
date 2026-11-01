@@ -293,6 +293,9 @@ export function signInWithGoogle(idToken: string): Promise<Traveler> {
 
 export function signOut(): Promise<void> {
   return sessionOperation(async () => {
+    // Forget the remembered refresh time whatever the request does. A failed logout keeps the token
+    // so it can be retried, and touchSession must not call that session fresh from the old time.
+    lastRefreshAt = 0
     const response = await request('logout', { method: 'POST' })
     if (!response.ok) throw new Error('Could not log out. Please try again.')
     accessToken = null

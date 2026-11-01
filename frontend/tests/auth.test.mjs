@@ -175,3 +175,23 @@ test('touchSession returns false, without throwing, when the server no longer ac
   assert.equal(calls.length, 1)
   assert.equal(auth.hasAccessToken(), false)
 })
+
+test('after signOut, touchSession asks the server again and reports an ended session as false', async () => {
+  await signedInAtNineOClock()
+  arrange({ status: 204 })
+  await auth.signOut()
+  arrange({ status: 401, body: {} })
+  clock += 60_000  // Far less than 10 minutes: the old timestamp must not be trusted.
+  assert.equal(await auth.touchSession(), false)
+  assert.deepEqual(calls.map(c => c.url), ['/auth/refresh'])
+})
+
+test('after a failed logout, touchSession asks the server again instead of trusting the old timestamp', async () => {
+  await signedInAtNineOClock()
+  arrange({ status: 503, body: {} })
+  await assert.rejects(auth.signOut(), /Could not log out/)
+  arrange({ status: 200, body: { access_token: 'after-failed-logout' } })
+  clock += 60_000
+  assert.equal(await auth.touchSession(), true)
+  assert.deepEqual(calls.map(c => c.url), ['/auth/refresh'])
+})
