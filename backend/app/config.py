@@ -60,6 +60,7 @@ class AuthSettings:
     refresh_seconds: int = 7 * 24 * 60 * 60
     google_client_id: str | None = None
     trust_cloudfront_proxy: bool = False
+    idle_seconds: int = 30 * 60
 
     @classmethod
     def from_environment(cls):
@@ -76,6 +77,16 @@ class AuthSettings:
         trusted_proxy = os.environ.get("AUTH_TRUST_CLOUDFRONT_PROXY", "false").lower()
         if trusted_proxy not in {"true", "false"}:
             raise RuntimeError("AUTH_TRUST_CLOUDFRONT_PROXY must be true or false.")
+        idle = os.environ.get("AUTH_IDLE_TIMEOUT_SECONDS", "1800")
+        if not idle.isascii() or not idle.isdigit():
+            raise RuntimeError("AUTH_IDLE_TIMEOUT_SECONDS must be a whole number of seconds.")
+        idle_seconds = int(idle)
+        # Below the access-token lifetime, a token could outlive the idle limit that ended its session.
+        if not cls.access_seconds <= idle_seconds <= cls.refresh_seconds:
+            raise RuntimeError(
+                f"AUTH_IDLE_TIMEOUT_SECONDS must be between {cls.access_seconds} "
+                f"(the access token lifetime) and {cls.refresh_seconds} (the session lifetime)."
+            )
         if google_client_id and (
             not google_client_id.endswith(".apps.googleusercontent.com")
             or any(char.isspace() for char in google_client_id)
@@ -87,4 +98,5 @@ class AuthSettings:
             allowed_origins=tuple(origin.strip() for origin in origins.split(",") if origin.strip()),
             google_client_id=google_client_id or None,
             trust_cloudfront_proxy=trusted_proxy == "true",
+            idle_seconds=idle_seconds,
         )

@@ -1,7 +1,7 @@
 import hashlib
 import secrets
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Annotated
 from uuid import uuid4
 
@@ -272,6 +272,18 @@ def create_auth_router(get_session, current_traveler=None):
         auth_session = session.get(AuthSession, old.session_id)
         if auth_session is None:
             return rejected()
+
+        # last_active_at only moves on refresh, so this is the time since the last refresh.
+        # Sessions created before it was recorded have none and are not limited.
+        last_active = auth_session.last_active_at
+        if last_active is not None:
+            if last_active.tzinfo is None:  # SQLite drops timezone information when reading back.
+                last_active = last_active.replace(tzinfo=timezone.utc)
+            if datetime.now(timezone.utc) - last_active > timedelta(seconds=settings.idle_seconds):
+                session.execute(update(AuthSession).where(AuthSession.id == auth_session.id).values(revoked=True))
+                session.commit()
+                audit(request, "refresh", "idle_expired", auth_session.traveler_id)
+                return rejected()
 
         new_raw = secrets.token_urlsafe(32)
         new_hash = token_hash(new_raw)
