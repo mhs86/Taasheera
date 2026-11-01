@@ -8,10 +8,15 @@ const {
 const MINUTE = 60_000
 const START = Date.UTC(2026, 10, 1, 9, 0, 0)
 
-test('the limits are 28, 30 and 10 minutes, matching the server default of 30', () => {
+test('the limits are 28, 30 and 2 minutes, matching the server default of 30', () => {
   assert.equal(WARN_AFTER_MS, 28 * MINUTE)
   assert.equal(LOGOUT_AFTER_MS, 30 * MINUTE)
-  assert.equal(REFRESH_AFTER_MS, 10 * MINUTE)
+  assert.equal(REFRESH_AFTER_MS, 2 * MINUTE)
+})
+
+test('the refresh interval fits inside the warning window, so the server never expires first', () => {
+  // The server counts from the last refresh, which can trail the last activity by REFRESH_AFTER_MS.
+  assert.ok(REFRESH_AFTER_MS <= LOGOUT_AFTER_MS - WARN_AFTER_MS)
 })
 
 test('a traveler is active until 28 minutes of quiet', () => {
@@ -47,11 +52,11 @@ test('a clock set backwards does not sign anyone out', () => {
   assert.equal(idleState(START, START - 5 * MINUTE), 'active')
 })
 
-test('a quiet refresh is not due before 10 minutes and is due from then on', () => {
+test('a quiet refresh is not due before 2 minutes and is due from then on', () => {
   assert.equal(refreshDue(START, START), false)
-  assert.equal(refreshDue(START, START + 9 * MINUTE), false)
-  assert.equal(refreshDue(START, START + 10 * MINUTE - 1), false)
-  assert.equal(refreshDue(START, START + 10 * MINUTE), true)
+  assert.equal(refreshDue(START, START + MINUTE), false)
+  assert.equal(refreshDue(START, START + 2 * MINUTE - 1), false)
+  assert.equal(refreshDue(START, START + 2 * MINUTE), true)
   assert.equal(refreshDue(START, START + 25 * MINUTE), true)
 })
 

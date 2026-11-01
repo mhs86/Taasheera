@@ -122,25 +122,25 @@ async function signedInAtNineOClock() {
   await auth.signIn(traveler.email, 'correct-password')
 }
 
-test('touchSession makes no request until the last refresh is 10 minutes old', async () => {
+test('touchSession makes no request until the last refresh is 2 minutes old', async () => {
   await signedInAtNineOClock()
   arrange()
-  clock += 9 * 60_000
+  clock += 2 * 60_000 - 1
   assert.equal(await auth.touchSession(), true)
   assert.equal(calls.length, 0)
   assert.equal(auth.hasAccessToken(), true)
 })
 
-test('touchSession makes exactly one refresh once it is due, then waits another 10 minutes', async () => {
+test('touchSession makes exactly one refresh once it is due, then waits another 2 minutes', async () => {
   await signedInAtNineOClock()
   arrange({ status: 200, body: { access_token: 'renewed-token' } })
-  clock += 10 * 60_000
+  clock += 2 * 60_000
   assert.equal(await auth.touchSession(), true)
   assert.deepEqual(calls.map(c => c.url), ['/auth/refresh'])
   assert.equal(calls[0].method, 'POST')
   assert.equal(auth.hasAccessToken(), true)
   arrange()
-  clock += 9 * 60_000
+  clock += 60_000
   assert.equal(await auth.touchSession(), true)
   assert.equal(calls.length, 0)
 })
@@ -181,7 +181,7 @@ test('after signOut, touchSession asks the server again and reports an ended ses
   arrange({ status: 204 })
   await auth.signOut()
   arrange({ status: 401, body: {} })
-  clock += 60_000  // Far less than 10 minutes: the old timestamp must not be trusted.
+  clock += 60_000  // Under 2 minutes: the old timestamp must not be trusted.
   assert.equal(await auth.touchSession(), false)
   assert.deepEqual(calls.map(c => c.url), ['/auth/refresh'])
 })
@@ -194,4 +194,28 @@ test('after a failed logout, touchSession asks the server again instead of trust
   clock += 60_000
   assert.equal(await auth.touchSession(), true)
   assert.deepEqual(calls.map(c => c.url), ['/auth/refresh'])
+})
+
+test('signOut announces the change once the token is cleared, and says nothing when logout fails', async () => {
+  // The session module is normally exercised without a DOM; give it a window that can receive events.
+  const target = Object.assign(new EventTarget(), { Event })
+  const heard = []
+  target.addEventListener('taasheera-auth-changed', () => heard.push({ tokenHeld: auth.hasAccessToken() }))
+  globalThis.window = target
+  try {
+    await signedInAtNineOClock()
+    heard.length = 0  // Signing in announces itself too; only sign-out is under test.
+
+    arrange({ status: 503, body: {} })
+    await assert.rejects(auth.signOut(), /Could not log out/)
+    assert.equal(auth.hasAccessToken(), true)  // A failed logout keeps the token so it can be retried.
+    assert.deepEqual(heard, [])
+
+    arrange({ status: 204 })
+    await auth.signOut()
+    assert.equal(auth.hasAccessToken(), false)
+    assert.deepEqual(heard, [{ tokenHeld: false }])  // Fired once, after the token was already gone.
+  } finally {
+    delete globalThis.window
+  }
 })
