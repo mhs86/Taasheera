@@ -14,7 +14,7 @@ from sqlmodel import Session, select
 
 from app.activity import activity_directory_from_environment, record_activity
 from app.database import build_engine
-from app.models import ROLES, Traveler
+from app.models import ROLES, AccountErasure, Traveler
 from app.schema import require_current_schema
 
 
@@ -49,6 +49,8 @@ def set_role(email: str, role: str) -> str:
             traveler = session.exec(select(Traveler).where(Traveler.email == email).with_for_update()).first()
             if traveler is None:
                 raise SystemExit("No account uses that email. Sign up first, then run this command again.")
+            if session.get(AccountErasure, traveler.id) is not None:
+                raise SystemExit("Account erasure is pending; this account cannot change roles.")
             # Never print the email: terminal output often ends up in shared logs.
             account = f"Account {traveler.id} ({'password' if traveler.password_hash else 'Google'} sign-in)"
             previous, suspended = traveler.role, traveler.status == "suspended"

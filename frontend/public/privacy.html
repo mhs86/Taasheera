@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="How Taasheera uses account information, Google Sign-In, passport documents and application data.">
+  <title>Privacy policy | Taasheera</title>
+  <link rel="stylesheet" href="/legal.css">
+</head>
+<body class="legal-page">
+  <a class="legal-brand" href="/">Taasheera</a>
+  <main id="main">
+    <h1>Privacy policy</h1>
+    <p class="updated">Last updated: <time datetime="2026-10-31">31 October 2026</time></p>
+    <p>Taasheera is a university software-engineering project developed by Group 7 to help travelers prepare visa application information. This policy describes information handled by the Taasheera website and its account, passport and application features. Contact the project team at <a href="mailto:sharafm032@gmail.com">sharafm032@gmail.com</a>.</p>
+    <p class="notice"><strong>Course demonstration:</strong> use specimen passports and synthetic travel information while the service is a demo. Passport and travel information is sensitive. Do not upload real identity documents for demonstration or testing.</p>
+
+    <h2>Information you provide</h2>
+    <ul>
+      <li><strong>Account information:</strong> your name, email address, sign-in method and account settings. Password accounts store a password hash rather than a readable password.</li>
+      <li><strong>Profile and application information:</strong> details you enter or confirm, such as contact details, nationality, date of birth, travel plans and questionnaire answers.</li>
+      <li><strong>Passport information:</strong> images you upload, extracted machine-readable-zone information and the passport fields you review and confirm. An application can retain a copy of an answer you confirmed even if you later edit your profile.</li>
+      <li><strong>Assistant messages:</strong> questions and conversation context you send when using the assistant, along with relevant confirmed passport or application context supplied by the server.</li>
+      <li><strong>Service and security records:</strong> session identifiers, a short browser/device label, sign-in and activity times, document-access records where available, request identifiers and security or error metadata.</li>
+    </ul>
+
+    <h2>Google Sign-In</h2>
+    <p>If you choose Google Sign-In, Google provides the verified identity information needed to authenticate your account: your name, email address and a stable Google account identifier. We use this information to create or access your Taasheera account, connect the Google identity when you request it, and secure account access.</p>
+    <p>Signing in does not give Taasheera permission to read your Gmail messages, Google Drive files, contacts or calendar. The current sign-in integration does not request those permissions. Google Sign-In information is not sold, used for advertising, or used by Taasheera to train AI models.</p>
+    <p>Taasheera's use and transfer of information received from Google APIs is limited to the account features described here and must follow the <a href="https://developers.google.com/terms/api-services-user-data-policy">Google API Services User Data Policy</a>, including its Limited Use requirements. You can review or revoke Taasheera's Google access in <a href="https://myaccount.google.com/connections">your Google Account connections</a>. Revoking access at Google does not itself delete the separate Taasheera account or previously submitted application information.</p>
+
+    <h2>How information is used</h2>
+    <p>We use information to authenticate accounts, protect sessions, read and review uploaded passport details, save your profile and application answers, provide requested assistance, detect abuse and diagnose service failures. We do not submit an application to an embassy without your explicit confirmation. Feature availability varies by deployment.</p>
+
+    <h2>Hosting, email and AI providers</h2>
+    <p>The current AWS deployment uses Amazon Web Services to host the website, backend and stored application data. An email provider may process your email address and recovery message when you request account recovery. Google processes authentication requests when you choose Google Sign-In.</p>
+    <p>When the Gemini-powered assistant is enabled and you use it, your message and relevant confirmed passport or application context are sent to Google Gemini to generate a response. The Gemini free tier can use submitted content to improve Google's products and can involve human review under Google's terms. This is another reason to use only synthetic or specimen data for the demonstration. See <a href="https://ai.google.dev/gemini-api/terms">the Gemini API terms</a> for the provider's data-use conditions.</p>
+    <p>If error monitoring is enabled, its configured provider receives filtered technical error metadata. The Taasheera monitoring implementation is designed to exclude account details, document contents, authentication tokens, form values and message contents from those reports. Information may be processed in a country different from yours.</p>
+
+    <h2>Sessions, cookies and storage</h2>
+    <p>Taasheera uses a required session-refresh cookie to keep you signed in. The refresh cookie is HttpOnly, uses SameSite restrictions, and uses Secure transport on the deployed HTTPS service. Access tokens are held in browser memory rather than browser local storage. Cookie or Google identity services may have their own required storage. The application does not use your Google Sign-In information for advertising.</p>
+    <p>Passport files and account records are stored outside the public website files. Account ownership and staff roles control access through the application. Authorized operators may need to maintain or troubleshoot the service. No Internet service can guarantee absolute security.</p>
+
+    <h2>Retention, correction and deletion</h2>
+    <p>Account and application information is retained to provide the service and handle account support, security and applicable obligations. You can correct available profile and application fields through your account. Where the account-deletion feature is deployed, it removes the active account, saved profile, managed passport files, applications and answers, sessions, recovery credentials and activity records. A cleanup failure can leave the account disabled while deletion is retried.</p>
+    <p>Infrastructure logs and historical backups can have separate retention and expiry processes; deleting the active account does not instantly remove all historical copies from those systems. To request access, correction or deletion, or ask about retained copies, contact <a href="mailto:sharafm032@gmail.com">sharafm032@gmail.com</a>. We may need to verify account ownership. Do not email passport images, passwords, recovery codes or session tokens.</p>
+
+    <h2>Updates and contact</h2>
+    <p>Changes to this policy are published on this page with an updated date. For privacy questions, use <a href="mailto:sharafm032@gmail.com">sharafm032@gmail.com</a>. Read the <a href="/terms.html">Terms of Service</a> for the conditions of using the project.</p>
+  </main>
+  <footer class="public-policies"><nav aria-label="Policy navigation"><a href="/">Home</a><a href="/privacy.html" aria-current="page">Privacy policy</a><a href="/terms.html">Terms of Service</a></nav></footer>
+</body>
+</html>

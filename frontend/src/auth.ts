@@ -143,6 +143,27 @@ let restoring: Promise<Traveler | null> | null = null
 
 export function hasAccessToken(): boolean { return accessToken !== null }
 
+export function forgetSession(): void {
+  accessToken = null
+  if (typeof window !== 'undefined') window.dispatchEvent(new window.Event('taasheera-auth-changed'))
+}
+
+// Destructive cookie/session changes share the cross-tab lock used by sign-in,
+// refresh and logout. Refresh directly inside the lock to avoid a nested lock.
+export function deleteAccountSession(payload: { confirmation: 'DELETE'; expected_traveler_id: number;
+  password?: string; google_id_token?: string }): Promise<Response> {
+  return sessionOperation(async () => {
+    if (!accessToken && !(await refresh())) throw new Error('Please sign in to continue.')
+    const send = () => request('account', { method: 'DELETE',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
+      body: JSON.stringify(payload) })
+    let response = await send()
+    if (response.status === 401 && await refresh()) response = await send()
+    if ([202, 204].includes(response.status)) forgetSession()
+    return response
+  })
+}
+
 // Options are apiFetch's, so a caller can pass `silent: true` and show its own error instead of a toast.
 export async function protectedFetch(path: string, options: Parameters<typeof apiFetch>[1] = {}): Promise<Response> {
   if (!accessToken && !(await restoreSession())) throw new Error('Please sign in to continue.')
@@ -245,6 +266,13 @@ export function signIn(email: string, password: string): Promise<Traveler> {
   })
 }
 
+export class GoogleLinkRequiredError extends Error {
+  constructor() {
+    super('Confirm your existing account password to link Google and sign in.')
+    this.name = 'GoogleLinkRequiredError'
+  }
+}
+
 export function signInWithGoogle(idToken: string): Promise<Traveler> {
   return sessionOperation(async () => {
     accessToken = null
@@ -259,6 +287,8 @@ export function signInWithGoogle(idToken: string): Promise<Traveler> {
       throw new Error('Could not complete Google sign-in. Check your connection and try again.')
     }
     if (response.status === 409) {
+      const payload = await response.json().catch(() => null)
+      if (payload?.detail?.code === 'google_link_required') throw new GoogleLinkRequiredError()
       throw new Error('This email already belongs to an account. Use your existing sign-in method. Accounts have not been linked.')
     }
     if (response.status === 401 || response.status === 422) {
@@ -266,6 +296,24 @@ export function signInWithGoogle(idToken: string): Promise<Traveler> {
     }
     if (await isSuspended(response)) throw new Error(SUSPENDED)
     if (!response.ok) throw new Error('Google sign-in is temporarily unavailable. Try again or use email sign-in.')
+    accessToken = (await response.json()).access_token
+    return profile()
+  })
+}
+
+export function linkGoogleAndSignIn(idToken: string, password: string): Promise<Traveler> {
+  return sessionOperation(async () => {
+    accessToken = null
+    const response = await request('google/link-login', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id_token: idToken, password }),
+    })
+    if (response.status === 401) throw new Error('Check your password. If the Google prompt expired, cancel and choose Google again.')
+    if (response.status === 409) throw new Error('This Google account cannot be linked. Sign in with your existing method and check your account settings.')
+    if (response.status === 429) throw new Error('Too many attempts. Please wait 15 minutes before trying again.')
+    if (response.status === 422) throw new Error('Check your password and try again.')
+    if (await isSuspended(response)) throw new Error(SUSPENDED)
+    if (!response.ok) throw new Error('Could not link Google. Please try again.')
     accessToken = (await response.json()).access_token
     return profile()
   })

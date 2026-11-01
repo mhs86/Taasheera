@@ -112,3 +112,11 @@ export function reactivateUser(id: number) {
 export function changeRole(id: number, role: Role) {
   return adminRequest<AdminUserDetail>(`/users/${id}/role`, json('PUT', { role }))
 }
+
+export function findAdminCandidate(email: string) {
+  return adminRequest<AdminUserSummary>('/admins/lookup', json('POST', { email: email.trim() }))
+}
+
+export function addAdmin(email: string, expectedUserId: number) {
+  return adminRequest<AdminUserDetail>('/admins', json('POST', { email: email.trim(), expected_user_id: expectedUserId }))
+}
