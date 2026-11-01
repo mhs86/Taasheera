@@ -20,6 +20,7 @@ from .activity import activity_directory_from_environment, create_activity_route
 from .admin_api import create_admin_router, install_admin_no_store
 from .assistant import DEFAULT_MODEL, create_assistant_router, gemini_ask
 from .assistant_tools import TOOLS_PROMPT, gemini_ask_tools
+from .chat_history import create_chat_history_router, load_history, save_turn
 from .auth import check_origin, create_auth_router, create_current_traveler
 from .sessions import create_sessions_router
 from .google_auth import create_google_auth_router
@@ -134,6 +135,14 @@ def create_app(database_url: str | None = None, *, reset_sender: ResetSender | N
             return application_context(session, traveler_id, application_id,
                                        latest_passport=passport_storage.latest_review(traveler_id))
 
+    def stored_history(traveler_id: int, application_id: str | None) -> list[dict]:
+        with Session(engine) as session:
+            return load_history(session, traveler_id, application_id)
+
+    def store_turn(traveler_id: int, application_id: str | None, question: str, reply: str):
+        with Session(engine) as session:
+            save_turn(session, traveler_id, application_id, question, reply)
+
     def propose_action(traveler_id: int, application_id: str, name: str, args: dict):
         with Session(engine) as session:
             return application_proposal(session, traveler_id, application_id, name, args,
@@ -143,7 +152,9 @@ def create_app(database_url: str | None = None, *, reset_sender: ResetSender | N
         current_traveler_id, passport_storage.latest_review, assistant_ask,
         record_event=record_assistant_activity, load_application=load_application_context,
         ask_tools=assistant_ask_tools, propose=propose_action, tools_prompt=TOOLS_PROMPT,
+        load_history=stored_history, save_turn=store_turn,
     ))
+    app.include_router(create_chat_history_router(get_session, current_traveler_id))
 
     @app.exception_handler(RequestValidationError)
     async def validation_error_handler(request: Request, exc: RequestValidationError):
