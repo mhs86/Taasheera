@@ -247,3 +247,11 @@
   .typing-dots i { animation: none; opacity: 0.6; }
   .assistant-launcher { transition: none; }
 }
+
+/* Actions the assistant proposes (US 110): nothing changes until the traveler confirms. */
+.proposal { margin-top: .6rem; padding: .75rem .9rem; border: 1px solid var(--border); border-radius: 10px; background: var(--card); }
+.proposal-text { margin: 0 0 .35rem; font-weight: 600; }
+.proposal-diff { margin: 0 0 .6rem; }
+.proposal-diff s { color: var(--fg-dim); }
+.proposal-actions { display: flex; gap: .5rem; flex-wrap: wrap; }
+.proposal-done { margin: 0; color: var(--fg-muted); }

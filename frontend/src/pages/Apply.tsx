@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router'
 import { restoreSession, type Traveler } from '../auth'
-import { askAssistant, type ChatTurn } from '../assistant/api'
+import { askAssistant, type ChatTurn, type Proposal } from '../assistant/api'
+import ProposalCard from '../assistant/ProposalCard'
 import AnswerInput from '../application/AnswerInput'
 import ApplicationsSidebar from '../application/ApplicationsSidebar'
 import CompletenessCheck from '../application/CompletenessCheck'
@@ -79,7 +80,8 @@ function SignedOut() {
 
 // A question typed to the assistant mid-flow. `at` is how many answers existed when it was
 // asked, so it shows at that point in the conversation and the flow carries on below it.
-type Aside = ChatTurn & { at: number }
+// An assistant reply may carry an action for the traveler to confirm (US 110).
+type Aside = ChatTurn & { at: number; proposal?: Proposal | null }
 
 type ChatProps = { applicationId: string; onChange: (state: ApplicationState) => void }
 
@@ -151,7 +153,7 @@ function ApplicationChat({ applicationId, onChange }: ChatProps) {
     setAsides(turns => [...turns, { role: 'user', content: question, at }])
     try {
       const reply = await askAssistant(question, 'application', history, applicationId)
-      setAsides(turns => [...turns, { role: 'assistant', content: reply.reply, at }])
+      setAsides(turns => [...turns, { role: 'assistant', content: reply.reply, at, proposal: reply.proposal }])
     } catch (error) {
       setAsides(turns => turns.slice(0, -1))
       setDraft(question)
@@ -159,6 +161,15 @@ function ApplicationChat({ applicationId, onChange }: ChatProps) {
     } finally {
       setAsking(false)
     }
+  }
+  // The assistant offered to take the traveler to a question: open an answered one for changing.
+  function goTo(questionId: string) {
+    if (questionId === application?.current?.id) {
+      current.current?.scrollIntoView?.({ block: 'center', behavior: 'smooth' })
+      return
+    }
+    setEditing(questionId)
+    document.getElementById(`answer-${questionId}`)?.scrollIntoView?.({ block: 'center', behavior: 'smooth' })
   }
   const askOnEnter = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) void ask(event)
@@ -179,6 +190,8 @@ function ApplicationChat({ applicationId, onChange }: ChatProps) {
     .map((turn, n) => <li key={`aside-${index}-${n}`} className={`bubble bubble-${turn.role === 'user' ? 'user' : 'assistant'} bubble-aside`}>
       <span className="bubble-label">{turn.role === 'user' ? 'You asked' : 'Assistant'}</span>
       {turn.content}
+      {turn.proposal && <ProposalCard proposal={turn.proposal} onGoTo={goTo}
+        onConfirm={() => answer(turn.proposal!.question_id!, { value: turn.proposal!.value! })} />}
     </li>)
 
   const trip = [application.place, application.trip_date && `arriving ${formatDate(application.trip_date)}`]
@@ -212,7 +225,7 @@ function ApplicationChat({ applicationId, onChange }: ChatProps) {
       <li className="bubble bubble-assistant">Are you applying just for yourself, or travelling with family or a group?</li>
       <li className="bubble bubble-user chat-reply chat-fixed">{travellers(application.group_size)}</li>
       <li className="bubble bubble-assistant">Great. Now the embassy's questions, one at a time. Your answers are saved as you go.</li>
-      {application.answers.map((saved, index) => <li key={saved.question.id} className="chat-turn">
+      {application.answers.map((saved, index) => <li key={saved.question.id} id={`answer-${saved.question.id}`} className="chat-turn">
         <ol className="chat-turn-inner">
           {asidesAt(index)}
           <li className="bubble bubble-assistant">{saved.question.prompt}</li>

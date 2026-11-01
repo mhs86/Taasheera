@@ -18,7 +18,7 @@ from sqlmodel import Session, select
 
 from ..models import Application, ApplicationAnswer, Traveler, TravelerProfile
 from ..profile import ProfileFields
-from . import completeness, flow
+from . import actions, completeness, flow
 
 Status = Literal["DRAFT", "INELIGIBLE", "ANSWERS_COMPLETE"]
 
@@ -154,14 +154,50 @@ def saved_profile(session: Session, traveler_id: int) -> dict | None:
     return ProfileFields.model_validate(stored, from_attributes=True).model_dump(mode="json") if stored else None
 
 
-def application_context(session: Session, traveler_id: int, application_id: str) -> str | None:
-    """The assistant's view of one application, or None if it isn't this traveler's."""
+def _owned_answers(session: Session, traveler_id: int, application_id: str):
     application = session.get(Application, application_id)
     if application is None or application.traveler_id != traveler_id:
         return None
     rows = session.exec(select(ApplicationAnswer).where(ApplicationAnswer.application_id == application.id))
-    questionnaire = flow.load_questionnaire(application.questionnaire_id)
-    return flow.describe(questionnaire, {row.question_id: row.value for row in rows}, application.group_size)
+    return application, flow.load_questionnaire(application.questionnaire_id), {row.question_id: row.value for row in rows}
+
+
+def application_context(session: Session, traveler_id: int, application_id: str, *,
+                        latest_passport: dict | None = None, today: date | None = None) -> str | None:
+    """The assistant's view of one application (US 47), or None if it isn't this traveler's.
+
+    Built here on every call, never sent by the browser: the answers, where the traveler
+    is, the questions the assistant's tools may point at, and what is still missing.
+    """
+    found = _owned_answers(session, traveler_id, application_id)
+    if found is None:
+        return None
+    application, questionnaire, answers = found
+    today = today or date.today()
+    answers, _ = flow.reconcile(questionnaire, answers, today)
+    progress = flow.progress(questionnaire, answers)
+    report = completeness.check(questionnaire, answers, today, latest_passport=latest_passport,
+                                profile=saved_profile(session, traveler_id))
+    return "\n\n".join([
+        flow.describe(questionnaire, answers, application.group_size),
+        f"Current step: {progress.step_title} (step {progress.step_number} of {progress.step_count})",
+        actions.catalog(questionnaire, answers),
+        completeness.describe(report),
+    ])
+
+
+def application_proposal(session: Session, traveler_id: int, application_id: str, name: str, args: dict, *,
+                         latest_passport: dict | None = None, today: date | None = None) -> actions.Proposal | None:
+    """A checked proposal for one assistant tool call (US 110), or None if it isn't this traveler's.
+
+    Raises flow.InvalidAnswer when the proposal breaks a rule. Saves nothing.
+    """
+    found = _owned_answers(session, traveler_id, application_id)
+    if found is None:
+        return None
+    _, questionnaire, answers = found
+    return actions.propose(questionnaire, answers, name, args, today or date.today(),
+                           latest_passport=latest_passport, profile=saved_profile(session, traveler_id))
 
 
 def create_applications_router(
