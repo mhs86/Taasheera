@@ -255,3 +255,18 @@ class ResetRateLimit(SQLModel, table=True):
     key: str = Field(primary_key=True, max_length=100)
     expires_at: int = Field(index=True)
     count: int = 1
+
+
+class AssistantMessage(SQLModel, table=True):
+    """One turn of a traveler's chat with the assistant (US 111), so it reloads on the next visit.
+
+    Kept per traveler and per application (none for chats outside an application). Holds what the
+    traveler typed, which may mention passport details, so reads are owner-scoped like the rest.
+    """
+
+    id: int | None = Field(default=None, primary_key=True)
+    traveler_id: int = Field(foreign_key="traveler.id", index=True)
+    application_id: str | None = Field(default=None, foreign_key="application.id", max_length=32, index=True)
+    role: str = Field(max_length=10)  # "user" or "assistant"
+    content: str = Field(sa_type=Text, repr=False)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
