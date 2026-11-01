@@ -24,7 +24,7 @@ from .sessions import create_sessions_router
 from .google_auth import create_google_auth_router
 from .config import AuthSettings, RuntimeSettings
 from .schema import require_current_schema
-from .observability import install_request_logging
+from .observability import install_private_no_store, install_request_logging
 from .mailer import MailSettings, ResetSender, SesResetSender, SmtpResetSender
 from .security import audit, throttle
 from .password_reset import create_password_reset_router
@@ -32,6 +32,9 @@ from .models import RegisterRequest, Traveler, TravelerPublic
 from .passport.router import create_passport_router
 from .passport.storage import PassportImageStorage
 from .profile import create_profile_router
+from .document_audit import create_document_audit_router, record_document_access
+from .monitoring import configure_monitoring
+from .privacy import create_privacy_router, retry_erasures
 
 
 def create_app(database_url: str | None = None, *, reset_sender: ResetSender | None = None) -> FastAPI:
@@ -42,6 +45,7 @@ def create_app(database_url: str | None = None, *, reset_sender: ResetSender | N
         app.state.auth_settings = AuthSettings.from_environment()
         app.state.runtime_settings = RuntimeSettings.from_environment()
         app.state.activity_directory = activity_directory_from_environment()
+        app.state.account_lock_directory = app.state.activity_directory.parent / ".account-locks"
         app.state.mail_settings = MailSettings.from_environment()
         app.state.reset_sender = reset_sender or (
             (SesResetSender(app.state.mail_settings) if app.state.mail_settings.provider == "ses"
@@ -51,15 +55,20 @@ def create_app(database_url: str | None = None, *, reset_sender: ResetSender | N
             SQLModel.metadata.create_all(engine)
         else:
             require_current_schema(engine)
+        retry_erasures(engine, passport_storage, app.state.activity_directory, app.state.auth_settings.jwt_secret)
+        monitoring = configure_monitoring()
         try:
             yield
         finally:
+            if monitoring is not None:
+                monitoring.close()
             engine.dispose()
 
     app = FastAPI(title="Taasheera traveler API", lifespan=lifespan)
     app.state.engine = engine
     install_request_logging(app)
     install_admin_no_store(app)
+    install_private_no_store(app)
 
     @app.get("/health/live", include_in_schema=False)
     def liveness():
@@ -84,9 +93,14 @@ def create_app(database_url: str | None = None, *, reset_sender: ResetSender | N
 
     current_traveler = create_current_traveler(get_session)
     passport_storage = PassportImageStorage(
-        os.environ.get("PASSPORT_STORAGE_DIR", str(Path(__file__).resolve().parents[1] / "storage" / "passports"))
+        os.environ.get("PASSPORT_STORAGE_DIR", str(Path(__file__).resolve().parents[1] / "storage" / "passports")),
+        on_access=lambda owner, upload, purpose: record_document_access(
+            engine, app.state.activity_directory, owner, upload, purpose),
     )
+    app.state.passport_storage = passport_storage
     app.include_router(create_activity_router(get_session, current_traveler))
+    app.include_router(create_document_audit_router(get_session, current_traveler))
+    app.include_router(create_privacy_router(get_session, current_traveler, passport_storage))
     app.include_router(create_auth_router(get_session, current_traveler))
     app.include_router(create_admin_router(get_session, current_traveler, passport_storage))
     app.include_router(create_sessions_router(get_session, current_traveler))
@@ -110,8 +124,9 @@ def create_app(database_url: str | None = None, *, reset_sender: ResetSender | N
         uploads_enabled=uploads_setting == "true",
     ))
 
-    app.include_router(create_applications_router(get_session, current_traveler, passport_storage.load_review,
-                                                  load_latest_passport=passport_storage.latest_review))
+    app.include_router(create_applications_router(get_session, current_traveler,
+        lambda owner, upload: passport_storage.load_review(owner, upload, purpose="application_prefill"),
+        load_latest_passport=lambda owner: passport_storage.latest_review(owner, purpose="application_prefill")))
 
     def record_assistant_activity(traveler_id: int, event_type: str, outcome: str):
         with Session(engine) as session:
@@ -131,7 +146,7 @@ def create_app(database_url: str | None = None, *, reset_sender: ResetSender | N
             return application_context(session, traveler_id, application_id)
 
     app.include_router(create_assistant_router(
-        current_traveler_id, passport_storage.latest_review, assistant_ask,
+        get_session, current_traveler_id, passport_storage.latest_review, assistant_ask,
         record_event=record_assistant_activity, load_application=load_application_context,
     ))
 
@@ -143,6 +158,11 @@ def create_app(database_url: str | None = None, *, reset_sender: ResetSender | N
             for error in exc.errors()
         ]
         return JSONResponse(status_code=422, content={"detail": errors})
+
+    @app.exception_handler(Exception)
+    async def service_error_handler(request: Request, exc: Exception):
+        return JSONResponse(status_code=500, content={"detail": "Service unavailable. Please try again."},
+            headers={"Cache-Control": "no-store", "X-Request-ID": getattr(request.state, "request_id", "unavailable")})
 
     @app.post(
         "/auth/register",

@@ -1,0 +1,16 @@
+:root { color-scheme: light; }
+.legal-page { margin: 0; background: #f2f7f5; color: #173d32; font: 17px/1.7 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+.legal-page * { box-sizing: border-box; }
+.legal-page a, .public-policies a { color: #176447; text-underline-offset: .2em; }
+.legal-page .legal-brand { display: block; background: #205541; color: white; padding: 1rem max(1.25rem, calc((100vw - 850px) / 2)); font-weight: 700; text-decoration: none; }
+.legal-page main { max-width: 850px; margin: 2rem auto; padding: 1.75rem; background: white; border: 1px solid #dce6df; border-radius: 12px; }
+.legal-page h1 { font-size: clamp(2rem, 6vw, 3rem); line-height: 1.2; }
+.legal-page h2 { margin: 2rem 0 .5rem; font-size: 1.3rem; line-height: 1.4; }
+.legal-page p, .legal-page ul { margin: .75rem 0; }
+.legal-page .notice { padding: 1rem 1.2rem; background: #eff5f1; border-left: 4px solid #237650; }
+.legal-page .updated { color: #52665c; }
+.legal-page :focus-visible, .public-policies :focus-visible { outline: 3px solid #9b671a; outline-offset: 4px; }
+.public-policies { background: #f2f7f5; color: #304b3e; border-top: 1px solid #dce6df; padding: 1.5rem max(1.25rem, calc((100vw - 850px) / 2)); font: 14px/1.6 system-ui, sans-serif; }
+.public-policies p { margin: 0 0 .7rem; }
+.public-policies nav { display: flex; flex-wrap: wrap; gap: .75rem 1.5rem; }
+@media (max-width: 600px) { .legal-page main { margin: 1rem .6rem; padding: 1.25rem; } }

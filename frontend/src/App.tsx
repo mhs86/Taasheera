@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { restoreSession, signIn, signInWithGoogle, signOut, type Traveler } from './auth'
+import { GoogleLinkRequiredError, restoreSession, signIn, signInWithGoogle, signOut, type Traveler } from './auth'
+import GoogleAccountLink from './GoogleAccountLink'
 import GoogleSignIn from './GoogleSignIn'
 import { disableGoogleAutoSelect } from './googleIdentity'
 import './App.css'
@@ -10,6 +11,8 @@ import ConnectGoogle from './ConnectGoogle'
 import ChangePassword from './ChangePassword'
 import ProfileForm from './ProfileForm'
 import Sessions from './Sessions'
+import DocumentHistory from './DocumentHistory'
+import DeleteAccount from './DeleteAccount'
 import { readNavigation, type Navigation } from './navigation'
 
 const pageTitles = {
@@ -93,9 +96,17 @@ function App({ initialNavigation, accountPage = false, googleClientId = import.m
               onConnected={setTraveler} />
             {traveler.password_enabled === true && <ChangePassword />}
             <Sessions />
+            <DocumentHistory />
+            <DeleteAccount traveler={traveler} clientId={googleClientId} onDeleted={complete => {
+              setTraveler(null)
+              setRegistrationMessage(complete ? 'Your account and data have been deleted.' : 'Your account is disabled. Data erasure is queued for retry.')
+              setRoute(previous => ({ ...previous, page: 'sign-in', version: previous.version + 1 }))
+            }} />
           </> : <>
             <p className="intro">You are signed in.</p>
             <a href="/account" className="account-link">Edit your account details</a>
+            <a href="/apply" className="account-link">Your applications</a>
+            <a href="/backoffice" className="account-link">Staff dashboard</a>
             <a href="/passport" className="primary-button passport-link">Upload your passport</a>
           </>}
           <button className="primary-button" data-activity-id="logout-button" disabled={loggingOut} onClick={async () => {
@@ -142,6 +153,7 @@ function SignIn({ onSignedIn, googleClientId, initialMessage, googleConfiguratio
 }) {
   const [message, setMessage] = useState(initialMessage)
   const [submitting, setSubmitting] = useState(false)
+  const [linkCredential, setLinkCredential] = useState<string | null>(null)
   const inProgress = useRef(false)
   const mounted = useRef(false)
   useEffect(() => {
@@ -157,6 +169,11 @@ function SignIn({ onSignedIn, googleClientId, initialMessage, googleConfiguratio
       const profile = await signInWithGoogle(credential)
       if (mounted.current) onSignedIn(profile)
     } catch (error) {
+      if (mounted.current && error instanceof GoogleLinkRequiredError) {
+        setLinkCredential(credential)
+        setMessage('')
+        return
+      }
       if (mounted.current) setMessage(error instanceof Error && error.name === 'Error'
         ? error.message : 'Could not complete Google sign-in. Please try again.')
     } finally {
@@ -164,6 +181,10 @@ function SignIn({ onSignedIn, googleClientId, initialMessage, googleConfiguratio
       if (mounted.current) setSubmitting(false)
     }
   }, [onSignedIn])
+
+  if (linkCredential) return <GoogleAccountLink credential={linkCredential}
+    onSignedIn={traveler => { setLinkCredential(null); onSignedIn(traveler) }}
+    onCancel={() => { setLinkCredential(null); setMessage('') }} />
 
   return (
     <section className="sign-in-card" aria-labelledby="sign-in-heading">
