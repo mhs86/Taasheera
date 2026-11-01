@@ -11,6 +11,7 @@ import Passport from './pages/Passport'
 import Apply from './pages/Apply'
 import NotFound from './pages/NotFound'
 import ServerError from './pages/ServerError'
+import AdminDashboard from './pages/AdminDashboard'
 
 // The root errorElement catches a crash in the layout itself; the pathless
 // child catches page crashes so the header and footer stay on screen.
@@ -47,5 +48,6 @@ export const routes: RouteObject[] = [
   },
   { path: 'sign-in', loader: () => readNavigation(window), element: <AuthRoute /> },
   { path: 'account', loader: () => readNavigation(window), element: <AuthRoute accountPage /> },
+  { path: 'backoffice', element: <AdminDashboard />, errorElement: <ServerError standalone /> },
   { path: 'reset-password', loader: () => readNavigation(window), element: <AuthRoute /> },
 ]
