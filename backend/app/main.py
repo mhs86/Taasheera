@@ -146,7 +146,7 @@ def create_app(database_url: str | None = None, *, reset_sender: ResetSender | N
             return application_context(session, traveler_id, application_id)
 
     app.include_router(create_assistant_router(
-        current_traveler_id, passport_storage.latest_review, assistant_ask,
+        get_session, current_traveler_id, passport_storage.latest_review, assistant_ask,
         record_event=record_assistant_activity, load_application=load_application_context,
     ))
 

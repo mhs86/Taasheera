@@ -1,3 +1,5 @@
+import hashlib
+import hmac
 from datetime import date
 from types import SimpleNamespace
 from typing import Annotated
@@ -7,13 +9,19 @@ import pytest
 from fastapi import FastAPI, Header
 from fastapi.testclient import TestClient
 from google.genai import errors as genai_errors
+from sqlmodel import Session, SQLModel, create_engine, select
 
 from app.assistant import (
-    AssistantUnavailable, RateLimiter, build_system_prompt, create_assistant_router, gemini_ask,
+    AssistantUnavailable, build_system_prompt, create_assistant_router, gemini_ask,
 )
+from app.config import AuthSettings
+from app.models import ResetRateLimit, Traveler
 from app.passport.storage import PassportImageStorage
+from app.privacy import erase_account
 
 TODAY = date(2026, 10, 5)
+SECRET = "assistant-test-secret-not-for-production"
+LIMITED = {"detail": "You're sending messages quickly. Wait a minute and try again."}
 # ICAO 9303 specimen passport ("Utopia"). Never use real passport data in tests.
 SPECIMEN = {
     "surname": "ERIKSSON", "given_names": "ANNA MARIA", "document_number": "L898902C3",
@@ -39,10 +47,21 @@ class FakeModel:
         return self.reply
 
 
-def make_client(tmp_path, ask, **options):
+def make_client(tmp_path, ask, *, trust_proxy=False, db_name="assistant.db", **options):
+    """The router needs the shared database limiter: an engine, a session dependency and
+    the auth settings the limiter reads from app.state. Reusing db_name reuses the database."""
+    engine = create_engine(f"sqlite:///{tmp_path / db_name}", connect_args={"check_same_thread": False})
+    SQLModel.metadata.create_all(engine)
+
+    def get_session():
+        with Session(engine) as session:
+            yield session
+
     storage = PassportImageStorage(tmp_path)
     app = FastAPI()
-    app.include_router(create_assistant_router(fake_traveler_id, storage.latest_review, ask,
+    app.state.auth_settings = AuthSettings(jwt_secret=SECRET, trust_cloudfront_proxy=trust_proxy)
+    app.state.engine = engine
+    app.include_router(create_assistant_router(get_session, fake_traveler_id, storage.latest_review, ask,
                                                today=lambda: TODAY, **options))
     return TestClient(app), storage
 
@@ -52,9 +71,21 @@ def confirm_passport(storage, traveler_id, fields=SPECIMEN):
     storage.save_review(traveler_id, upload_id, fields)
 
 
-def ask_question(client, traveler=1, message="When does my passport expire?", **body):
-    return client.post("/assistant/messages", headers={"X-Traveler": str(traveler)},
+def ask_question(client, traveler=1, message="When does my passport expire?", ip=None, **body):
+    headers = {"X-Traveler": str(traveler)}
+    if ip is not None:
+        headers["X-Taasheera-Client-IP"] = ip
+    return client.post("/assistant/messages", headers=headers,
                        json={"message": message, "step": "passport_review", **body})
+
+
+def limit_keys(client):
+    with Session(client.app.state.engine) as session:
+        return {row.key for row in session.exec(select(ResetRateLimit)).all()}
+
+
+def digest(value):
+    return hmac.new(SECRET.encode(), value.encode(), hashlib.sha256).hexdigest()
 
 
 # --- The system prompt -------------------------------------------------------
@@ -178,20 +209,89 @@ def test_model_failure_becomes_a_friendly_503_and_is_recorded(tmp_path):
     assert events == [(1, "assistant_message", "unavailable")]
 
 
-def test_rate_limit_is_per_traveler(tmp_path):
-    client, _ = make_client(tmp_path, FakeModel(), limiter=RateLimiter(limit=2, window_seconds=60))
+def test_twenty_messages_are_allowed_then_429_with_the_same_message_and_no_retry_after(tmp_path):
+    client, _ = make_client(tmp_path, FakeModel())
 
-    assert [ask_question(client).status_code for _ in range(3)] == [200, 200, 429]
+    statuses = [ask_question(client).status_code for _ in range(20)]
+    limited = ask_question(client)
+
+    assert statuses == [200] * 20
+    assert limited.status_code == 429
+    assert limited.json() == LIMITED
+    assert "retry-after" not in limited.headers
+
+
+def test_rate_limit_is_per_traveler(tmp_path):
+    client, _ = make_client(tmp_path, FakeModel())
+
+    assert [ask_question(client).status_code for _ in range(21)] == [200] * 20 + [429]
     assert ask_question(client, traveler=2).status_code == 200
 
 
-def test_rate_limit_window_slides():
-    now = [0.0]
-    limiter = RateLimiter(limit=1, window_seconds=60, clock=lambda: now[0])
+def test_rate_limit_is_per_ip(tmp_path):
+    client, _ = make_client(tmp_path, FakeModel(), trust_proxy=True)
 
-    assert limiter.allow(1) and not limiter.allow(1)
-    now[0] = 60
-    assert limiter.allow(1)
+    # Three travelers at 20 each exhaust the 60-per-IP budget without any one hitting 20 + 1.
+    for traveler in (1, 2, 3):
+        assert [ask_question(client, traveler=traveler, ip="203.0.113.9").status_code
+                for _ in range(20)] == [200] * 20
+    limited = ask_question(client, traveler=4, ip="203.0.113.9")
+
+    assert limited.status_code == 429 and limited.json() == LIMITED
+    assert ask_question(client, traveler=4, ip="203.0.113.10").status_code == 200
+
+
+def test_rate_limit_resets_after_the_ten_minute_window(tmp_path, monkeypatch):
+    now = [1000.0]
+    monkeypatch.setattr("app.security.time", SimpleNamespace(time=lambda: now[0]))
+    client, _ = make_client(tmp_path, FakeModel())
+
+    assert [ask_question(client).status_code for _ in range(21)] == [200] * 20 + [429]
+    now[0] = 1599
+    assert ask_question(client).status_code == 429
+    now[0] = 1600
+    assert ask_question(client).status_code == 200
+
+
+def test_rate_limit_survives_a_new_app_instance(tmp_path):
+    first, _ = make_client(tmp_path, FakeModel())
+    assert [ask_question(first).status_code for _ in range(20)] == [200] * 20
+
+    second, _ = make_client(tmp_path, FakeModel())
+
+    assert ask_question(second).status_code == 429
+
+
+def test_rate_limit_rows_hold_only_keyed_digests_of_the_traveler_and_ip(tmp_path):
+    client, _ = make_client(tmp_path, FakeModel(), trust_proxy=True)
+
+    ask_question(client, traveler=7, ip="203.0.113.9")
+
+    assert limit_keys(client) == {f"assistant-account:{digest('7')}", f"assistant-ip:{digest('203.0.113.9')}"}
+
+
+def test_unconfigured_assistant_does_not_consume_quota(tmp_path):
+    client, _ = make_client(tmp_path, ask=None)
+
+    assert [ask_question(client).status_code for _ in range(25)] == [503] * 25
+    assert limit_keys(client) == set()
+
+
+def test_erasing_an_account_removes_its_assistant_limit_row_only(tmp_path):
+    client, storage = make_client(tmp_path, FakeModel())
+    with Session(client.app.state.engine) as session:
+        session.add(Traveler(id=5, name="Specimen", email="specimen@example.com", password_hash="hash"))
+        session.commit()
+    ask_question(client, traveler=5)
+    ask_question(client, traveler=6)
+    assert {f"assistant-account:{digest('5')}", f"assistant-account:{digest('6')}"} <= limit_keys(client)
+
+    with Session(client.app.state.engine) as session:
+        assert erase_account(session, session.get(Traveler, 5), storage, tmp_path / "activity", SECRET)
+
+    keys = limit_keys(client)
+    assert f"assistant-account:{digest('5')}" not in keys
+    assert f"assistant-account:{digest('6')}" in keys
 
 
 # --- The Gemini adapter ------------------------------------------------------
