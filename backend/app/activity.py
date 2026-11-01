@@ -38,7 +38,7 @@ Control = Literal[
     "application-start", "application-resume", "application-answer", "application-change",
     "application-cancel-change", "application-passport-upload", "application-passport-manual",
     "application-return", "application-ask", "application-new", "applications-toggle",
-    "start-application-link", "application-use-suggestion", "application-change-suggestion",
+    "start-application-link", "application-use-suggestion", "application-change-suggestion", "application-check",
 ]
 
 

@@ -543,3 +543,15 @@ a.button {
 .suggestion-ask {
   color: var(--fg-muted);
 }
+
+/* Completeness check (US 13) */
+.completeness { margin-top: 1.5rem; padding: 1rem 1.25rem; border: 1px solid var(--border); background: var(--card); border-radius: 12px; }
+.completeness-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+.completeness-head h2 { font-size: 1.05rem; margin: 0; }
+.completeness-ok { color: var(--ok); }
+.completeness-bad { color: var(--danger); }
+.completeness-issues { list-style: none; padding: 0; margin: .5rem 0 0; display: grid; gap: .4rem; }
+.completeness-issue { line-height: 1.4; }
+.completeness-tag { display: inline-block; font-size: .75rem; font-weight: 600; padding: .1rem .45rem; border-radius: 999px; margin-right: .35rem; }
+.is-blocking .completeness-tag { background: var(--danger-bg); color: var(--danger); }
+.is-warning .completeness-tag { background: var(--warn-bg); color: var(--warn); }

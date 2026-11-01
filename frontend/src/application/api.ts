@@ -122,3 +122,19 @@ export async function saveAnswer(id: string, questionId: string, answer: AnswerI
   if (!response.ok) throw new Error('Could not save your answer. Please try again.')
   return response.json()
 }
+
+// The completeness check (US 13). Mirrors backend/app/applications/completeness.py.
+export type CheckIssue = {
+  kind: 'missing' | 'ineligible' | 'inconsistent'
+  severity: 'blocking' | 'warning'
+  message: string
+  question_id: string | null
+  step_id: string | null
+}
+export type CheckReport = { ready: boolean; answered: number; total: number; issues: CheckIssue[] }
+
+export async function checkApplication(id: string): Promise<CheckReport> {
+  const response = await protectedFetch(`/applications/${id}/check`, { cache: 'no-store' })
+  if (!response.ok) throw new Error('Could not check your application. Please try again.')
+  return response.json()
+}

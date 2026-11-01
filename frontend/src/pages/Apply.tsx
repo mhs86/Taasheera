@@ -4,6 +4,7 @@ import { restoreSession, type Traveler } from '../auth'
 import { askAssistant, type ChatTurn } from '../assistant/api'
 import AnswerInput from '../application/AnswerInput'
 import ApplicationsSidebar from '../application/ApplicationsSidebar'
+import CompletenessCheck from '../application/CompletenessCheck'
 import StartChat from '../application/StartChat'
 import SuggestedAnswer from '../application/SuggestedAnswer'
 import {
@@ -253,6 +254,8 @@ function ApplicationChat({ applicationId, onChange }: ChatProps) {
         Next we'll check your documents against these answers.
       </li>}
     </ol>
+
+    {!application.stopped && <CompletenessCheck key={application.updated_at} applicationId={applicationId} />}
 
     <form className="chat-ask" onSubmit={ask}>
       <label htmlFor="chat-ask-input">Not sure about something? Ask the assistant. Your place in the questions is kept.</label>
