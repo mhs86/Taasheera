@@ -244,6 +244,10 @@ What we decided, why, and what we rejected. Newest at the bottom. Add an entry w
     only if it passes the question's rules, and recomputes it when the traveler confirms (`use_suggestion`), so
     the browser can't claim a source. Editing changes only the application. Passport reviews are now saved as
     `ConfirmedPassportFields` (profile code and birth-date rules); OCR output keeps the looser `PassportFields`.
+27. **Completeness check (US 13).** `applications/completeness.py` is pure, like the flow engine: after `reconcile`,
+    unanswered visible questions and a `stop_if` answer are blocking; a passport answer that differs from the
+    traveler's latest confirmed passport or profile is a warning (answers are copies, so the traveler decides).
+    `GET /applications/{id}/check` returns it; the assistant gets the same report as text. Fix links are US 14.
 27. **Admin dashboard (US 132).** Pages at `/admin` (`frontend/src/admin/`) call the API as `/admin-api/*`, which
     Vite, nginx and Netlify rewrite to `/admin/*`, so page loads never hit the API. The layout asks `/admin/me`
     first: signed-out visitors go to sign-in, everyone else refused goes home with a notice. This only hides pages;

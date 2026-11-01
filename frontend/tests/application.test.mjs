@@ -458,3 +458,39 @@ test('a completed application says so', async () => {
   assert.match($('.bubble-done').textContent, /That's every question for now/)
   assert.match(text(), /All questions answered/)
 })
+
+// --- Completeness check (US 13) -----------------------------------------------
+
+test('the completeness check shows what blocks submission and what to look at', async () => {
+  handlers = signedIn({
+    [`GET /applications/${APP}`]: () => json(state([[PURPOSE, 'tourism']], LONG_STAY)),
+    [`GET /applications/${APP}/check`]: () => json({ ready: false, answered: 1, total: 4, issues: [
+      { kind: 'missing', severity: 'blocking', message: 'Not answered yet: Will you stay more than 90 days?',
+        question_id: 'stay_over_90_days', step_id: 'eligibility' },
+      { kind: 'inconsistent', severity: 'warning', message: "The surname on your passport doesn't match your profile.",
+        question_id: 'passport', step_id: 'passport' },
+    ] }),
+  })
+  await render(`/apply/${APP}`)
+  assert.ok(!text().includes('Must fix'))
+  await click(button('Check my application'))
+  assert.match(text(), /1 thing needs fixing before you can submit/)
+  assert.match(text(), /Must fix Not answered yet: Will you stay more than 90 days\?/)
+  assert.match(text(), /Check The surname on your passport/)
+  assert.ok(button('Check again'))
+})
+
+test('a ready application says so, and a failed check is reported', async () => {
+  let fail = false
+  handlers = signedIn({
+    [`GET /applications/${APP}`]: () => json(state([[PURPOSE, 'tourism']], null)),
+    [`GET /applications/${APP}/check`]: () => fail ? json({ detail: 'no' }, 500) : json({ ready: true, answered: 4, total: 4, issues: [] }),
+  })
+  await render(`/apply/${APP}`)
+  await click(button('Check my application'))
+  assert.match(text(), /Nothing is missing\. Your answers are ready for review\./)
+  fail = true
+  await click(button('Check again'))
+  assert.ok($('.completeness [role="alert"]'))
+  assert.ok(!text().includes('Nothing is missing'))
+})

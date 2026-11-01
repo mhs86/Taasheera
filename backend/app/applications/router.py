@@ -18,7 +18,7 @@ from sqlmodel import Session, select
 
 from ..models import Application, ApplicationAnswer, Traveler, TravelerProfile
 from ..profile import ProfileFields
-from . import flow
+from . import completeness, flow
 
 Status = Literal["DRAFT", "INELIGIBLE", "ANSWERS_COMPLETE"]
 
@@ -149,6 +149,11 @@ def _status(questionnaire: flow.Questionnaire, answers: flow.Answers) -> Status:
     return "DRAFT" if flow.next_question(questionnaire, answers) else "ANSWERS_COMPLETE"
 
 
+def saved_profile(session: Session, traveler_id: int) -> dict | None:
+    stored = session.get(TravelerProfile, traveler_id)
+    return ProfileFields.model_validate(stored, from_attributes=True).model_dump(mode="json") if stored else None
+
+
 def application_context(session: Session, traveler_id: int, application_id: str) -> str | None:
     """The assistant's view of one application, or None if it isn't this traveler's."""
     application = session.get(Application, application_id)
@@ -212,8 +217,7 @@ def create_applications_router(
         if question.prefill is None:
             return None
         passport = load_latest_passport(traveler.id) if question.prefill == "passport" else None
-        stored = session.get(TravelerProfile, traveler.id) if question.prefill.startswith("profile.") else None
-        profile = ProfileFields.model_validate(stored, from_attributes=True).model_dump(mode="json") if stored else None
+        profile = saved_profile(session, traveler.id) if question.prefill.startswith("profile.") else None
         found = flow.prefill_value(question, passport, profile)
         if found is None:
             return None
@@ -296,6 +300,16 @@ def create_applications_router(
         answers, cleared = save(session, application, rows, questionnaire)
         response.headers["Cache-Control"] = "private, no-store"
         return state(session, traveler, application, questionnaire, answers, rows, cleared)
+
+    @router.get("/{application_id}/check", response_model=completeness.Report)
+    def check(application_id: str, traveler: TravelerDep, session: SessionDep, response: Response):
+        """The completeness check (US 13): what is missing or inconsistent before submission."""
+        application = owned(session, traveler, application_id)
+        questionnaire = flow.load_questionnaire(application.questionnaire_id)
+        answers, _ = save(session, application, stored_answers(session, application), questionnaire)
+        response.headers["Cache-Control"] = "private, no-store"
+        return completeness.check(questionnaire, answers, today(), latest_passport=load_latest_passport(traveler.id),
+                                  profile=saved_profile(session, traveler.id))
 
     @router.put("/{application_id}/answers/{question_id}", response_model=ApplicationState,
                 dependencies=[Depends(check_origin)])
