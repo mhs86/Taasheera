@@ -83,6 +83,7 @@ const signedIn = extra => ({
   'GET /auth/me': () => json({ id: 1, name: 'Anna', email: 'anna@example.com' }),
   'POST /activity/events': () => new Response(null, { status: 204 }),
   'GET /applications': () => json([]),
+  [`GET /assistant/history?application_id=${APP}`]: () => json([]),
   ...extra,
 })
 const bodyOf = key => JSON.parse(calls.filter(call => call.key === key).at(-1).body)
@@ -554,3 +555,17 @@ function afterEachCleanup() {
   container?.remove()
   root = container = undefined
 }
+
+// --- Chat history (US 111) ------------------------------------------------------
+
+test('the conversation from an earlier visit reloads', async () => {
+  handlers = signedIn({
+    [`GET /applications/${APP}`]: () => json(state([[PURPOSE, 'tourism']], LONG_STAY)),
+    [`GET /assistant/history?application_id=${APP}`]: () => json([
+      { role: 'user', content: 'Does the arrival day count?' }, { role: 'assistant', content: 'Yes, it counts.' }]),
+  })
+  await render(`/apply/${APP}`)
+  const log = $('.chat-log').textContent
+  assert.match(log, /You askedDoes the arrival day count\?AssistantYes, it counts\./)
+  assert.ok(log.indexOf('Yes, it counts.') < log.indexOf('Will you stay more than 90 days?'))
+})

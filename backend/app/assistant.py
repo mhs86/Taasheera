@@ -23,8 +23,9 @@ request. The applications package checks it with the same rules as a typed
 answer and returns a proposal; the page shows it and only the traveler's click
 saves it, through the normal answer endpoint. The flow engine stays in charge.
 
-Still deliberately small: no memory between visits yet (US 111), no sourced
-policy answers.
+Chat history (US 111, `chat_history.py`) is kept by the server per traveler and
+application; earlier turns sent to the model come from it, not from the browser.
+Still no sourced policy answers.
 """
 
 import logging
@@ -258,6 +259,8 @@ def create_assistant_router(
     ask_tools: AskTools | None = None,
     propose: Callable[[int, str, str, dict], Proposal | None] | None = None,
     tools_prompt: str | None = None,
+    load_history: Callable[[int, str | None], list[dict]] | None = None,
+    save_turn: Callable[[int, str | None, str, str], None] | None = None,
     record_event=None,
     limiter: RateLimiter | None = None,
     today: Callable[[], date] = date.today,
@@ -283,7 +286,10 @@ def create_assistant_router(
             if application is None:
                 raise HTTPException(status_code=404, detail="Application not found.")
         passport = load_passport(traveler_id)
-        history = [turn.model_dump() for turn in data.history]
+        # With a history store (US 111) the server supplies the earlier turns itself, so the browser
+        # can't put words in the assistant's mouth; the history it sends is then ignored.
+        history = (load_history(traveler_id, data.application_id)[-MAX_HISTORY_TURNS:] if load_history
+                   else [turn.model_dump() for turn in data.history])
         # A conversation sent to the model starts with the traveler, not the assistant.
         while history and history[0]["role"] == "assistant":
             history.pop(0)
@@ -308,6 +314,8 @@ def create_assistant_router(
             record(traveler_id, "unavailable")
             raise HTTPException(status_code=503,
                                 detail="The assistant couldn't answer right now. Please try again in a moment.") from None
+        if save_turn:
+            save_turn(traveler_id, data.application_id, data.message, reply)
         record(traveler_id, "proposal" if proposal else "success")
         return AssistantReply(reply=reply, used_passport=passport is not None, proposal=proposal)
 

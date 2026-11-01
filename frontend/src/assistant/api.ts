@@ -49,3 +49,11 @@ export async function askAssistant(message: string, step: AssistantStep, history
   }
   return await response.json() as AssistantReply
 }
+
+// Earlier turns kept by the server (US 111), oldest first. Per application, or outside one when omitted.
+export async function getHistory(applicationId?: string): Promise<ChatTurn[]> {
+  const query = applicationId ? `?application_id=${applicationId}` : ''
+  const response = await protectedFetch(`/assistant/history${query}`, { cache: 'no-store', silent: true })
+  if (!response.ok) return []
+  return await response.json() as ChatTurn[]
+}

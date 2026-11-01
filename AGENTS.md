@@ -256,6 +256,10 @@ What we decided, why, and what we rejected. Newest at the bottom. Add an entry w
     `PUT /applications/{id}/answers/{q}`, which checks it again. Multi-part answers (passport, address) stay in the
     chat. *Rejected: letting the model write answers directly (not auditable, skips confirmation), and a second
     model call to phrase the result (cost and latency for no new information).*
+29. **Assistant chat history (US 111).** `assistantmessage` keeps each question and its answer (saved together, only
+    after a successful reply) per traveler and application (null outside one). `GET/DELETE /assistant/history` are
+    owner-scoped. When the store is wired, the server sends the model the stored last turns and ignores the
+    browser's `history`, so a client can't plant a fake assistant turn. Account erasure must delete these rows too.
 27. **Admin dashboard (US 132).** Pages at `/admin` (`frontend/src/admin/`) call the API as `/admin-api/*`, which
     Vite, nginx and Netlify rewrite to `/admin/*`, so page loads never hit the API. The layout asks `/admin/me`
     first: signed-out visitors go to sign-in, everyone else refused goes home with a notice. This only hides pages;

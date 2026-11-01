@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router'
 import { restoreSession, type Traveler } from '../auth'
-import { askAssistant, type ChatTurn, type Proposal } from '../assistant/api'
+import { askAssistant, getHistory, type ChatTurn, type Proposal } from '../assistant/api'
 import ProposalCard from '../assistant/ProposalCard'
 import AnswerInput from '../application/AnswerInput'
 import ApplicationsSidebar from '../application/ApplicationsSidebar'
@@ -117,7 +117,14 @@ function ApplicationChat({ applicationId, onChange }: ChatProps) {
       }
       if (!active) return
       setApplication(state)
-      if (state) onChange(state)
+      if (state) {
+        onChange(state)
+        // The conversation from earlier visits (US 111) picks up where the traveler is now.
+        const at = state.answers.length
+        getHistory(applicationId).then(turns => {
+          if (active && turns.length) setAsides(current => [...turns.map(turn => ({ ...turn, at })), ...current])
+        }).catch(() => { /* No history is just a fresh chat. */ })
+      }
       if (upload) navigate(location.pathname, { replace: true })
     }).catch(error => {
       if (active) setMessage(error instanceof Error ? error.message : 'Could not load your application.')
