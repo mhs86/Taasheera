@@ -8,9 +8,12 @@ from fastapi import FastAPI, Header
 from fastapi.testclient import TestClient
 from google.genai import errors as genai_errors
 
+from app.applications.actions import Proposal
+from app.applications.flow import InvalidAnswer
 from app.assistant import (
-    AssistantUnavailable, RateLimiter, build_system_prompt, create_assistant_router, gemini_ask,
+    AssistantUnavailable, ModelTurn, RateLimiter, build_system_prompt, create_assistant_router, gemini_ask,
 )
+from app.assistant_tools import TOOLS, TOOLS_PROMPT, gemini_ask_tools
 from app.passport.storage import PassportImageStorage
 
 TODAY = date(2026, 10, 5)
@@ -94,7 +97,8 @@ def test_answers_using_the_travelers_confirmed_passport(tmp_path):
     response = ask_question(client)
 
     assert response.status_code == 200
-    assert response.json() == {"reply": "Your passport expires on 15 April 2028.", "used_passport": True}
+    assert response.json() == {"reply": "Your passport expires on 15 April 2028.", "used_passport": True,
+                               "proposal": None}
     system, messages = model.calls[0]
     assert "Expiry date: 2028-04-15" in system
     assert messages == [{"role": "user", "content": "When does my passport expire?"}]
@@ -319,3 +323,89 @@ def test_main_app_assistant_requires_sign_in_and_a_configured_key(tmp_path, monk
 
         # conftest removes GEMINI_API_KEY, so the assistant is switched off, not crashing.
         assert response.status_code == 503
+
+
+# --- Actions on request (US 110) ----------------------------------------------
+
+CHANGE = Proposal(action="change_answer", question_id="departure_date", question="And when will you leave?",
+                  value="2027-01-24", display="2027-01-24", current_display="2027-01-20")
+
+
+class FakeToolModel:
+    def __init__(self, turn):
+        self.turn, self.calls = turn, []
+
+    def __call__(self, system, messages):
+        self.calls.append((system, messages))
+        return self.turn
+
+
+def tool_client(tmp_path, turn, propose):
+    model = FakeToolModel(turn)
+    client, _ = make_client(tmp_path, FakeModel(), load_application=lambda *_: APPLICATION, ask_tools=model,
+                            propose=propose, tools_prompt=TOOLS_PROMPT)
+    return client, model
+
+
+def ask_in_application(client, message="Change my departure to the 24th"):
+    return ask_question(client, traveler=3, message=message, step="application", application_id="c" * 32)
+
+
+def test_a_tool_call_comes_back_as_a_proposal_to_confirm_not_a_saved_change(tmp_path):
+    seen = []
+
+    def propose(*call):
+        seen.append(call)
+        return CHANGE
+
+    client, model = tool_client(tmp_path, ModelTurn("", ("change_answer", {"question_id": "departure_date",
+                                                                           "value": "2027-01-24"})), propose)
+    body = ask_in_application(client).json()
+    assert seen == [(3, "c" * 32, "change_answer", {"question_id": "departure_date", "value": "2027-01-24"})]
+    assert body["proposal"]["action"] == "change_answer" and body["proposal"]["value"] == "2027-01-24"
+    assert body["reply"] == "Here's the change. Confirm it below to save it."
+    assert "confirm it below" in model.calls[0][0] and "never \"I've changed it\"" in model.calls[0][0]
+
+
+def test_a_proposal_that_breaks_a_rule_is_explained_instead(tmp_path):
+    def propose(*_):
+        raise InvalidAnswer("You can't leave before you arrive.")
+
+    client, _ = tool_client(tmp_path, ModelTurn("Sure.", ("change_answer", {"question_id": "x", "value": "y"})), propose)
+    body = ask_in_application(client).json()
+    assert body["proposal"] is None
+    assert body["reply"] == "Sure.\n\nI couldn't prepare that: You can't leave before you arrive."
+
+
+def test_plain_answers_still_work_with_tools_on(tmp_path):
+    client, _ = tool_client(tmp_path, ModelTurn("It's the day you arrive."), lambda *_: CHANGE)
+    assert ask_in_application(client, "What counts as arrival?").json() == {
+        "reply": "It's the day you arrive.", "used_passport": False, "proposal": None}
+
+
+def test_tools_are_never_offered_outside_an_application(tmp_path):
+    model = FakeModel()
+    tools = FakeToolModel(ModelTurn("", ("run_completeness_check", {})))
+    client, _ = make_client(tmp_path, model, ask_tools=tools, propose=lambda *_: CHANGE)
+    assert ask_question(client).json()["proposal"] is None and tools.calls == [] and len(model.calls) == 1
+
+
+def tool_reply(text=None, calls=None):
+    parts = [SimpleNamespace(text=text)] if text else []
+    return SimpleNamespace(function_calls=calls, prompt_feedback=SimpleNamespace(block_reason=None),
+                           candidates=[SimpleNamespace(finish_reason="STOP", content=SimpleNamespace(parts=parts))])
+
+
+def test_the_tools_adapter_declares_the_tools_and_returns_the_first_known_call():
+    calls = [SimpleNamespace(name="submit_application", args={}),
+             SimpleNamespace(name="go_to_question", args={"question_id": "phone"})]
+    fake = FakeGemini(tool_reply("Here it is.", calls))
+    turn = gemini_ask_tools(fake)("system", [{"role": "user", "content": "x"}])
+    assert turn == ModelTurn("Here it is.", ("go_to_question", {"question_id": "phone"}))
+    assert fake.requests[0]["config"]["tools"] == [{"function_declarations": TOOLS}]
+    assert "submit" not in str([tool["name"] for tool in TOOLS])
+
+
+def test_the_tools_adapter_reports_nothing_as_unavailable():
+    with pytest.raises(AssistantUnavailable):
+        gemini_ask_tools(FakeGemini(tool_reply()))("system", [{"role": "user", "content": "x"}])

@@ -15,10 +15,11 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlmodel import Session, SQLModel, select
 
 from .database import build_engine
-from .applications.router import application_context, create_applications_router
+from .applications.router import application_context, application_proposal, create_applications_router
 from .activity import activity_directory_from_environment, create_activity_router, record_activity
 from .admin_api import create_admin_router, install_admin_no_store
 from .assistant import DEFAULT_MODEL, create_assistant_router, gemini_ask
+from .assistant_tools import TOOLS_PROMPT, gemini_ask_tools
 from .auth import check_origin, create_auth_router, create_current_traveler
 from .sessions import create_sessions_router
 from .google_auth import create_google_auth_router
@@ -120,19 +121,28 @@ def create_app(database_url: str | None = None, *, reset_sender: ResetSender | N
 
     # Without a key the assistant answers 503 and the rest of the app works as normal.
     assistant_key = os.environ.get("GEMINI_API_KEY", "").strip()
-    assistant_ask = gemini_ask(
-        # 20 s per attempt, 2 attempts at most: the browser gives up after 45 s.
-        genai.Client(api_key=assistant_key, http_options={"timeout": 20_000, "retry_options": {"attempts": 2}}),
-        os.environ.get("ASSISTANT_MODEL", DEFAULT_MODEL),
+    # 20 s per attempt, 2 attempts at most: the browser gives up after 45 s.
+    assistant_client = genai.Client(
+        api_key=assistant_key, http_options={"timeout": 20_000, "retry_options": {"attempts": 2}},
     ) if assistant_key else None
+    assistant_model = os.environ.get("ASSISTANT_MODEL", DEFAULT_MODEL)
+    assistant_ask = gemini_ask(assistant_client, assistant_model) if assistant_client else None
+    assistant_ask_tools = gemini_ask_tools(assistant_client, assistant_model) if assistant_client else None
 
     def load_application_context(traveler_id: int, application_id: str) -> str | None:
         with Session(engine) as session:
-            return application_context(session, traveler_id, application_id)
+            return application_context(session, traveler_id, application_id,
+                                       latest_passport=passport_storage.latest_review(traveler_id))
+
+    def propose_action(traveler_id: int, application_id: str, name: str, args: dict):
+        with Session(engine) as session:
+            return application_proposal(session, traveler_id, application_id, name, args,
+                                        latest_passport=passport_storage.latest_review(traveler_id))
 
     app.include_router(create_assistant_router(
         current_traveler_id, passport_storage.latest_review, assistant_ask,
         record_event=record_assistant_activity, load_application=load_application_context,
+        ask_tools=assistant_ask_tools, propose=propose_action, tools_prompt=TOOLS_PROMPT,
     ))
 
     @app.exception_handler(RequestValidationError)
