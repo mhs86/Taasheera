@@ -126,6 +126,30 @@ Set repository variable `AWS_FULL_DEPLOY_ROLE_ARN` to the resulting role ARN
 branch and allows redeployment only to the tagged stack host. Run **Deploy dev to existing AWS host** manually after verifying remaining credits.
 It creates no infrastructure and preserves private local configuration.
 
+## Automatic deployment from main (CMPS271-190)
+
+`.github/workflows/deploy-main-aws.yml` deploys every `main` commit whose CI run passed, using
+the same `redeploy.sh` path with `TAASHEERA_PRESERVE_CONFIG=1` (the host's environment file is kept;
+only the code changes). It checks out the exact commit CI tested and shares a concurrency group
+with the dev workflow, so two deployments never overlap. One-time setup by the AWS account owner:
+
+1. In GitHub, create the `production` environment (Settings → Environments). Optionally add a
+   required reviewer, which turns each deployment into a one-click approval.
+2. From CloudShell, create a second role that trusts only that environment:
+
+   ```bash
+   aws cloudformation deploy --stack-name taasheera-github-main-role \
+     --template-file deploy/aws/github-role.yaml --capabilities CAPABILITY_IAM \
+     --parameter-overrides CreateOidcProvider=false TrustedSubject=repo:mhs86/Taasheera:environment:production
+   aws cloudformation describe-stacks --stack-name taasheera-github-main-role \
+     --query 'Stacks[0].Outputs' --output table
+   ```
+
+3. Set repository variable `AWS_MAIN_DEPLOY_ROLE_ARN` to that role ARN.
+
+Until step 3 the workflow stops with a message and changes nothing. Images are still built on the
+host; building them in Actions and pulling from ECR is the next step if host builds stay slow.
+
 ## External features and checks
 
 Google SSO and email OTP recovery use the configuration described in
