@@ -1,0 +1,47 @@
+name: Deploy main to AWS
+# Merging to main reaches the live site (CMPS271-190): once CI passes on a main commit, that exact
+# commit is redeployed to the existing EC2 host. GitHub signs in to AWS with OIDC, so no AWS keys
+# are stored here. Nothing runs for other branches, failed CI runs or pull requests.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  # Shared with the manual dev workflow: two deployments never touch the host at once.
+  group: taasheera-existing-aws-host
+  cancel-in-progress: false
+jobs:
+  deploy:
+    if: >-
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success'
+       && github.event.workflow_run.event == 'push')
+      || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    environment: production
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # The commit CI tested, not whatever main points at by now.
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+      - name: Require configured deployment role
+        env:
+          DEPLOY_ROLE: ${{ vars.AWS_MAIN_DEPLOY_ROLE_ARN }}
+        run: test -n "$DEPLOY_ROLE" || { echo "Set the AWS_MAIN_DEPLOY_ROLE_ARN repository variable (deploy/aws/README.md)."; exit 1; }
+      - uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: ${{ vars.AWS_MAIN_DEPLOY_ROLE_ARN }}
+          aws-region: us-east-1
+          allowed-account-ids: '632630731308'
+      - name: Deploy the tested main commit
+        env:
+          # Keep the host's existing environment file (secrets, Google client, mail); only the code changes.
+          TAASHEERA_PRESERVE_CONFIG: '1'
+        run: bash deploy/aws/redeploy.sh
+      - name: Report the deployed commit
+        run: printf 'Deployed %s to the live site.\n' "$(git rev-parse --short HEAD)" >> "$GITHUB_STEP_SUMMARY"
