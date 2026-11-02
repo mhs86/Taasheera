@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: GitHub OIDC role for manual dev redeployment to an existing Taasheera host.
+Description: GitHub OIDC role for redeploying an existing Taasheera host (manual dev, automatic main).
 Parameters:
   AppStackName:
     Type: String
@@ -9,6 +9,15 @@ Parameters:
     Default: 'true'
     AllowedValues: ['true', 'false']
     Description: Set false if token.actions.githubusercontent.com already exists in IAM.
+  TrustedSubject:
+    Type: String
+    Default: repo:mhs86/Taasheera:ref:refs/heads/dev
+    AllowedValues:
+      - repo:mhs86/Taasheera:ref:refs/heads/dev
+      - repo:mhs86/Taasheera:environment:production
+    Description: >-
+      Who may assume the role. Deploy this template once per value: the dev role for the manual
+      dev workflow, the production-environment role for deploy-main-aws.yml.
 Conditions:
   NewProvider: !Equals [!Ref CreateOidcProvider, 'true']
 Resources:
@@ -31,7 +40,7 @@ Resources:
             Condition:
               StringEquals:
                 token.actions.githubusercontent.com:aud: sts.amazonaws.com
-                token.actions.githubusercontent.com:sub: repo:mhs86/Taasheera:ref:refs/heads/dev
+                token.actions.githubusercontent.com:sub: !Ref TrustedSubject
       Policies:
         - PolicyName: RedeployExistingHost
           PolicyDocument:

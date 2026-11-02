@@ -34,7 +34,7 @@ jobs:
           curl --fail --location https://github.com/rhysd/actionlint/releases/download/v1.7.7/actionlint_1.7.7_linux_amd64.tar.gz -o actionlint.tar.gz
           printf '%s  actionlint.tar.gz\n' 023070a287cd8cccd71515fedc843f1985bf96c436b7effaecce67290e7e0757 | sha256sum -c -
           tar -xzf actionlint.tar.gz actionlint
-          ./actionlint "$GITHUB_WORKSPACE/.github/workflows/aws-config.yml" "$GITHUB_WORKSPACE/.github/workflows/deploy-dev-aws.yml"
+          ./actionlint "$GITHUB_WORKSPACE/.github/workflows/aws-config.yml" "$GITHUB_WORKSPACE/.github/workflows/deploy-dev-aws.yml" "$GITHUB_WORKSPACE/.github/workflows/deploy-main-aws.yml"
       - name: Generate the actual bootstrap configuration with SES
         run: |
           python - <<'PY'
