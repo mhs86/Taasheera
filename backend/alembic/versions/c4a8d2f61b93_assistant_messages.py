@@ -6,7 +6,7 @@ import sqlmodel
 
 
 revision = "c4a8d2f61b93"
-down_revision = "e9776504c5f8"
+down_revision = "a7c3e91d5b20"
 branch_labels = None
 depends_on = None
 
