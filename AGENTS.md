@@ -25,7 +25,7 @@ L2 portal to review; L3 traveler handles CAPTCHA; L4 manual guide. Status tracki
 
 ## Sprint 3 and workflow
 
-Sprint 3: **October 20–November 3, 2026**. Goal: working sign-in/recovery, an assistant with full
+Sprint 3: **October 30–November 13, 2026** (current Jira board; the PDF proposed earlier dates). Goal: working sign-in/recovery, an assistant with full
 application context and confirmed actions, persistent conversations, an applications dashboard,
 admin monitoring/deletion, and tested work on `main` reaching the live site.
 

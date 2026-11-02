@@ -64,14 +64,15 @@ interpreter in `TAASHEERA_TEST_PYTHON`; an installed browser can be selected wit
   role, private image repositories/host pull permissions, and `AWS_MAIN_DEPLOY_ROLE_ARN` as described in
   `deploy/aws/README.md`. No cloud resources or permissions were changed by this check.
 - After a tested main release, validate real HTTPS deployment and let Dani enable required checks.
-- Jira was not edited: the Atlassian integration needs a connection and browser access timed out.
-  Plan estimates/prepared status updates (these estimates were marked provisional in the plan):
+- Jira: all six tickets now belong to Sprint 3 (101), are In Progress with the `in-review` label,
+  and have the plan's points (27 total). The workflow has no In Review status. Sprint 3 on the live
+  board is October 30–November 13, replacing the proposal's dates. Points read-back was verified:
 
-  | Ticket | Story | Points | Prepared status |
+  | Ticket | Story | Points | Current status |
   |---|---|---:|---|
-  | CMPS271-48 | US 13 completeness | 5 | In Review |
-  | CMPS271-88 | US 47 assistant context | 3 | In Review |
-  | CMPS271-90 | US 110 assistant actions | 8 | In Review |
-  | CMPS271-93 | US 111 chat history | 3 | In Review |
-  | CMPS271-87 | US 23 assistant everywhere | 5 | In Review |
-  | CMPS271-190 | Main deployment | 3 | In Review; live acceptance awaits owner setup |
+  | CMPS271-48 | US 13 completeness | 5 | In Progress / in-review |
+  | CMPS271-88 | US 47 assistant context | 3 | In Progress / in-review |
+  | CMPS271-90 | US 110 assistant actions | 8 | In Progress / in-review |
+  | CMPS271-93 | US 111 chat history | 3 | In Progress / in-review |
+  | CMPS271-87 | US 23 assistant everywhere | 5 | In Progress / in-review |
+  | CMPS271-190 | Main deployment | 3 | In Progress / in-review; live acceptance awaits owner setup |
