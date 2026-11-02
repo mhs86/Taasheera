@@ -10,6 +10,9 @@ from alembic import command
 from fastapi.testclient import TestClient
 from sqlalchemy import inspect, make_url, text
 from sqlalchemy.exc import IntegrityError
+from alembic.autogenerate import compare_metadata
+from alembic.runtime.migration import MigrationContext
+from sqlmodel import SQLModel
 
 import manage
 import migrate
@@ -19,6 +22,18 @@ from app.schema import migration_config, schema_revision
 
 
 ROLE_PARENT_REVISION = "e6f81a73c902"  # The revision before roles; downgrading also removes the later application tables.
+
+
+@pytest.mark.skipif(not os.environ.get("TEST_POSTGRES_URL"), reason="needs disposable PostgreSQL")
+def test_migrated_postgres_schema_has_no_model_drift(monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", os.environ["TEST_POSTGRES_URL"])
+    migrate.upgrade()
+    engine = build_engine()
+    try:
+        with engine.connect() as connection:
+            assert compare_metadata(MigrationContext.configure(connection, opts={"compare_type": True}), SQLModel.metadata) == []
+    finally:
+        engine.dispose()
 
 
 @pytest.mark.skipif(not os.environ.get("TEST_POSTGRES_URL"), reason="needs disposable PostgreSQL")
@@ -278,3 +293,34 @@ def test_admin_user_management_on_postgres(monkeypatch):
                                        {"a": ids["first"], "b": ids["second"]})
     finally:
         engine.dispose()
+
+
+@pytest.mark.skipif(not os.environ.get('TEST_POSTGRES_URL'), reason='needs disposable PostgreSQL')
+def test_google_password_linking_and_email_admin_grant_on_postgres(monkeypatch):
+    import time
+    from unittest.mock import Mock
+    monkeypatch.setenv('DATABASE_URL', os.environ['TEST_POSTGRES_URL'])
+    monkeypatch.setenv('GOOGLE_CLIENT_ID', 'pg-test.apps.googleusercontent.com')
+    migrate.upgrade()
+    tag = uuid4().hex
+    email, other = f'pg-google-{tag}@example.com', f'pg-promote-{tag}@example.com'
+    password = 'Synthetic-password-123'
+    monkeypatch.setattr('app.google_auth.id_token.verify_oauth2_token', Mock(return_value={
+        'iss': 'https://accounts.google.com', 'aud': 'pg-test.apps.googleusercontent.com',
+        'exp': int(time.time()) + 3600, 'sub': f'pg-sub-{tag}', 'email': email,
+        'email_verified': True, 'name': 'Provider name'}))
+    with TestClient(create_app()) as client:
+        assert client.post('/auth/register', json={'name': 'PG admin', 'email': email, 'password': password}).status_code == 201
+        manage.set_role(email, 'admin')
+        assert client.post('/auth/google', json={'id_token': 'synthetic'}).status_code == 409
+        response = client.post('/auth/google/link-login', json={'id_token': 'synthetic', 'password': password})
+        assert response.status_code == 200
+        headers = {'Authorization': 'Bearer ' + response.json()['access_token']}
+        created = client.post('/auth/register', json={'name': 'PG member', 'email': other, 'password': password})
+        target_id = created.json()['id']
+        assert client.post('/admin/admins/lookup', json={'email': other.upper()}, headers=headers).json()['id'] == target_id
+        grant = client.post('/admin/admins', json={'email': other, 'expected_user_id': target_id}, headers=headers)
+        assert grant.status_code == 200 and grant.json()['role'] == 'admin'
+        # Reuse and rotate the Google-linked session through the normal refresh path.
+        assert client.post('/auth/refresh').status_code == 200
+        assert client.post('/auth/google', json={'id_token': 'synthetic'}).status_code == 200

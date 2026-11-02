@@ -319,3 +319,9 @@
 
   .profile-grid { grid-template-columns: 1fr; }
 }
+/* Privacy controls use the existing account form spacing and typography. */
+.danger-zone { border-top: 1px solid #d9a3a3; padding-top: 1.5rem; }
+.danger-button { background: #9c2b31; color: white; border: 0; border-radius: 8px; padding: .7rem 1rem; cursor: pointer; }
+.danger-button:disabled { opacity: .5; cursor: default; }
+.access-history { padding-left: 1.3rem; line-height: 1.6; }
+.access-history li { margin-bottom: 1rem; }

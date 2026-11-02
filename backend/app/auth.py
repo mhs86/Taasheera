@@ -14,6 +14,7 @@ from sqlalchemy import update
 from sqlmodel import Session, select
 
 from .config import AuthSettings
+from .account_lock import account_lock
 from .activity import record_activity
 from .models import AccessTokenPublic, AuthSession, ChangePasswordRequest, LoginRequest, RefreshToken, Traveler, TravelerPublic
 from .security import audit, throttle
@@ -160,8 +161,20 @@ def create_current_traveler(get_session):
                 algorithms=["HS256"], issuer=ISSUER, audience=AUDIENCE,
                 options={"require": ["sub", "sid", "type", "iat", "exp", "iss", "aud", "jti"]},
             )
-            if claims["type"] != "access" or not isinstance(claims["sid"], str):
+            if (
+                claims["type"] != "access" or not isinstance(claims["sid"], str) or not claims["sid"]
+                or not isinstance(claims["sub"], str) or not claims["sub"].isascii()
+                or not claims["sub"].isdigit() or not 0 < int(claims["sub"]) <= 2_147_483_647
+                or str(int(claims["sub"])) != claims["sub"]
+                or any(type(claims[key]) is not int for key in ("iat", "exp"))
+                or claims["exp"] <= claims["iat"]
+                or not isinstance(claims["jti"], str) or not claims["jti"]
+            ):
                 raise unauthorized
+        except (jwt.InvalidTokenError, ValueError, TypeError, OverflowError):
+            raise unauthorized from None
+
+        with account_lock(request.app.state.account_lock_directory, int(claims["sub"])):
             auth_session = session.get(AuthSession, claims["sid"])
             if (
                 auth_session is None or auth_session.revoked
@@ -174,9 +187,8 @@ def create_current_traveler(get_session):
             if traveler is None or traveler.status != "active":
                 raise unauthorized
             request.state.auth_session_id = auth_session.id
-            return traveler
-        except (jwt.InvalidTokenError, ValueError, TypeError, OverflowError):
-            raise unauthorized from None
+            request.state.traveler_id = traveler.id
+            yield traveler
 
     return current_traveler
 

@@ -154,3 +154,11 @@ restore the retained volume before traffic resumes; no automatic recovery is
 claimed. Migration rollback and database backups are manual in this demo setup.
 Keep a backup before deploying schema changes. Container updates rerun migrations
 and keep the same database, JWT, images, and reviews.
+
+## Release the production sign-in/admin fixes
+
+Use `python3 deploy/aws/release_production.py --execute` from an authenticated,
+clean checkout. This preserves the exact existing private configuration and
+verifies the frontend, new API behavior and public policies. Optional
+`--admin-email` promotes a designated existing account through the operator CLI.
+See [the release and acceptance guide](../../docs/PRODUCTION_AUTH_ADMIN_FIX.md).

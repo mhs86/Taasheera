@@ -52,6 +52,7 @@ export default function AdminLayout() {
         <span className="admin-badge">Admin</span>
         {admin && <nav className="admin-nav" aria-label="Admin">
           <Link to="/admin">Users</Link>
+          <Link to="/backoffice">Monitoring</Link>
           <span className="admin-signed-in">Signed in as {admin.name}</span>
         </nav>}
       </div>

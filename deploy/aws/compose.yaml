@@ -1,6 +1,7 @@
 name: taasheera
 services:
   migrate:
+    image: taasheera-api
     build:
       context: ../../backend
     env_file: ${TAASHEERA_ENV_FILE:-/etc/taasheera/app.env}
@@ -9,6 +10,7 @@ services:
     command: [python, migrate.py, upgrade]
     restart: "no"
   api:
+    image: taasheera-api
     build:
       context: ../../backend
     env_file: ${TAASHEERA_ENV_FILE:-/etc/taasheera/app.env}
@@ -24,6 +26,7 @@ services:
         max-size: 5m
         max-file: "2"
   web:
+    image: taasheera-web
     env_file: ${TAASHEERA_WEB_ENV_FILE:-/etc/taasheera/web.env}
     environment:
       NGINX_ENVSUBST_FILTER: ORIGIN_TOKEN

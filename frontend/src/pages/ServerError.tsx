@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { isRouteErrorResponse, useRouteError } from 'react-router'
 import NotFound from './NotFound'
+import { reportPageError } from '../monitoring'
 
 // Rendered by the router's error boundaries. `standalone` is used when the
 // layout itself failed, so it avoids every shared component.
@@ -10,6 +11,7 @@ export default function ServerError({ standalone = false }: { standalone?: boole
   useEffect(() => {
     document.title = 'Something went wrong | Taasheera'
     console.error(error)
+    reportPageError()
   }, [error])
 
   if (!standalone && isRouteErrorResponse(error) && error.status === 404) return <NotFound />

@@ -23,11 +23,13 @@ RUN apt-get update \
 
 WORKDIR /app
 COPY requirements.lock ./
-RUN python -m pip install --no-cache-dir -r requirements.lock
+RUN --mount=type=secret,id=system_ca \
+    if [ -f /run/secrets/system_ca ]; then export PIP_CERT=/run/secrets/system_ca; fi \
+    && python -m pip install --no-cache-dir -r requirements.lock
 
 COPY app/ ./app/
 COPY alembic/ ./alembic/
-COPY alembic.ini migrate.py ./
+COPY alembic.ini migrate.py retry_erasures.py ./
 
 USER taasheera
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--no-access-log"]

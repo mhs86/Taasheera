@@ -1,0 +1,22 @@
+name: Uptime readiness check
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  readiness:
+    if: ${{ vars.UPTIME_URL != '' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - name: Probe readiness and alert configured team channel
+        env:
+          UPTIME_URL: ${{ vars.UPTIME_URL }}
+          UPTIME_ALERT_WEBHOOK: ${{ secrets.UPTIME_ALERT_WEBHOOK }}
+        run: python backend/scripts/monitor_uptime.py

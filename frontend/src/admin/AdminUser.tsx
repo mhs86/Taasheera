@@ -7,6 +7,7 @@ import {
 } from './api'
 import type { AdminContext } from './AdminLayout'
 import { readableDate, roleLabels, signInMethod, statusLabels } from './format'
+import AdminDelete from './AdminDelete'
 
 type Pending = { kind: 'suspend' } | { kind: 'reactivate' } | { kind: 'role'; role: Role }
 
@@ -165,5 +166,7 @@ function AdminUserPage({ userId }: { userId: string }) {
         </div>}
       </>}
     </section>
+    <AdminDelete id={user.id} name={user.name} disabled={busy || pending !== null || self || user.role === 'admin'}
+      onBusy={setBusy} onForbidden={leave} />
   </div>
 }

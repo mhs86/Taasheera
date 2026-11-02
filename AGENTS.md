@@ -90,23 +90,36 @@ Status key: **in use** = already in the code · **proposed** = tentative recomme
 | Backend hosting | One AWS EC2 host (`us-east-1`) running the non-root FastAPI + Tesseract container with Docker Compose, SQLite and passport files on encrypted EBS (`deploy/aws/`); Render blueprint and Lambda image kept as alternatives | live at https://d3vh2ppjrlwxee.cloudfront.net; its config is in open PR #6 (not on `main`) | Cheapest always-on setup that keeps passport files on persistent private disk |
 | Frontend hosting | Nginx container on the same EC2 host serving the Vite build behind CloudFront; Netlify config (`netlify.toml`, `docs/NETLIFY.md`) kept as rollback | in use | One origin proxies `/auth`, `/passports`, `/profile`, `/sessions`, `/activity`, `/assistant`, `/applications`, and `/admin-api` (to `/admin`), so cookies stay first-party. A new API prefix must be added to `vite.config.ts`, `write-netlify-redirects.mjs` and `deploy/aws/nginx.conf`, and must not match a page path |
 | Domain | CloudFront hostname with viewer HTTPS | in use; custom domain not configured | Auth cookies work on the browser origin; Google OAuth origins must list this hostname |
-| CI/CD, observability | GitHub Actions CI, Lambda image deployment workflow, JSON request logs; Sentry, uptime check | CI/logs in use; Lambda workflow awaits AWS setup; monitoring proposed | CI builds both backend images; `deploy-backend.yml` pushes the Lambda image on main backend changes after OIDC setup. Public ECR rate-limits GitHub runners (HTTP 429), so CI keeps the Lambda adapter image in the Actions cache and retries the pull only when the cache is empty |
+| CI/CD, observability | GitHub Actions CI, Lambda image deployment workflow, JSON request logs | CI/logs in use; Lambda workflow awaits AWS setup | CI builds both backend images; `deploy-backend.yml` pushes the Lambda image on main backend changes after OIDC setup. Public ECR rate-limits GitHub runners (HTTP 429), so CI keeps the Lambda adapter image in the Actions cache and retries the pull only when the cache is empty |
 | User activity logging | SQLModel `ActivityEvent` plus private per-traveler JSONL mirrors in `backend/storage/activity-logs/` | in use | Auth and passport actions are recorded on the backend; allowlisted frontend page/control events use authenticated `/activity/events` |
+| Monitoring | JSON request/security logs, `ActivityEvent` plus private JSONL, Sentry with strict metadata allowlists, uptime workflow | in use; Sentry and uptime are opt-in | Operators see failures and activity without request bodies or document fields; see `docs/MONITORING_RUNBOOK.md` and decision 28 |
 | Later sprints | Playwright (Python) for L2/L3 portal filling; pypdf for L1 PDF forms; a job queue (e.g. arq + Redis) for long agent runs; Telegram Bot API; transactional email | proposed | Not needed yet |
 
 Layout: `backend/app/` (router factories included by `main.py`; `applications/` holds the flow engine and
 one question file per destination in `applications/questionnaires/`), `backend/alembic/`
 (schema revisions), `backend/manage.py` (operator commands such as `set-role`),
+`backend/preview.py` (isolated preview), `backend/retry_erasures.py` (operator cleanup of pending account erasures),
 `backend/scripts/` (passport demo), `backend/tests/`,
-`frontend/src/`, `frontend/tests/`. Deployment plan: `docs/DEPLOYMENT_PLAN.md`.
+`frontend/src/`, `frontend/tests/`, `frontend/e2e/` (Playwright). Deployment plan: `docs/DEPLOYMENT_PLAN.md`.
 
 Local Windows setup is in `backend/README.md` and `frontend/README.md`. From `backend/`,
 create `.venv`, install `requirements-dev.lock`, run `python dev.py setup` once, then
 `python dev.py run` to apply database migrations, load the ignored local JWT secret and
 public Google client ID, and serve on port 8000. From `frontend/`, run `npm ci` and `npm run dev` on port 5173.
 Check with backend `python -m pytest -q` and frontend `npm test`, `npm run lint`,
-`npm run build`. The authenticated API proxies `/auth`, `/passports`, `/profile`, `/sessions`, `/activity`, `/assistant`, `/applications`, and `/admin-api` through Vite;
-the standalone passport demo is separate. OCR needs system Tesseract on `PATH`. The assistant needs `GEMINI_API_KEY` (free from Google AI Studio): locally as a line in Git-ignored `backend/.env.local`, which `dev.py run` loads; on Render in the dashboard (`render.yaml` names it with `sync: false`). **Never commit the key: this repository is public.** Without it `/assistant/messages` returns 503 and everything else works.
+`npm run build`, and `npm run test:e2e` (install Chromium first; the browser tests need the backend Python on `PATH`
+or `TAASHEERA_TEST_PYTHON`, use ports 8100/5273 and separate e2e storage). `TEST_POSTGRES_URL` must point to a
+disposable test database with create/drop privilege; without it the PostgreSQL tests are skipped.
+To try a feature without touching local dev data, run `python preview.py run --seed-demo --free-ports` (one command
+line) from `backend/`: it starts the API and frontend with a separate database, secret and files under ignored
+`backend/storage/`, never loads `.env.local`, and disables mail and Gemini. Sentry needs `--enable-monitoring` plus
+exported DSNs. Seeded credentials and Windows/macOS/Linux steps: `docs/LOCAL_FEATURE_TESTING.md`.
+The authenticated API proxies `/auth`, `/passports`, `/profile`, `/sessions`, `/activity`, `/assistant`, `/applications`, and `/admin-api` through Vite;
+UI routes are `/sign-in`, `/reset-password`, `/account`, `/passport/:uploadId`, `/apply`, `/admin` (staff UI) and
+`/backoffice` (monitoring). Public APIs are limited to sign-in, registration, recovery, refresh, logout, config and
+minimal health checks; traveler data APIs need a bearer token and admin APIs need the admin role. The frontend
+learns staff identity from `/admin/me`; `/auth/me` keeps its schema.
+The standalone passport demo is separate. OCR needs system Tesseract on `PATH`. The assistant needs `GEMINI_API_KEY` (free from Google AI Studio): locally as a line in Git-ignored `backend/.env.local`, which `dev.py run` loads; on Render in the dashboard (`render.yaml` names it with `sync: false`). **Never commit the key: this repository is public.** Without it `/assistant/messages` returns 503 and everything else works.
 `dev.py run` and deployments both run `python migrate.py upgrade` before the API starts; deployments
 set `APP_ENV=production` and `SCHEMA_AUTO_CREATE=false`. Give an existing account a role with
 `python manage.py set-role --email <email> --role admin`.
@@ -267,6 +280,28 @@ What we decided, why, and what we rejected. Newest at the bottom. Add an entry w
     Vite, nginx and Netlify rewrite to `/admin/*`, so page loads never hit the API. The layout asks `/admin/me`
     first: signed-out visitors go to sign-in, everyone else refused goes home with a notice. This only hides pages;
     the backend is the protection. Every action needs a confirmation and ends in a toast.
+28. **Privacy and monitoring (Sprint 3).** Admin metrics aggregate the existing Application statuses (DRAFT,
+    INELIGIBLE, ANSWERS_COMPLETE); erasing an account also erases its ApplicationAnswer copies. Storage callbacks
+    audit every passport image, review and assistant read before returning bytes. Portable per-owner file locks
+    serialize requests with deletion across workers sharing local storage. Erasure first suspends the account,
+    revokes its sessions and persists an `AccountErasure` row, then removes the owner folders and related rows:
+    204 means complete, 202 means cleanup is pending. Startup and `backend/retry_erasures.py` finish pending
+    cleanup, and pending accounts cannot be reactivated. Sentry uses strict metadata allowlists and uptime checks
+    are opt-in. See `docs/MONITORING_RUNBOOK.md` for log locations, retries and service configuration, and
+    `docs/GOOGLE_CONSENT_RELEASE.md` for Google production consent publication.
+29. **Public consent pages (US 1).** `frontend/public/privacy.html` and `terms.html` are standalone pages with a
+    shared `legal.css`, linked from `index.html` outside the React root, so they need no sign-in or JavaScript.
+    `deploy/aws/publish_public_policies.py` uses the AWS CLI and SSM to update only these public assets and the
+    existing homepage, with backup and rollback. See `docs/GOOGLE_APP_DOMAIN.md`.
+30. **Admin by email and production release.** An admin can find an existing account by its primary or linked
+    Google email and confirm its promotion under `/admin`. Lookup never grants privileges; the grant rechecks the
+    actor and target locks, the account ID, ambiguity and status. There are no unverified-email invitations and no
+    hardcoded app admin allowlist. `deploy/aws/release_production.py` uses the authenticated AWS CLI and SSM,
+    preserves the existing private host config, backs up SQLite and verifies the client, API and policy pages.
+    Steps and flags: `docs/PRODUCTION_AUTH_ADMIN_FIX.md`.
+31. **Production image builds.** `build_images.py` builds the API image, then the web image, with
+    `COMPOSE_BAKE=false`; the migration service shares `taasheera-api`. Only disconnected build sessions are retried,
+    once. Build logs stay private. Never stop Docker or prune images to recover; startup uses `--no-build`.
 
 ## Personal instructions
 
