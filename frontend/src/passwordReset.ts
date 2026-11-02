@@ -19,7 +19,7 @@ async function post(path: string, body: object): Promise<Response> {
   } catch {
     throw new ResetError(path === 'forgot-password'
       ? 'Could not confirm the email request. Check your connection and try again. An earlier request may still have sent an email.'
-      : 'Could not confirm the password change. Check your connection and try again. If it already succeeded, sign in with the new password or request a new link.')
+      : 'Could not confirm the password change. Check your connection and try again. If it already succeeded, sign in with the new password or request a new code.')
   }
 }
 
@@ -57,7 +57,7 @@ export async function verifyResetCode(email: string, code: string): Promise<stri
 export async function submitPasswordReset(token: string, password: string): Promise<void> {
   const response = await post('reset-password', { token, password })
   if (response.status === 204) return
-  if (response.status === 400) throw new ResetError('This reset link is invalid, expired, or already used. Request a new link.', true)
+  if (response.status === 400) throw new ResetError('This reset session is invalid, expired, or already used. Request a new code.', true)
   if (response.status === 422) throw new ResetError('Use at least 8 characters and at most 72 UTF-8 bytes for your password.')
   if (response.status === 429) throw new ResetError('Too many reset attempts. Please wait one hour before trying again.')
   throw new ResetError('Could not change your password. Please try again later.')
