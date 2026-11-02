@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import GlobalAssistant from '../assistant/GlobalAssistant'
 import { AdminAccessError, adminRequest, deleteUser, type AdminUser, type Monitoring, type Staff, type UserPage } from '../admin'
 import '../App.css'
 import './dashboard.css'
@@ -45,7 +46,7 @@ export default function AdminDashboard() {
     return () => { generation.current += 1 }
   }, [load])
 
-  return <main className="dashboard-page">
+  return <><main className="dashboard-page">
     <header className="dashboard-header"><a href="/">Taasheera</a><nav aria-label="Admin navigation"><a href="/admin">User management</a><a href="/account">Your account</a><a href="/sign-in">Sign in</a></nav></header>
     <div className="dashboard-content">
       <p className="eyebrow">OPERATIONS</p><h1>Admin dashboard</h1>
@@ -105,5 +106,5 @@ export default function AdminDashboard() {
           <span>Page {users.page}</span><button disabled={loading || busy || users.page * users.page_size >= users.total} onClick={() => { setSelected(null); refresh(search, users.page + 1) }}>Next users</button></div>
       </section>}
     </div>
-  </main>
+  </main>{staff && <GlobalAssistant key={staff.id} />}</>
 }

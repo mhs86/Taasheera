@@ -234,3 +234,26 @@ test('signed-out visitors get no assistant button', async (t) => {
   await settle()
   assert.equal(container.querySelector('.assistant-launcher'), null)
 })
+
+for (const path of ['/sign-in', '/account']) {
+  test(`the separate ${path} shell has one assistant after session restoration`, async (t) => {
+    t.mock.method(globalThis, 'fetch', async url => {
+      if (url === '/auth/refresh') return Response.json({ access_token: 'test-access-token' })
+      if (url === '/auth/me') return Response.json({ id: 1, name: 'Anna', email: 'anna@example.com' })
+      if (url === '/auth/config') return Response.json({ google_client_id: '' })
+      if (url === '/profile') return Response.json({})
+      if (url === '/sessions') return Response.json([])
+      if (url === '/assistant/history') return Response.json([])
+      return new Response(null, { status: 204 })
+    })
+    window.history.replaceState(null, '', path)
+    await render(path)
+    await settle()
+    assert.equal(container.querySelectorAll('.assistant-launcher').length, 1)
+    assert.equal(container.querySelector('.sign-in-page .assistant'), null, 'auth form styles must not affect the panel')
+    await click(container.querySelector('.assistant-launcher'))
+    await settle()
+    assert.ok(container.querySelector('.assistant-panel'))
+    window.history.replaceState(null, '', '/')
+  })
+}

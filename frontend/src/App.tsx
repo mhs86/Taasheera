@@ -13,6 +13,7 @@ import ProfileForm from './ProfileForm'
 import Sessions from './Sessions'
 import DocumentHistory from './DocumentHistory'
 import DeleteAccount from './DeleteAccount'
+import GlobalAssistant from './assistant/GlobalAssistant'
 import { readNavigation, type Navigation } from './navigation'
 
 const pageTitles = {
@@ -65,7 +66,7 @@ function App({ initialNavigation, accountPage = false, googleClientId = import.m
   }, [page, traveler, isRecoveryPage, accountPage])
 
   return (
-    <main className="sign-in-page">
+    <><main className="sign-in-page">
       <header className="brand">
         {/* The sign-in screens sit outside the site layout, so this is their only way home. */}
         <a href="/" className="brand-link" aria-label="Taasheera home" data-activity-id="home-link">
@@ -143,6 +144,7 @@ function App({ initialNavigation, accountPage = false, googleClientId = import.m
 
       <footer>Your next chapter starts with a journey.</footer>
     </main>
+    {traveler && !isRecoveryPage && <GlobalAssistant key={traveler.id} />}</>
   )
 }
 
