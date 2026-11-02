@@ -330,3 +330,164 @@ test('the sign-in page shows no notice for other addresses', async () => {
   assert.equal(toasts().length, 0)
   assert.equal(window.location.search, '?notice=something-else')
 })
+
+
+// ---- Cross-tab sync over BroadcastChannel('taasheera-idle') ----
+// Two guards share one jsdom window, so each "tab" is told apart by the listeners and interval it
+// registered at mount; activity is fed to one tab's listener directly. The fake channel joins every
+// instance of the same name, and nothing here depends on the message shape.
+const realBroadcastChannel = globalThis.BroadcastChannel
+const channelTargets = [...new Set([globalThis, window])]
+let channels
+let extraTabs = []
+
+class FakeBroadcastChannel {
+  constructor(name) {
+    this.name = name
+    this.closed = false
+    this.posts = []
+    this.listeners = new Set()
+    this.onmessage = null
+    channels.push(this)
+  }
+  postMessage(data) {
+    if (this.closed) throw new window.DOMException('Channel is closed', 'InvalidStateError')
+    this.posts.push(data)
+    for (const peer of channels) if (peer !== this && peer.name === this.name && !peer.closed) peer.receive(structuredClone(data))
+  }
+  receive(data) {
+    const event = { type: 'message', data }
+    this.onmessage?.(event)
+    for (const listener of [...this.listeners]) listener(event)
+  }
+  addEventListener(type, listener) { if (type === 'message') this.listeners.add(listener) }
+  removeEventListener(type, listener) { this.listeners.delete(listener) }
+  close() { this.closed = true }
+}
+
+function useBroadcastChannel(implementation) {
+  channels = []
+  for (const target of channelTargets) target.BroadcastChannel = implementation
+}
+
+afterEach(async () => {
+  for (const tab of extraTabs) {
+    await act(async () => tab.root.unmount())
+    tab.container.remove()
+  }
+  extraTabs = []
+  for (const target of channelTargets) target.BroadcastChannel = realBroadcastChannel
+})
+
+async function mountTab(name) {
+  const knownListeners = new Set(live)
+  const knownIntervals = new Set(intervals.keys())
+  const firstChannel = channels.length
+  const tab = { name, container: document.createElement('div') }
+  document.body.append(tab.container)
+  tab.root = createRoot(tab.container)
+  await act(async () => tab.root.render(createElement(IdleGuard, {
+    navigateAway: url => trail.push(`${name} navigate ${url}`),
+  })))
+  const mine = live.filter(entry => !knownListeners.has(entry))
+  // A real tab holds its own token; here the sign-in announcement is shared, so keep it from
+  // flipping every tab's signed-in state when one of them signs out.
+  for (const entry of mine.filter(entry => entry.type === 'taasheera-auth-changed')) {
+    entry.target.removeEventListener(entry.type, entry.listener)
+  }
+  const keydown = mine.find(entry => entry.type === 'keydown').listener
+  const [interval] = [...intervals.entries()].filter(([id]) => !knownIntervals.has(id)).map(([, fn]) => fn)
+  tab.channels = channels.slice(firstChannel)
+  tab.posted = () => tab.channels.reduce((sum, channel) => sum + channel.posts.length, 0)
+  tab.activity = () => act(async () => keydown(new window.KeyboardEvent('keydown', { key: 'a' })))
+  tab.check = () => act(async () => interval())
+  tab.dialog = () => tab.container.querySelector('[role="alertdialog"]')
+  extraTabs.push(tab)
+  return tab
+}
+
+async function twoTabs() {
+  begin()
+  useBroadcastChannel(FakeBroadcastChannel)
+  await signIn()
+  return [await mountTab('A'), await mountTab('B')]
+}
+
+test('activity in one tab keeps the other tab signed in past 30 minutes', async () => {
+  const [a, b] = await twoTabs()
+  at(15)
+  await a.activity()
+  at(29)
+  await a.activity()
+  await settle()
+  at(31)  // Tab B has had no input of its own for 31 minutes.
+  await b.check()
+  await settle()
+  assert.equal(trail.some(line => line.includes('/auth/logout') || line.includes('navigate')), false, trail.join(', '))
+  assert.ok(!b.dialog(), "tab B shows the warning")
+})
+
+test('a tab that was quiet for 28 minutes shows no warning when another tab was active 10 minutes ago', async () => {
+  const [a, b] = await twoTabs()
+  at(18)
+  await a.activity()
+  await settle()
+  at(28)
+  await b.check()
+  assert.ok(!b.dialog(), "tab B shows the warning")
+})
+
+test('activity broadcasts are sent at most once per 10 seconds', async () => {
+  const [a] = await twoTabs()
+  const before = a.posted()
+  const sent = () => a.posted() - before
+  const second = n => { clock = START + MINUTE + n * 1000 }
+  second(0)
+  await a.activity()
+  second(5)
+  await a.activity()
+  second(9.9)
+  await a.activity()
+  assert.equal(sent(), 1)
+  second(10)
+  await a.activity()
+  assert.equal(sent(), 2)
+})
+
+test('when one tab signs out, the others go to the sign-in page without a second logout request', async () => {
+  const [a] = await twoTabs()
+  arrangeFetch({ refresh: 401 })  // The server refuses tab A's session at its next activity.
+  at(5)
+  await a.activity()
+  await settle()
+  assert.equal(trail.filter(line => line === 'POST /auth/logout').length, 1, trail.join(', '))
+  assert.ok(trail.includes('A navigate /sign-in?notice=idle'), trail.join(', '))
+  assert.ok(trail.includes('B navigate /sign-in?notice=idle'), trail.join(', '))
+})
+
+test('without BroadcastChannel the guard warns at 28 minutes and signs out at 30', async () => {
+  begin()
+  useBroadcastChannel(undefined)
+  await signIn()
+  await mount()
+  at(28)
+  await tick()
+  assert.ok(dialog())
+  at(30)
+  await tick()
+  await settle()
+  assert.deepEqual(trail, ['POST /auth/logout', 'navigate /sign-in?notice=idle'])
+})
+
+test('unmounting closes the channel', async () => {
+  begin()
+  useBroadcastChannel(FakeBroadcastChannel)
+  await signIn()
+  const tab = await mountTab('A')
+  assert.ok(tab.channels.length > 0, 'the guard opened no channel')
+  assert.ok(tab.channels.every(channel => channel.name === 'taasheera-idle'))
+  assert.ok(tab.channels.some(channel => !channel.closed))
+  await act(async () => tab.root.unmount())
+  assert.ok(tab.channels.every(channel => channel.closed))
+  tab.root = createRoot(tab.container)  // Let the shared cleanup unmount a live root.
+})

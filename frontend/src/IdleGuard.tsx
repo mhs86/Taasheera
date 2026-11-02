@@ -10,6 +10,12 @@ const CHECK_EVERY_MS = 15_000
 // AuthRoute reads this notice code on the sign-in page.
 const SIGNED_OUT_URL = '/sign-in?notice=idle'
 
+// Tabs of one browser share an idle clock: input in any of them counts for all. Messages are the
+// time of the last input (a number) or SIGNED_OUT; anything else is ignored.
+const CHANNEL_NAME = 'taasheera-idle'
+const SIGNED_OUT = 'signed-out'
+const BROADCAST_EVERY_MS = 10_000
+
 function goToSignIn(url: string) { window.location.assign(url) }
 
 // Signs the traveler out after 30 minutes without input, warning them at 28. Renders nothing
@@ -38,6 +44,12 @@ export default function IdleGuard({ navigateAway = goToSignIn }: { navigateAway?
     if (!signedIn) return
     lastActivity.current = Date.now()
     let ended = false
+    let lastBroadcast = -Infinity
+    const channel = typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel(CHANNEL_NAME)
+
+    const broadcast = (message: number | typeof SIGNED_OUT) => {
+      try { channel?.postMessage(message) } catch { /* Other tabs fall back to their own clock. */ }
+    }
 
     // The session is over for the traveler whether or not the server heard about it: if the
     // request fails, the server ends the session itself at the next refresh, and reloading
@@ -46,6 +58,8 @@ export default function IdleGuard({ navigateAway = goToSignIn }: { navigateAway?
       if (ended) return
       ended = true
       setWarning(false)
+      // Before signOut: signing out closes this channel, and the other tabs must not repeat the request.
+      broadcast(SIGNED_OUT)
       try { await signOut() } catch { /* Navigate regardless. */ }
       disableGoogleAutoSelect()
       navigate.current(SIGNED_OUT_URL)
@@ -64,11 +78,34 @@ export default function IdleGuard({ navigateAway = goToSignIn }: { navigateAway?
       if (idleState(lastActivity.current, Date.now()) === 'logout') { void leave(); return }
       lastActivity.current = Date.now()
       setWarning(false)
+      if (lastActivity.current - lastBroadcast >= BROADCAST_EVERY_MS) {
+        lastBroadcast = lastActivity.current
+        broadcast(lastActivity.current)
+      }
       // Throttled inside touchSession. False means the server no longer accepts the session.
       touchSession().then(accepted => { if (!accepted) void leave() }, () => { /* Retry on the next activity. */ })
     }
 
     const onVisible = () => { if (document.visibilityState === 'visible') check() }
+
+    if (channel) {
+      channel.onmessage = ({ data }) => {
+        if (ended) return
+        if (data === SIGNED_OUT) {
+          // Another tab already ended the session on the server: just leave, quietly.
+          ended = true
+          setWarning(false)
+          disableGoogleAutoSelect()
+          navigate.current(SIGNED_OUT_URL)
+          return
+        }
+        const now = Date.now()
+        if (typeof data !== 'number' || !Number.isFinite(data) || data > now) return
+        // No touchSession: the tab that saw the input already refreshed the server's clock.
+        lastActivity.current = Math.max(lastActivity.current, data)
+        if (idleState(lastActivity.current, now) === 'active') setWarning(false)
+      }
+    }
 
     for (const name of ACTIVITY_EVENTS) window.addEventListener(name, onActivity, { capture: true, passive: true })
     document.addEventListener('visibilitychange', onVisible)
@@ -78,6 +115,7 @@ export default function IdleGuard({ navigateAway = goToSignIn }: { navigateAway?
       for (const name of ACTIVITY_EVENTS) window.removeEventListener(name, onActivity, { capture: true })
       document.removeEventListener('visibilitychange', onVisible)
       clearInterval(timer)
+      channel?.close()
       stay.current = () => {}
     }
   }, [signedIn])
