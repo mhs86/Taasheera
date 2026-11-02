@@ -167,11 +167,29 @@ fi
 # Resolve the image's user rather than relying on a distribution-specific UID.
 phase='build application images'
 printf 'Setup: %s\n' "$phase"
-python3 deploy/aws/build_images.py --log-dir "/srv/taasheera/private/build-logs/$TAASHEERA_REVISION"
+if [ -n "${TAASHEERA_API_IMAGE:-}" ] || [ -n "${TAASHEERA_WEB_IMAGE:-}" ]; then
+  [[ "${TAASHEERA_API_IMAGE:-}" =~ ^632630731308\.dkr\.ecr\.us-east-1\.amazonaws\.com/taasheera-ec2-api@sha256:[a-f0-9]{64}$ ]]
+  [[ "${TAASHEERA_WEB_IMAGE:-}" =~ ^632630731308\.dkr\.ecr\.us-east-1\.amazonaws\.com/taasheera-ec2-web@sha256:[a-f0-9]{64}$ ]]
+  export TAASHEERA_API_IMAGE TAASHEERA_WEB_IMAGE
+  # Short-lived registry credentials stay in this setup's private temporary directory.
+  export DOCKER_CONFIG="$task_tmp/docker"
+  mkdir -m 700 "$DOCKER_CONFIG"
+  aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin \
+    632630731308.dkr.ecr.us-east-1.amazonaws.com
+  docker compose -f deploy/aws/compose.yaml pull api web
+  for image in "$TAASHEERA_API_IMAGE" "$TAASHEERA_WEB_IMAGE"; do
+    test "$(docker image inspect "$image" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')" = "$TAASHEERA_REVISION"
+  done
+  # Keep default operator/backup commands on the deployed release after this process exits.
+  docker tag "$TAASHEERA_API_IMAGE" taasheera-api
+  docker tag "$TAASHEERA_WEB_IMAGE" taasheera-web
+else
+  python3 deploy/aws/build_images.py --log-dir "/srv/taasheera/private/build-logs/$TAASHEERA_REVISION"
+fi
 phase='assign application storage ownership'
 # compose images reports existing containers, which still use the old image at
 # this point. Resolve the newly built tag for ownership and the backup worker.
-api_image=$(docker image inspect taasheera-api --format '{{.Id}}')
+api_image=$(docker image inspect "${TAASHEERA_API_IMAGE:-taasheera-api}" --format '{{.Id}}')
 api_uid=$(docker run --rm --entrypoint id "$api_image" -u)
 api_gid=$(docker run --rm --entrypoint id "$api_image" -g)
 chown "$api_uid:$api_gid" /srv/taasheera

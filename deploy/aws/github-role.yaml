@@ -20,6 +20,7 @@ Parameters:
       dev workflow, the production-environment role for deploy-main-aws.yml.
 Conditions:
   NewProvider: !Equals [!Ref CreateOidcProvider, 'true']
+  ProductionDeploy: !Equals [!Ref TrustedSubject, 'repo:mhs86/Taasheera:environment:production']
 Resources:
   Provider:
     Type: AWS::IAM::OIDCProvider
@@ -63,6 +64,29 @@ Resources:
                     ssm:resourceTag/aws:cloudformation:stack-name: !Ref AppStackName
       Tags:
         - {Key: OwnerEmail, Value: mhs86@mail.aub.edu}
+  PublishImages:
+    Type: AWS::IAM::Policy
+    Condition: ProductionDeploy
+    Properties:
+      PolicyName: PublishEc2ReleaseImages
+      Roles: [!Ref DeployRole]
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action: ecr:GetAuthorizationToken
+            Resource: '*'
+          - Effect: Allow
+            Action:
+              - ecr:BatchCheckLayerAvailability
+              - ecr:InitiateLayerUpload
+              - ecr:UploadLayerPart
+              - ecr:CompleteLayerUpload
+              - ecr:PutImage
+              - ecr:BatchGetImage
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:ecr:${AWS::Region}:${AWS::AccountId}:repository/taasheera-ec2-api'
+              - !Sub 'arn:${AWS::Partition}:ecr:${AWS::Region}:${AWS::AccountId}:repository/taasheera-ec2-web'
 Outputs:
   DeployRoleArn:
     Value: !GetAtt DeployRole.Arn

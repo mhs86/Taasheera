@@ -10,6 +10,7 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+  actions: read
   id-token: write
 concurrency:
   # Shared with the manual dev workflow: two deployments never touch the host at once.
@@ -24,11 +25,16 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     environment: production
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TARGET_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
     steps:
       - uses: actions/checkout@v7
         with:
           # The commit CI tested, not whatever main points at by now.
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+      - name: Require current main and successful push CI
+        run: python3 deploy/aws/verify_main_release.py "$TARGET_SHA"
       - name: Require configured deployment role
         env:
           DEPLOY_ROLE: ${{ vars.AWS_MAIN_DEPLOY_ROLE_ARN }}
@@ -38,6 +44,12 @@ jobs:
           role-to-assume: ${{ vars.AWS_MAIN_DEPLOY_ROLE_ARN }}
           aws-region: us-east-1
           allowed-account-ids: '632630731308'
+      - name: Log in to the private image registry
+        uses: aws-actions/amazon-ecr-login@v2
+      - name: Build and publish immutable API and web images
+        run: python3 deploy/aws/publish_images.py "$TARGET_SHA"
+      - name: Recheck main after image builds
+        run: python3 deploy/aws/verify_main_release.py "$TARGET_SHA"
       - name: Deploy the tested main commit
         env:
           # Keep the host's existing environment file (secrets, Google client, mail); only the code changes.

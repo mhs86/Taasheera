@@ -9,6 +9,11 @@ stack=${TAASHEERA_STACK:-taasheera}
 cd "$(dirname "$0")/../.."
 TAASHEERA_REVISION=$(git rev-parse --verify HEAD)
 export TAASHEERA_REVISION
+if [ -n "${TAASHEERA_API_IMAGE:-}" ] || [ -n "${TAASHEERA_WEB_IMAGE:-}" ]; then
+  [[ "${TAASHEERA_API_IMAGE:-}" =~ ^632630731308\.dkr\.ecr\.us-east-1\.amazonaws\.com/taasheera-ec2-api@sha256:[a-f0-9]{64}$ ]]
+  [[ "${TAASHEERA_WEB_IMAGE:-}" =~ ^632630731308\.dkr\.ecr\.us-east-1\.amazonaws\.com/taasheera-ec2-web@sha256:[a-f0-9]{64}$ ]]
+  export TAASHEERA_API_IMAGE TAASHEERA_WEB_IMAGE
+fi
 if [ -n "${TAASHEERA_GOOGLE_CLIENT_ID:-}" ]; then
   [[ "$TAASHEERA_GOOGLE_CLIENT_ID" =~ ^[A-Za-z0-9._-]+\.apps\.googleusercontent\.com$ ]]
   export TAASHEERA_GOOGLE_CLIENT_ID
@@ -32,6 +37,8 @@ import base64, json, os, shlex
 # Read the existing origin token on the host; it never crosses GitHub Actions logs.
 script = base64.b64encode(open('deploy/aws/bootstrap.sh','rb').read()).decode()
 names = ['TAASHEERA_SITE_URL','TAASHEERA_VOLUME_ID','TAASHEERA_REVISION']
+if os.environ.get('TAASHEERA_API_IMAGE'):
+    names += ['TAASHEERA_API_IMAGE', 'TAASHEERA_WEB_IMAGE']
 if os.environ.get('TAASHEERA_PRESERVE_CONFIG') == '1':
     names.append('TAASHEERA_PRESERVE_CONFIG')
 if os.environ.get('TAASHEERA_GOOGLE_CLIENT_ID'):

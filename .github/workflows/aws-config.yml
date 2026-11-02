@@ -26,8 +26,8 @@ jobs:
       - name: Validate CloudFormation and shell configuration
         run: |
           python -m pip install cfn-lint==1.57.2
-          cfn-lint deploy/aws/stack.yaml deploy/aws/github-role.yaml
-          bash -n deploy/aws/*.sh
+          cfn-lint deploy/aws/stack.yaml deploy/aws/github-role.yaml deploy/aws/image-repositories.yaml
+          for script in deploy/aws/*.sh; do bash -n "$script"; done
       - name: Check workflow syntax with verified actionlint
         run: |
           cd "$RUNNER_TEMP"
