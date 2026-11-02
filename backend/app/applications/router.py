@@ -183,6 +183,8 @@ def application_context(session: Session, traveler_id: int, application_id: str,
                                 profile=saved_profile(session, traveler_id))
     return "\n\n".join([
         flow.describe(questionnaire, answers, application.group_size),
+        ("This application is archived and read-only. Restore it from the dashboard before changing answers."
+         if application.archived_at else "This application is active."),
         f"Current step: {progress.step_title} (step {progress.step_number} of {progress.step_count})",
         actions.catalog(questionnaire, answers),
         completeness.describe(report),
@@ -198,7 +200,9 @@ def application_proposal(session: Session, traveler_id: int, application_id: str
     found = _owned_answers(session, traveler_id, application_id)
     if found is None:
         return None
-    _, questionnaire, answers = found
+    application, questionnaire, answers = found
+    if application.archived_at and name != "run_completeness_check":
+        raise flow.InvalidAnswer("This application is archived. Restore it from your dashboard before changing it.")
     return actions.propose(questionnaire, answers, name, args, today or date.today(),
                            latest_passport=latest_passport, profile=saved_profile(session, traveler_id))
 

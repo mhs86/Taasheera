@@ -20,7 +20,7 @@ from sqlmodel import Session, select
 from .account_lock import account_lock
 from .auth import COOKIE_NAME, check_origin, clear_refresh_cookie, revoke_all_sessions, token_hash
 from .google_auth import verify_google_token
-from .models import (AccountErasure, ActivityEvent, AuthSession, DocumentAccess, GoogleIdentity,
+from .models import (AccountErasure, ActivityEvent, AssistantMessage, AuthSession, DocumentAccess, GoogleIdentity,
                      PasswordResetChallenge, PasswordResetToken, RefreshToken, ResetRateLimit,
                      Traveler, TravelerProfile, Application, ApplicationAnswer)
 from .security import throttle
@@ -60,6 +60,8 @@ def complete_erasure(session: Session, traveler_id: int, storage, directory: Pat
     traveler = session.get(Traveler, traveler_id)
     remove_owner_folder(storage.root, traveler_id)
     remove_owner_folder(directory, traveler_id)
+    # Chats reference both the traveler and applications, so erase them before either parent.
+    session.execute(delete(AssistantMessage).where(AssistantMessage.traveler_id == traveler_id))
     application_ids = select(Application.id).where(Application.traveler_id == traveler_id)
     session.execute(delete(ApplicationAnswer).where(ApplicationAnswer.application_id.in_(application_ids)))
     session_ids = select(AuthSession.id).where(AuthSession.traveler_id == traveler_id)
