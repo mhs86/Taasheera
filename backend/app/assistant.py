@@ -29,17 +29,18 @@ Still no sourced policy answers.
 """
 
 import logging
-import time
-from collections import defaultdict, deque
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date
 from typing import Annotated, Literal
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from google.genai import errors as genai_errors
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+from sqlmodel import Session
+
+from .security import admitted, audit, client_address
 
 from .applications.actions import Proposal
 from .applications.flow import InvalidAnswer
@@ -230,29 +231,8 @@ class ModelTurn:
 AskTools = Callable[[str, list[dict]], ModelTurn]
 
 
-class RateLimiter:
-    """At most `limit` requests per traveler per `window_seconds`.
-
-    Each question costs money, so this caps runaway use. It lives in process
-    memory: good enough for one server, and it resets on restart. With several
-    servers it would move to a shared store such as Redis.
-    """
-
-    def __init__(self, limit: int = 20, window_seconds: float = 600, clock: Callable[[], float] = time.monotonic):
-        self.limit, self.window, self.clock = limit, window_seconds, clock
-        self._hits: dict[int, deque[float]] = defaultdict(deque)
-
-    def allow(self, key: int) -> bool:
-        now, hits = self.clock(), self._hits[key]
-        while hits and now - hits[0] >= self.window:
-            hits.popleft()
-        if len(hits) >= self.limit:
-            return False
-        hits.append(now)
-        return True
-
-
 def create_assistant_router(
+    get_session,
     current_traveler_id,
     load_passport: Callable[[int], dict | None],
     ask: Ask | None,
@@ -264,22 +244,26 @@ def create_assistant_router(
     load_history: Callable[[int, str | None], list[dict]] | None = None,
     save_turn: Callable[[int, str | None, str, str], None] | None = None,
     record_event=None,
-    limiter: RateLimiter | None = None,
     today: Callable[[], date] = date.today,
 ) -> APIRouter:
     router = APIRouter(prefix="/assistant", tags=["assistant"])
     TravelerId = Annotated[int, Depends(current_traveler_id)]
-    limiter = limiter or RateLimiter()
+    SessionDep = Annotated[Session, Depends(get_session)]
 
     def record(traveler_id: int, outcome: str):
         if record_event:
             record_event(traveler_id, "assistant_message", outcome)
 
     @router.post("/messages", response_model=AssistantReply)
-    def send_message(data: AssistantRequest, traveler_id: TravelerId):
+    def send_message(data: AssistantRequest, request: Request, traveler_id: TravelerId, session: SessionDep):
         if ask is None:
             raise HTTPException(status_code=503, detail="The assistant isn't set up on this server yet.")
-        if not limiter.allow(traveler_id):
+        # Each question costs money. Shared database counters survive restarts and workers.
+        if not admitted(request, session, [
+            ("assistant-account", str(traveler_id), 20, 600),
+            ("assistant-ip", client_address(request), 60, 600),
+        ]):
+            audit(request, "assistant", "throttled", traveler_id)
             raise HTTPException(status_code=429, detail="You're sending messages quickly. Wait a minute and try again.")
 
         application = None

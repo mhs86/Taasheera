@@ -164,7 +164,7 @@ def create_app(database_url: str | None = None, *, reset_sender: ResetSender | N
                                         latest_passport=passport_storage.latest_review(traveler_id))
 
     app.include_router(create_assistant_router(
-        current_traveler_id, passport_storage.latest_review, assistant_ask,
+        get_session, current_traveler_id, passport_storage.latest_review, assistant_ask,
         record_event=record_assistant_activity, load_application=load_application_context,
         ask_tools=assistant_ask_tools, propose=propose_action, tools_prompt=TOOLS_PROMPT,
         load_history=stored_history, save_turn=store_turn,

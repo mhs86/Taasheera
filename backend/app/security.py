@@ -39,7 +39,15 @@ def client_address(request: Request) -> str:
     if request.app.state.auth_settings.trust_cloudfront_proxy:
         raw = request.headers.get("x-taasheera-client-ip", "")
         try:
-            host = urlsplit("//" + raw).hostname
+            # CloudFront sends "ip:port"; IPv6 viewers are unbracketed ("2001:db8::1:46532").
+            if "[" in raw:
+                host = urlsplit("//" + raw).hostname
+            elif ":" in raw:
+                host, port = raw.rsplit(":", 1)
+                if not (port.isascii() and port.isdigit() and int(port) <= 65535):
+                    raise ValueError("invalid port")
+            else:
+                host = raw
             return str(ipaddress.ip_address(host))
         except (ValueError, TypeError):
             pass
