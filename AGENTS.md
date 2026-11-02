@@ -91,6 +91,7 @@ ports 8100/5273 and isolated synthetic storage. Preview: `python preview.py run 
 this does not load `.env.local`, sends no mail/Gemini calls, and keeps separate data under ignored
 `backend/storage/`. See `docs/LOCAL_FEATURE_TESTING.md`. Avoid `--free-ports` unless stopping the
 processes on those ports is intended.
+Full Sprint 3 delivery and isolated manual tests with Gemini: `docs/SPRINT3_MANUAL_TESTING.md`.
 
 API prefixes `/auth`, `/passports`, `/profile`, `/sessions`, `/activity`, `/assistant`, `/applications`
 and `/admin-api` proxy through Vite/nginx/Netlify; `/admin-api` rewrites to backend `/admin`.

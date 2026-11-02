@@ -1,8 +1,8 @@
 # Sprint 3 local feature testing
 
-Branch: `mohammad_admin_monitoring_privacy_sprint3`, integrated with `dev` at `3948935`. Do not merge
-or push this work into `dev` or `main` until the user finishes testing. No deployment
-is part of this change. Existing deployment workflows and environment files stay in place.
+Current combined branch: `zeid_sprint3_integration` (draft PR #28 to `dev`). This preview guide focuses
+on admin/privacy features and deliberately disables Gemini. For the full delivery summary and live
+assistant manual tests with separate data, use [Sprint 3 manual acceptance](SPRINT3_MANUAL_TESTING.md).
 
 ## Start the isolated preview
 
@@ -13,27 +13,27 @@ macOS/Linux:
 
 ```bash
 git fetch origin
-git switch mohammad_admin_monitoring_privacy_sprint3
+git switch zeid_sprint3_integration
 cd frontend
 npm ci
 cd ../backend
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -r requirements-dev.lock
-python preview.py run --seed-demo --free-ports
+python preview.py run --seed-demo
 ```
 
 Windows PowerShell:
 
 ```powershell
 git fetch origin
-git switch mohammad_admin_monitoring_privacy_sprint3
+git switch zeid_sprint3_integration
 cd frontend
 npm ci
 cd ../backend
 py -3.12 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements-dev.lock
-.\.venv\Scripts\python.exe preview.py run --seed-demo --free-ports
+.\.venv\Scripts\python.exe preview.py run --seed-demo
 ```
 
 Open **http://127.0.0.1:5173/sign-in**. The launcher starts both processes; Ctrl+C

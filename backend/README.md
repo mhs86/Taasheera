@@ -1,6 +1,6 @@
 # Taasheera backend — traveler authentication
 
-The backend supports traveler registration, email/password and Google sign-in, a protected traveler profile, refresh, logout, password reset, and authenticated passport upload and extraction. The account page does not yet edit the new profile fields. Sign-up always creates an active traveler; an operator gives an existing account the admin role with `manage.py set-role` (see Roles and admin access).
+The backend supports traveler registration, email/password and Google sign-in, a protected traveler profile, refresh, logout, password reset, and authenticated passport upload and extraction. The account page edits the traveler profile and manages sign-in methods, sessions and deletion. Sign-up always creates an active traveler; an operator gives an existing account the admin role with `manage.py set-role` (see Roles and admin access).
 
 ## Windows setup and run
 
@@ -100,8 +100,9 @@ The main app mounts `POST /passports`, `GET /passports/{id}/image`,
 `POST /passports/{id}/extract`, and `GET`/`PUT /passports/{id}/review`. Each needs the same bearer access token as `/auth/me`;
 the upload ID is resolved only within the authenticated traveler's folder. The local
 storage default is `backend/storage/passports/` (ignored by Git). Set
-`PASSPORT_STORAGE_DIR` to use another local directory. A private bucket adapter is
-still needed before production deployment. Install the Tesseract executable to run
+`PASSPORT_STORAGE_DIR` to use another private directory. The current AWS deployment
+uses the persistent encrypted EBS mount; a private bucket adapter remains a future option.
+Install the Tesseract executable to run
 OCR outside tests.
 
 Set `PASSPORT_UPLOADS_ENABLED=false` on a host without durable private file storage.
