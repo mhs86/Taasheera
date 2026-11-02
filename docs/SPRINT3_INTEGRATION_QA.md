@@ -64,9 +64,11 @@ interpreter in `TAASHEERA_TEST_PYTHON`; an installed browser can be selected wit
   role, private image repositories/host pull permissions, and `AWS_MAIN_DEPLOY_ROLE_ARN` as described in
   `deploy/aws/README.md`. No cloud resources or permissions were changed by this check.
 - After a tested main release, validate real HTTPS deployment and let Dani enable required checks.
-- Jira: all six tickets now belong to Sprint 3 (101), are In Progress with the `in-review` label,
-  and have the plan's points (27 total). The workflow has no In Review status. Sprint 3 on the live
-  board is October 30–November 13, replacing the proposal's dates. Points read-back was verified:
+- Jira: all six tickets are In Progress with the `in-review` label and have the plan's points
+  (27 total). The five stories are in Sprint 3 (101). Subtask CMPS271-190 still reads Sprint 2
+  from its parent despite the sprint-move API reporting success; it is additionally labeled `sprint-3`.
+  Moving its parent would affect other work and was left for team coordination. The workflow has no
+  In Review status. Sprint 3 is October 30–November 13 on the live board, replacing the proposal's dates.
 
   | Ticket | Story | Points | Current status |
   |---|---|---:|---|
