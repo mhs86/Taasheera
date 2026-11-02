@@ -135,7 +135,10 @@ exact digests through `redeploy.sh`. The host pulls instead of building, verifie
 labels, backs up SQLite, migrates and checks readiness. `TAASHEERA_PRESERVE_CONFIG=1` keeps its private
 environment. A concurrency group shared with manual dev deploys prevents overlap. A manual main
 run must also have passing push CI; a superseded commit is refused before publication and again
-before host deployment. One-time setup by the AWS account/repository owner (not run automatically):
+before host deployment. Ahmad Zeid leads deployment/AWS operations from November 2, 2026.
+The following one-time setup needs AWS IAM/CloudFormation and GitHub repository-settings permissions;
+verify the access handover first. Existing account/repository ownership is unchanged by this role handover.
+These steps are not run automatically:
 
 1. In GitHub, create the `production` environment (Settings → Environments). Optionally add a
    required reviewer, which turns each deployment into a one-click approval.

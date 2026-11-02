@@ -31,13 +31,15 @@ admin monitoring/deletion, and tested work on `main` reaching the live site.
 
 | Member | Owns this sprint | Tested/reviewed by |
 |---|---|---|
-| Ahmad Zeid | Assistant/context/tools/history, applications engine/router, layout assistant, deployment pipeline (CMPS271-48/87/88/90/93/190) | Dani Salman |
+| Ahmad Zeid | Assistant/context/tools/history, applications engine/router, layout assistant, deployment pipeline and AWS operations (CMPS271-48/87/88/90/93/190) | Dani Salman |
 | Ahmad Al Hariri | Auth, Google/reset/OTP, sessions, idle guard, shared rate limiting (CMPS271-5/8/116/119) | Ahmad Zeid |
 | Mohammad Sharafeddin | Admin pages/API, logging, document audit, account erasure, monitoring, Google consent (CMPS271-117/120/126/141/157–159) | Ahmad Al Hariri |
 | Dani Salman | Applications dashboard/lifecycle, backups, critical-path tests, CI/protection (CMPS271-76/78/82/132/133/155) | Mohammad Sharafeddin |
 
 New features go in new modules; keep edits to another member's files small and coordinate interfaces.
 The backlog and plan are guides, not permanent assignments. Update this section each sprint.
+Ahmad Zeid leads deployment and AWS operations from November 2; administrative access must be
+handed over/verified separately from the existing AWS account and GitHub repository ownership.
 
 - `main` is production; tested sprint work integrates on `dev` before release to `main`.
 - Feature branches start from `dev` and PR back to `dev`. Existing names use

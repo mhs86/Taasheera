@@ -63,7 +63,8 @@ interpreter in `TAASHEERA_TEST_PYTHON`; an installed browser can be selected wit
 - Review/merge the feature PRs with the sprint's assigned reviewers. If integrating separately,
   reparent migrations as each lands; never merge competing migration heads. Reconcile AGENTS.md
   decisions rather than dropping one branch's entries. The integration branch demonstrates the resolutions.
-- AWS/repository owner: provision production environment/main-only deployment rules, production OIDC
+- Ahmad Zeid, taking over deployment/AWS operations: verify AWS and GitHub settings access, then
+  provision production environment/main-only deployment rules, production OIDC
   role, private image repositories/host pull permissions, and `AWS_MAIN_DEPLOY_ROLE_ARN` as described in
   `deploy/aws/README.md`. No cloud resources or permissions were changed by this check.
 - After a tested main release, validate real HTTPS deployment and let Dani enable required checks.
