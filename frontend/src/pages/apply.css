@@ -64,6 +64,12 @@
   background: var(--brand-muted);
 }
 
+.apps-all {
+  display: block;
+  padding: 2px 12px 6px;
+  font-size: 14px;
+}
+
 .apps-heading {
   margin: 18px 12px 4px;
   color: var(--fg-dim);

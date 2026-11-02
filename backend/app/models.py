@@ -78,6 +78,8 @@ class Application(SQLModel, table=True):
     status: str = Field(default="DRAFT", max_length=20)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    # Set when the traveler archives it (US 79): hidden from the dashboard, kept until they delete it.
+    archived_at: datetime | None = None
 
 
 class ApplicationAnswer(SQLModel, table=True):
