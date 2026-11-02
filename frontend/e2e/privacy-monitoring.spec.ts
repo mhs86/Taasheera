@@ -41,6 +41,9 @@ test('traveler creates a draft, sees passport access, restores session and delet
   await expect(page).toHaveURL(/\/passport\/[a-f0-9]{32}/)
   await expect(page.getByRole('img', { name: /passport/i })).toBeVisible()
   await page.goto('/account')
+  // The preceding OCR request holds the owner's lock until it finishes. Wait for session restoration
+  // before checking controls on this page, rather than the shorter default assertion timeout.
+  await expect(page.getByRole('heading', { name: 'Your account', exact: true })).toBeVisible({ timeout: 15_000 })
   await expect(page.getByRole('button', { name: 'Ask the assistant', exact: true })).toBeVisible()
   await page.getByRole('button', { name: 'Refresh access history' }).click()
   await expect(page.locator('.access-history')).toContainText('You')

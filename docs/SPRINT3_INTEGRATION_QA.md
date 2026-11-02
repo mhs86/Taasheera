@@ -44,10 +44,13 @@
   change-purpose tool proposal leaves the saved answer unchanged until Confirm; confirmation saves through
   the normal answer API; completeness through both panel/tool; application/history survive reload; no page
   errors and no horizontal overflow at 390 px.
-- Al Hariri's IPv6 and cross-tab regression tests pass as part of the integrated suites. No additional
-  GitHub reviews/comments were posted during this integration check.
+- Al Hariri's IPv6 and cross-tab regressions pass. With explicit authorization, approvals were posted
+  on #19 at `8007b48` and #22 at `4d55165`, resolving the earlier requested-changes findings.
 - CloudFormation lint, verified actionlint, all AWS shell syntax and `git diff --check` passed.
-- No local Docker engine was available: image builds/startup must pass the existing Linux CI smoke checks.
+- Linux CI passed all **811 backend tests**, including PostgreSQL, plus schema drift/migration checks,
+  frontend checks, API/Lambda images and production-container startup checks. A push browser run exposed
+  a short assertion timeout while OCR held the owner lock; the test now waits for account session
+  restoration before checking controls. Local browser verification passed with the same page-ready wait.
   ECR publication and a live OIDC deployment remain unverified until owner provisioning.
 
 Run backend checks from `backend/` with `python -m pytest -q`; frontend checks from `frontend/` with
