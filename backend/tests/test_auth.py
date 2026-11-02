@@ -1,4 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timedelta, timezone
 import secrets
 import time
 
@@ -8,6 +9,7 @@ from fastapi.testclient import TestClient
 from sqlmodel import Session, select
 
 from app.auth import AUDIENCE, COOKIE_NAME, ISSUER, token_hash
+from app.config import AuthSettings
 from app.main import create_app
 from app.models import AuthSession, RefreshToken
 
@@ -316,3 +318,97 @@ def test_refresh_does_not_extend_session_lifetime(api):
     assert 0 < response.json()["expires_in"] <= 60
     with Session(app.state.engine) as session:
         assert session.exec(select(AuthSession)).one().expires_at == deadline
+
+
+def last_refresh(app, minutes_ago, cookie=None):
+    """Pretend a session last refreshed `minutes_ago` ago; None clears it, as on sessions from before US 119."""
+    with Session(app.state.engine) as session:
+        query = select(AuthSession)
+        if cookie is not None:
+            query = query.where(AuthSession.refresh_hash == token_hash(cookie))
+        auth_session = session.exec(query).one()
+        auth_session.last_active_at = (
+            None if minutes_ago is None else datetime.now(timezone.utc) - timedelta(minutes=minutes_ago))
+        session.add(auth_session)
+        session.commit()
+
+
+def test_idle_session_cannot_refresh_and_is_revoked(api):
+    client, app = api
+    logged_in = login(client)
+    last_refresh(app, 31)
+    assert client.post("/auth/refresh").status_code == 401
+    with Session(app.state.engine) as session:
+        assert session.exec(select(AuthSession)).one().revoked
+    assert client.get("/auth/me", headers=bearer(logged_in)).status_code == 401
+
+
+def test_recently_active_session_still_refreshes_and_moves_last_active_forward(api):
+    client, app = api
+    login(client)
+    last_refresh(app, 5)
+    with Session(app.state.engine) as session:
+        before = session.exec(select(AuthSession)).one().last_active_at
+    response = client.post("/auth/refresh")
+    assert response.status_code == 200
+    assert client.get("/auth/me", headers=bearer(response)).status_code == 200
+    with Session(app.state.engine) as session:
+        auth_session = session.exec(select(AuthSession)).one()
+        assert not auth_session.revoked
+        assert auth_session.last_active_at > before
+        assert datetime.now(timezone.utc) - auth_session.last_active_at.replace(tzinfo=timezone.utc) < timedelta(minutes=1)
+
+
+def test_session_without_last_active_still_refreshes(api):
+    client, app = api
+    login(client)
+    last_refresh(app, None)
+    response = client.post("/auth/refresh")
+    assert response.status_code == 200
+    assert client.get("/auth/me", headers=bearer(response)).status_code == 200
+
+
+def test_idle_revoking_one_session_leaves_the_travelers_other_session_valid(api):
+    client, app = api
+    assert login(client).status_code == 200
+    idle_cookie = client.cookies.get(COOKIE_NAME)
+    client.cookies.clear()  # A second browser: without the first cookie, login does not replace session one.
+    other = login(client)
+    other_cookie = client.cookies.get(COOKIE_NAME)
+    with Session(app.state.engine) as session:
+        assert len(session.exec(select(AuthSession)).all()) == 2
+    last_refresh(app, 31, cookie=idle_cookie)
+
+    set_cookie(client, idle_cookie)
+    assert client.post("/auth/refresh").status_code == 401
+    with Session(app.state.engine) as session:
+        revoked = {row.refresh_hash == token_hash(idle_cookie): row.revoked
+                   for row in session.exec(select(AuthSession))}
+    assert revoked == {True: True, False: False}
+
+    assert client.get("/auth/me", headers=bearer(other)).status_code == 200
+    set_cookie(client, other_cookie)
+    assert client.post("/auth/refresh").status_code == 200
+
+
+def test_idle_timeout_defaults_to_thirty_minutes():
+    # conftest sets JWT_SECRET and clears AUTH_IDLE_TIMEOUT_SECONDS for every test.
+    assert AuthSettings.from_environment().idle_seconds == 1800
+
+
+def test_idle_timeout_uses_a_valid_custom_value(monkeypatch):
+    monkeypatch.setenv("AUTH_IDLE_TIMEOUT_SECONDS", "3600")
+    assert AuthSettings.from_environment().idle_seconds == 3600
+
+
+@pytest.mark.parametrize("value", ["900", "604800"])
+def test_idle_timeout_accepts_the_boundaries(monkeypatch, value):
+    monkeypatch.setenv("AUTH_IDLE_TIMEOUT_SECONDS", value)
+    assert AuthSettings.from_environment().idle_seconds == int(value)
+
+
+@pytest.mark.parametrize("value", ["abc", "1.5", "-1", "", "899", "604801"])
+def test_idle_timeout_rejects_invalid_values(monkeypatch, value):
+    monkeypatch.setenv("AUTH_IDLE_TIMEOUT_SECONDS", value)
+    with pytest.raises(RuntimeError, match="AUTH_IDLE_TIMEOUT_SECONDS"):
+        AuthSettings.from_environment()

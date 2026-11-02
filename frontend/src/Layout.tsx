@@ -4,6 +4,7 @@ import { toast, Toaster } from 'sonner'
 import { ArrowIcon, MenuIcon } from './icons'
 import ActivityTracker from './ActivityTracker'
 import GlobalAssistant from './assistant/GlobalAssistant'
+import IdleGuard from './IdleGuard'
 import { restoreSession, signOut, type Traveler } from './auth'
 import { disableGoogleAutoSelect } from './googleIdentity'
 import { createAccountPath, signInPath } from './paths'
@@ -92,6 +93,7 @@ export default function Layout() {
   return (
     <div className="site">
       <ActivityTracker />
+      <IdleGuard />
       <ScrollRestoration />
       <a className="skip-link" href="#main" data-activity-id="skip-link">Skip to content</a>
       <header className="navbar-wrap" onKeyDown={closeOnEscape}>
