@@ -87,7 +87,7 @@ Status key: **in use** = already in the code · **proposed** = tentative recomme
 | Frontend routing, toasts | React Router (data router: routes, 404, error boundaries), sonner (toasts via `src/api.ts`) | in use | Page crashes and failed API calls show a page or a toast instead of a blank screen |
 | Frontend styling | Plain CSS with custom properties (`src/index.css` tokens); DM Sans + Space Grotesk, layout modelled on Migraide (simple, no pricing) | in use | Small site, no extra build tooling; auth screens use the same site font and scoped form styles. Tailwind not adopted (see decision 6) |
 | Frontend data fetching | TanStack Query (loading/error states) | proposed | Adopt once pages load real data |
-| Backend hosting | One AWS EC2 host (`us-east-1`) running the non-root FastAPI + Tesseract container with Docker Compose, SQLite and passport files on encrypted EBS (`deploy/aws/`); Render blueprint and Lambda image kept as alternatives | live at https://d3vh2ppjrlwxee.cloudfront.net; its config is in open PR #6 (not on `main`) | Cheapest always-on setup that keeps passport files on persistent private disk |
+| Backend hosting | One AWS EC2 host (`us-east-1`) running the non-root FastAPI + Tesseract container with Docker Compose, SQLite and passport files on encrypted EBS (`deploy/aws/`); Render blueprint and Lambda image kept as alternatives | live at https://d3vh2ppjrlwxee.cloudfront.net; daily S3 backups (`docs/BACKUPS.md`) | Cheapest always-on setup that keeps passport files on persistent private disk |
 | Frontend hosting | Nginx container on the same EC2 host serving the Vite build behind CloudFront; Netlify config (`netlify.toml`, `docs/NETLIFY.md`) kept as rollback | in use | One origin proxies `/auth`, `/passports`, `/profile`, `/sessions`, `/activity`, `/assistant`, `/applications`, and `/admin-api` (to `/admin`), so cookies stay first-party. A new API prefix must be added to `vite.config.ts`, `write-netlify-redirects.mjs` and `deploy/aws/nginx.conf`, and must not match a page path |
 | Domain | CloudFront hostname with viewer HTTPS | in use; custom domain not configured | Auth cookies work on the browser origin; Google OAuth origins must list this hostname |
 | CI/CD, observability | GitHub Actions CI, Lambda image deployment workflow, JSON request logs | CI/logs in use; Lambda workflow awaits AWS setup | CI builds both backend images; `deploy-backend.yml` pushes the Lambda image on main backend changes after OIDC setup. Public ECR rate-limits GitHub runners (HTTP 429), so CI keeps the Lambda adapter image in the Actions cache and retries the pull only when the cache is empty |
@@ -101,6 +101,8 @@ one question file per destination in `applications/questionnaires/`), `backend/a
 `backend/preview.py` (isolated preview), `backend/retry_erasures.py` (operator cleanup of pending account erasures),
 `backend/scripts/` (passport demo), `backend/tests/`,
 `frontend/src/`, `frontend/tests/`, `frontend/e2e/` (Playwright). Deployment plan: `docs/DEPLOYMENT_PLAN.md`.
+`backend/scripts/` (passport demo, `backup_tools.py`), `backend/tests/`,
+`frontend/src/`, `frontend/tests/`. Deployment plan: `docs/DEPLOYMENT_PLAN.md`.
 
 Local Windows setup is in `backend/README.md` and `frontend/README.md`. From `backend/`,
 create `.venv`, install `requirements-dev.lock`, run `python dev.py setup` once, then
@@ -310,6 +312,12 @@ What we decided, why, and what we rejected. Newest at the bottom. Add an entry w
     timeline is derived from stored timestamps (started, each answer's last save, archived), so a changed answer shows
     once; "what happens next" comes from the flow engine, not the AI. *Rejected: an application event table (more
     schema, more to delete) and reusing `ActivityEvent` (no application id, outlives the application).*
+29. **Backups (US 126).** A systemd timer on the AWS host runs `backend/scripts/backup_tools.py` nightly: SQLite's
+    online backup plus passports and activity logs, never `private/` secrets, in a checksummed `.tar.gz` sent with the
+    AWS CLI to a private, versioned, SSE-S3 bucket (`deploy/aws/backup-bucket.yaml`; the host may write and read, not
+    delete). The script is stdlib-only for the host's Python 3.9. Restore verifies everything first, keeps the replaced
+    data in `private/pre-restore-*`, migrates and checks readiness. *Rejected: EBS snapshots alone (they copy the
+    secrets and are hard to rehearse) and a sidecar container (needs the AWS CLI in the image).*
 
 ## Personal instructions
 
