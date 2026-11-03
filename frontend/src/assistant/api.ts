@@ -1,9 +1,21 @@
 import { ApiError } from '../api'
 import { protectedFetch } from '../auth'
+import type { AnswerValue, CheckReport } from '../application/api'
 
-export type AssistantStep = 'passport_upload' | 'passport_review' | 'application'
+export type AssistantStep = 'passport_upload' | 'passport_review' | 'application' | 'general'
 export type ChatTurn = { role: 'user' | 'assistant'; content: string }
-export type AssistantReply = { reply: string; used_passport: boolean }
+// An action the traveler asked the assistant for (US 110), checked by the server but not saved.
+// Mirrors backend/app/applications/actions.py.
+export type Proposal = {
+  action: 'change_answer' | 'go_to_question' | 'check'
+  question_id: string | null
+  question: string | null
+  value: AnswerValue | null
+  display: string | null
+  current_display: string | null
+  report: CheckReport | null
+}
+export type AssistantReply = { reply: string; used_passport: boolean; proposal?: Proposal | null }
 
 // The server allows ten earlier turns; older ones are dropped, newest kept.
 export const MAX_HISTORY = 10
@@ -36,4 +48,12 @@ export async function askAssistant(message: string, step: AssistantStep, history
     throw new Error(typeof problem?.detail === 'string' ? problem.detail : 'The assistant could not answer. Please try again.')
   }
   return await response.json() as AssistantReply
+}
+
+// Earlier turns kept by the server (US 111), oldest first. Per application, or outside one when omitted.
+export async function getHistory(applicationId?: string): Promise<ChatTurn[]> {
+  const query = applicationId ? `?application_id=${applicationId}` : ''
+  const response = await protectedFetch(`/assistant/history${query}`, { cache: 'no-store', silent: true })
+  if (!response.ok) return []
+  return await response.json() as ChatTurn[]
 }

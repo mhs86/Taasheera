@@ -1,5 +1,6 @@
 import { submitPasswordReset } from './passwordReset.ts'
 import { apiFetch } from './api.ts'
+import { refreshDue } from './idleTimeout.ts'
 
 export type Traveler = { id: number; name: string; email: string; sso_email?: string | null
   auth_type?: 'email_password' | 'google'; password_enabled?: boolean; last_login_method?: string | null }
@@ -143,6 +144,27 @@ let restoring: Promise<Traveler | null> | null = null
 
 export function hasAccessToken(): boolean { return accessToken !== null }
 
+export function forgetSession(): void {
+  accessToken = null
+  if (typeof window !== 'undefined') window.dispatchEvent(new window.Event('taasheera-auth-changed'))
+}
+
+// Destructive cookie/session changes share the cross-tab lock used by sign-in,
+// refresh and logout. Refresh directly inside the lock to avoid a nested lock.
+export function deleteAccountSession(payload: { confirmation: 'DELETE'; expected_traveler_id: number;
+  password?: string; google_id_token?: string }): Promise<Response> {
+  return sessionOperation(async () => {
+    if (!accessToken && !(await refresh())) throw new Error('Please sign in to continue.')
+    const send = () => request('account', { method: 'DELETE',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
+      body: JSON.stringify(payload) })
+    let response = await send()
+    if (response.status === 401 && await refresh()) response = await send()
+    if ([202, 204].includes(response.status)) forgetSession()
+    return response
+  })
+}
+
 // Options are apiFetch's, so a caller can pass `silent: true` and show its own error instead of a toast.
 export async function protectedFetch(path: string, options: Parameters<typeof apiFetch>[1] = {}): Promise<Response> {
   if (!accessToken && !(await restoreSession())) throw new Error('Please sign in to continue.')
@@ -173,13 +195,30 @@ function sessionOperation<T>(operation: () => Promise<T>): Promise<T> {
   return navigator.locks.request('taasheera-session', operation)
 }
 
+// When this page last got a fresh session from the server (sign-in or refresh), in ms.
+let lastRefreshAt = 0
+let touching: Promise<boolean> | null = null
+
 async function refresh(): Promise<boolean> {
   accessToken = null
   const response = await request('refresh', { method: 'POST' })
   if (response.status === 401) return false
   if (!response.ok) throw new Error('Could not restore your session. Please try again.')
   accessToken = (await response.json()).access_token
+  lastRefreshAt = Date.now()
   return true
+}
+
+// The server ends a session whose last refresh is too old, and an active traveler may trigger no
+// API call. Called on real activity: refreshes quietly if the last refresh is old enough, else does
+// nothing. True means the session is fine, false that the server no longer accepts it (401).
+// It takes the same cross-tab lock as every other session change and checks again once it holds
+// the lock, so a refresh or sign-in that finished while it waited is not repeated.
+export function touchSession(): Promise<boolean> {
+  const fresh = () => accessToken !== null && !refreshDue(lastRefreshAt, Date.now())
+  if (fresh()) return Promise.resolve(true)
+  touching ??= sessionOperation(async () => fresh() || refresh()).finally(() => { touching = null })
+  return touching
 }
 
 const SUSPENDED = 'This account is suspended, so it cannot sign in.'
@@ -191,6 +230,11 @@ async function isSuspended(response: Response): Promise<boolean> {
   return payload?.detail?.code === 'account_suspended'
 }
 
+// Tells listeners (ActivityTracker, and the idle guard) that someone signed in or out.
+function announceAuthChange() {
+  if (typeof window !== 'undefined') window.dispatchEvent(new window.Event('taasheera-auth-changed'))
+}
+
 async function profile(): Promise<Traveler> {
   const response = await request('me', {
     headers: { Authorization: `Bearer ${accessToken}` },
@@ -200,7 +244,7 @@ async function profile(): Promise<Traveler> {
     throw new Error('Could not load your traveler profile. Please sign in again.')
   }
   const traveler = await response.json()
-  if (typeof window !== 'undefined') window.dispatchEvent(new window.Event('taasheera-auth-changed'))
+  announceAuthChange()
   return traveler
 }
 
@@ -241,8 +285,16 @@ export function signIn(email: string, password: string): Promise<Traveler> {
     if (await isSuspended(response)) throw new Error(SUSPENDED)
     if (!response.ok) throw new Error('Sign-in is temporarily unavailable. Please try again.')
     accessToken = (await response.json()).access_token
+    lastRefreshAt = Date.now()
     return profile()
   })
+}
+
+export class GoogleLinkRequiredError extends Error {
+  constructor() {
+    super('Confirm your existing account password to link Google and sign in.')
+    this.name = 'GoogleLinkRequiredError'
+  }
 }
 
 export function signInWithGoogle(idToken: string): Promise<Traveler> {
@@ -259,6 +311,8 @@ export function signInWithGoogle(idToken: string): Promise<Traveler> {
       throw new Error('Could not complete Google sign-in. Check your connection and try again.')
     }
     if (response.status === 409) {
+      const payload = await response.json().catch(() => null)
+      if (payload?.detail?.code === 'google_link_required') throw new GoogleLinkRequiredError()
       throw new Error('This email already belongs to an account. Use your existing sign-in method. Accounts have not been linked.')
     }
     if (response.status === 401 || response.status === 422) {
@@ -267,15 +321,38 @@ export function signInWithGoogle(idToken: string): Promise<Traveler> {
     if (await isSuspended(response)) throw new Error(SUSPENDED)
     if (!response.ok) throw new Error('Google sign-in is temporarily unavailable. Try again or use email sign-in.')
     accessToken = (await response.json()).access_token
+    lastRefreshAt = Date.now()
+    return profile()
+  })
+}
+
+export function linkGoogleAndSignIn(idToken: string, password: string): Promise<Traveler> {
+  return sessionOperation(async () => {
+    accessToken = null
+    const response = await request('google/link-login', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id_token: idToken, password }),
+    })
+    if (response.status === 401) throw new Error('Check your password. If the Google prompt expired, cancel and choose Google again.')
+    if (response.status === 409) throw new Error('This Google account cannot be linked. Sign in with your existing method and check your account settings.')
+    if (response.status === 429) throw new Error('Too many attempts. Please wait 15 minutes before trying again.')
+    if (response.status === 422) throw new Error('Check your password and try again.')
+    if (await isSuspended(response)) throw new Error(SUSPENDED)
+    if (!response.ok) throw new Error('Could not link Google. Please try again.')
+    accessToken = (await response.json()).access_token
     return profile()
   })
 }
 
 export function signOut(): Promise<void> {
   return sessionOperation(async () => {
+    // Forget the remembered refresh time whatever the request does. A failed logout keeps the token
+    // so it can be retried, and touchSession must not call that session fresh from the old time.
+    lastRefreshAt = 0
     const response = await request('logout', { method: 'POST' })
     if (!response.ok) throw new Error('Could not log out. Please try again.')
     accessToken = null
+    announceAuthChange()
   })
 }
 

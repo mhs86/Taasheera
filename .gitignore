@@ -16,3 +16,6 @@ __pycache__/
 storage/
 # Private per-traveler activity audit mirrors (also covered by storage/)
 backend/storage/activity-logs/
+work/
+frontend/test-results/
+frontend/playwright-report/

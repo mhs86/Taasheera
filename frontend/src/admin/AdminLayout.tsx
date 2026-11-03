@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link, Outlet, useNavigate } from 'react-router'
 import { Toaster } from 'sonner'
 import { restoreSession } from '../auth'
+import IdleGuard from '../IdleGuard'
+import GlobalAssistant from '../assistant/GlobalAssistant'
 import { signInPath } from '../paths'
 import { ADMIN_REQUIRED, AdminRequestError, getAdminMe, type AdminProfile } from './api'
 import '../site.css'
@@ -52,6 +54,7 @@ export default function AdminLayout() {
         <span className="admin-badge">Admin</span>
         {admin && <nav className="admin-nav" aria-label="Admin">
           <Link to="/admin">Users</Link>
+          <Link to="/backoffice">Monitoring</Link>
           <span className="admin-signed-in">Signed in as {admin.name}</span>
         </nav>}
       </div>
@@ -69,6 +72,8 @@ export default function AdminLayout() {
         </div>
           : <p role="status" className="admin-muted">Checking your access…</p>}
     </main>
+    <IdleGuard />
+    {admin && <GlobalAssistant key={admin.id} />}
     <Toaster position="top-center" richColors closeButton />
   </div>
 }

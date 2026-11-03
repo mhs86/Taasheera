@@ -14,7 +14,8 @@ const controls = new Set([
   'application-start', 'application-resume', 'application-answer', 'application-change', 'application-cancel-change',
   'application-passport-upload', 'application-passport-manual', 'application-return', 'application-ask',
   'application-new', 'applications-toggle', 'start-application-link',
-  'application-use-suggestion', 'application-change-suggestion',
+  'application-use-suggestion', 'application-change-suggestion', 'application-check',
+  'assistant-proposal-confirm', 'assistant-proposal-dismiss', 'assistant-proposal-go',
 ])
 
 export default function ActivityTracker() {

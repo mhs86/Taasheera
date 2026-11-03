@@ -1,3 +1,5 @@
+import hashlib
+import hmac
 from datetime import date
 from types import SimpleNamespace
 from typing import Annotated
@@ -7,13 +9,22 @@ import pytest
 from fastapi import FastAPI, Header
 from fastapi.testclient import TestClient
 from google.genai import errors as genai_errors
+from sqlmodel import Session, SQLModel, create_engine, select
 
+from app.applications.actions import Proposal
+from app.applications.flow import InvalidAnswer
 from app.assistant import (
-    AssistantUnavailable, RateLimiter, build_system_prompt, create_assistant_router, gemini_ask,
+    AssistantUnavailable, ModelTurn, build_system_prompt, create_assistant_router, gemini_ask,
 )
+from app.assistant_tools import TOOLS, TOOLS_PROMPT, gemini_ask_tools
+from app.config import AuthSettings
+from app.models import ResetRateLimit, Traveler
 from app.passport.storage import PassportImageStorage
+from app.privacy import erase_account
 
 TODAY = date(2026, 10, 5)
+SECRET = "assistant-test-secret-not-for-production"
+LIMITED = {"detail": "You're sending messages quickly. Wait a minute and try again."}
 # ICAO 9303 specimen passport ("Utopia"). Never use real passport data in tests.
 SPECIMEN = {
     "surname": "ERIKSSON", "given_names": "ANNA MARIA", "document_number": "L898902C3",
@@ -39,10 +50,21 @@ class FakeModel:
         return self.reply
 
 
-def make_client(tmp_path, ask, **options):
+def make_client(tmp_path, ask, *, trust_proxy=False, db_name="assistant.db", **options):
+    """The router needs the shared database limiter: an engine, a session dependency and
+    the auth settings the limiter reads from app.state. Reusing db_name reuses the database."""
+    engine = create_engine(f"sqlite:///{tmp_path / db_name}", connect_args={"check_same_thread": False})
+    SQLModel.metadata.create_all(engine)
+
+    def get_session():
+        with Session(engine) as session:
+            yield session
+
     storage = PassportImageStorage(tmp_path)
     app = FastAPI()
-    app.include_router(create_assistant_router(fake_traveler_id, storage.latest_review, ask,
+    app.state.auth_settings = AuthSettings(jwt_secret=SECRET, trust_cloudfront_proxy=trust_proxy)
+    app.state.engine = engine
+    app.include_router(create_assistant_router(get_session, fake_traveler_id, storage.latest_review, ask,
                                                today=lambda: TODAY, **options))
     return TestClient(app), storage
 
@@ -52,9 +74,21 @@ def confirm_passport(storage, traveler_id, fields=SPECIMEN):
     storage.save_review(traveler_id, upload_id, fields)
 
 
-def ask_question(client, traveler=1, message="When does my passport expire?", **body):
-    return client.post("/assistant/messages", headers={"X-Traveler": str(traveler)},
+def ask_question(client, traveler=1, message="When does my passport expire?", ip=None, **body):
+    headers = {"X-Traveler": str(traveler)}
+    if ip is not None:
+        headers["X-Taasheera-Client-IP"] = ip
+    return client.post("/assistant/messages", headers=headers,
                        json={"message": message, "step": "passport_review", **body})
+
+
+def limit_keys(client):
+    with Session(client.app.state.engine) as session:
+        return {row.key for row in session.exec(select(ResetRateLimit)).all()}
+
+
+def digest(value):
+    return hmac.new(SECRET.encode(), value.encode(), hashlib.sha256).hexdigest()
 
 
 # --- The system prompt -------------------------------------------------------
@@ -94,7 +128,8 @@ def test_answers_using_the_travelers_confirmed_passport(tmp_path):
     response = ask_question(client)
 
     assert response.status_code == 200
-    assert response.json() == {"reply": "Your passport expires on 15 April 2028.", "used_passport": True}
+    assert response.json() == {"reply": "Your passport expires on 15 April 2028.", "used_passport": True,
+                               "proposal": None}
     system, messages = model.calls[0]
     assert "Expiry date: 2028-04-15" in system
     assert messages == [{"role": "user", "content": "When does my passport expire?"}]
@@ -178,20 +213,89 @@ def test_model_failure_becomes_a_friendly_503_and_is_recorded(tmp_path):
     assert events == [(1, "assistant_message", "unavailable")]
 
 
-def test_rate_limit_is_per_traveler(tmp_path):
-    client, _ = make_client(tmp_path, FakeModel(), limiter=RateLimiter(limit=2, window_seconds=60))
+def test_twenty_messages_are_allowed_then_429_with_the_same_message_and_no_retry_after(tmp_path):
+    client, _ = make_client(tmp_path, FakeModel())
 
-    assert [ask_question(client).status_code for _ in range(3)] == [200, 200, 429]
+    statuses = [ask_question(client).status_code for _ in range(20)]
+    limited = ask_question(client)
+
+    assert statuses == [200] * 20
+    assert limited.status_code == 429
+    assert limited.json() == LIMITED
+    assert "retry-after" not in limited.headers
+
+
+def test_rate_limit_is_per_traveler(tmp_path):
+    client, _ = make_client(tmp_path, FakeModel())
+
+    assert [ask_question(client).status_code for _ in range(21)] == [200] * 20 + [429]
     assert ask_question(client, traveler=2).status_code == 200
 
 
-def test_rate_limit_window_slides():
-    now = [0.0]
-    limiter = RateLimiter(limit=1, window_seconds=60, clock=lambda: now[0])
+def test_rate_limit_is_per_ip(tmp_path):
+    client, _ = make_client(tmp_path, FakeModel(), trust_proxy=True)
 
-    assert limiter.allow(1) and not limiter.allow(1)
-    now[0] = 60
-    assert limiter.allow(1)
+    # Three travelers at 20 each exhaust the 60-per-IP budget without any one hitting 20 + 1.
+    for traveler in (1, 2, 3):
+        assert [ask_question(client, traveler=traveler, ip="203.0.113.9").status_code
+                for _ in range(20)] == [200] * 20
+    limited = ask_question(client, traveler=4, ip="203.0.113.9")
+
+    assert limited.status_code == 429 and limited.json() == LIMITED
+    assert ask_question(client, traveler=4, ip="203.0.113.10").status_code == 200
+
+
+def test_rate_limit_resets_after_the_ten_minute_window(tmp_path, monkeypatch):
+    now = [1000.0]
+    monkeypatch.setattr("app.security.time", SimpleNamespace(time=lambda: now[0]))
+    client, _ = make_client(tmp_path, FakeModel())
+
+    assert [ask_question(client).status_code for _ in range(21)] == [200] * 20 + [429]
+    now[0] = 1599
+    assert ask_question(client).status_code == 429
+    now[0] = 1600
+    assert ask_question(client).status_code == 200
+
+
+def test_rate_limit_survives_a_new_app_instance(tmp_path):
+    first, _ = make_client(tmp_path, FakeModel())
+    assert [ask_question(first).status_code for _ in range(20)] == [200] * 20
+
+    second, _ = make_client(tmp_path, FakeModel())
+
+    assert ask_question(second).status_code == 429
+
+
+def test_rate_limit_rows_hold_only_keyed_digests_of_the_traveler_and_ip(tmp_path):
+    client, _ = make_client(tmp_path, FakeModel(), trust_proxy=True)
+
+    ask_question(client, traveler=7, ip="203.0.113.9")
+
+    assert limit_keys(client) == {f"assistant-account:{digest('7')}", f"assistant-ip:{digest('203.0.113.9')}"}
+
+
+def test_unconfigured_assistant_does_not_consume_quota(tmp_path):
+    client, _ = make_client(tmp_path, ask=None)
+
+    assert [ask_question(client).status_code for _ in range(25)] == [503] * 25
+    assert limit_keys(client) == set()
+
+
+def test_erasing_an_account_removes_its_assistant_limit_row_only(tmp_path):
+    client, storage = make_client(tmp_path, FakeModel())
+    with Session(client.app.state.engine) as session:
+        session.add(Traveler(id=5, name="Specimen", email="specimen@example.com", password_hash="hash"))
+        session.commit()
+    ask_question(client, traveler=5)
+    ask_question(client, traveler=6)
+    assert {f"assistant-account:{digest('5')}", f"assistant-account:{digest('6')}"} <= limit_keys(client)
+
+    with Session(client.app.state.engine) as session:
+        assert erase_account(session, session.get(Traveler, 5), storage, tmp_path / "activity", SECRET)
+
+    keys = limit_keys(client)
+    assert f"assistant-account:{digest('5')}" not in keys
+    assert f"assistant-account:{digest('6')}" in keys
 
 
 # --- The Gemini adapter ------------------------------------------------------
@@ -319,3 +423,96 @@ def test_main_app_assistant_requires_sign_in_and_a_configured_key(tmp_path, monk
 
         # conftest removes GEMINI_API_KEY, so the assistant is switched off, not crashing.
         assert response.status_code == 503
+
+
+# --- Actions on request (US 110) ----------------------------------------------
+
+CHANGE = Proposal(action="change_answer", question_id="departure_date", question="And when will you leave?",
+                  value="2027-01-24", display="2027-01-24", current_display="2027-01-20")
+
+
+class FakeToolModel:
+    def __init__(self, turn):
+        self.turn, self.calls = turn, []
+
+    def __call__(self, system, messages):
+        self.calls.append((system, messages))
+        return self.turn
+
+
+def tool_client(tmp_path, turn, propose):
+    model = FakeToolModel(turn)
+    client, _ = make_client(tmp_path, FakeModel(), load_application=lambda *_: APPLICATION, ask_tools=model,
+                            propose=propose, tools_prompt=TOOLS_PROMPT)
+    return client, model
+
+
+def ask_in_application(client, message="Change my departure to the 24th"):
+    return ask_question(client, traveler=3, message=message, step="application", application_id="c" * 32)
+
+
+def test_a_tool_call_comes_back_as_a_proposal_to_confirm_not_a_saved_change(tmp_path):
+    seen = []
+
+    def propose(*call):
+        seen.append(call)
+        return CHANGE
+
+    client, model = tool_client(tmp_path, ModelTurn("", ("change_answer", {"question_id": "departure_date",
+                                                                           "value": "2027-01-24"})), propose)
+    body = ask_in_application(client).json()
+    assert seen == [(3, "c" * 32, "change_answer", {"question_id": "departure_date", "value": "2027-01-24"})]
+    assert body["proposal"]["action"] == "change_answer" and body["proposal"]["value"] == "2027-01-24"
+    assert body["reply"] == "Here's the change. Confirm it below to save it."
+    assert "confirm it below" in model.calls[0][0] and "never \"I've changed it\"" in model.calls[0][0]
+
+
+def test_a_proposal_that_breaks_a_rule_is_explained_instead(tmp_path):
+    def propose(*_):
+        raise InvalidAnswer("You can't leave before you arrive.")
+
+    client, _ = tool_client(tmp_path, ModelTurn("Sure.", ("change_answer", {"question_id": "x", "value": "y"})), propose)
+    body = ask_in_application(client).json()
+    assert body["proposal"] is None
+    assert body["reply"] == "Sure.\n\nI couldn't prepare that: You can't leave before you arrive."
+
+
+def test_plain_answers_still_work_with_tools_on(tmp_path):
+    client, _ = tool_client(tmp_path, ModelTurn("It's the day you arrive."), lambda *_: CHANGE)
+    assert ask_in_application(client, "What counts as arrival?").json() == {
+        "reply": "It's the day you arrive.", "used_passport": False, "proposal": None}
+
+
+def test_tools_are_never_offered_outside_an_application(tmp_path):
+    model = FakeModel()
+    tools = FakeToolModel(ModelTurn("", ("run_completeness_check", {})))
+    client, _ = make_client(tmp_path, model, ask_tools=tools, propose=lambda *_: CHANGE)
+    assert ask_question(client).json()["proposal"] is None and tools.calls == [] and len(model.calls) == 1
+
+
+def tool_reply(text=None, calls=None):
+    parts = [SimpleNamespace(text=text)] if text else []
+    return SimpleNamespace(function_calls=calls, prompt_feedback=SimpleNamespace(block_reason=None),
+                           candidates=[SimpleNamespace(finish_reason="STOP", content=SimpleNamespace(parts=parts))])
+
+
+def test_the_tools_adapter_declares_the_tools_and_returns_the_first_known_call():
+    calls = [SimpleNamespace(name="submit_application", args={}),
+             SimpleNamespace(name="go_to_question", args={"question_id": "phone"})]
+    fake = FakeGemini(tool_reply("Here it is.", calls))
+    turn = gemini_ask_tools(fake)("system", [{"role": "user", "content": "x"}])
+    assert turn == ModelTurn("Here it is.", ("go_to_question", {"question_id": "phone"}))
+    assert fake.requests[0]["config"]["tools"] == [{"function_declarations": TOOLS}]
+    assert "submit" not in str([tool["name"] for tool in TOOLS])
+
+
+def test_the_tools_adapter_reports_nothing_as_unavailable():
+    with pytest.raises(AssistantUnavailable):
+        gemini_ask_tools(FakeGemini(tool_reply()))("system", [{"role": "user", "content": "x"}])
+
+
+def test_the_assistant_on_other_pages_uses_the_general_step(tmp_path):
+    model = FakeModel("Ta'asheera reads your passport and asks the embassy's questions.")
+    client, _ = make_client(tmp_path, model)
+    assert ask_question(client, message="How does this work?", step="general").status_code == 200
+    assert "browsing Ta'asheera" in model.calls[0][0] and "<application>" not in model.calls[0][0]

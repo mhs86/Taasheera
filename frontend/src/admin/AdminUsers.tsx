@@ -6,6 +6,7 @@ import {
 } from './api'
 import type { AdminContext } from './AdminLayout'
 import { readableDate, roleLabels, statusLabels } from './format'
+import AddAdmin from './AddAdmin'
 
 function Overview() {
   const { leave } = useOutletContext<AdminContext>()
@@ -90,6 +91,7 @@ export default function AdminUsers() {
   return <div className="admin-page">
     <h1>Users</h1>
     <Overview />
+    <AddAdmin leave={leave} onAdded={() => setRetry(value => value + 1)} />
     <section className="admin-panel" aria-labelledby="users-heading">
       <h2 id="users-heading">Find a user</h2>
       <form className="admin-filters" role="search" onSubmit={search}>

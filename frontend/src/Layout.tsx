@@ -3,6 +3,8 @@ import { Link, NavLink, Outlet, ScrollRestoration, useLocation, useNavigate } fr
 import { toast, Toaster } from 'sonner'
 import { ArrowIcon, MenuIcon } from './icons'
 import ActivityTracker from './ActivityTracker'
+import GlobalAssistant from './assistant/GlobalAssistant'
+import IdleGuard from './IdleGuard'
 import { restoreSession, signOut, type Traveler } from './auth'
 import { disableGoogleAutoSelect } from './googleIdentity'
 import { createAccountPath, signInPath } from './paths'
@@ -91,6 +93,7 @@ export default function Layout() {
   return (
     <div className="site">
       <ActivityTracker />
+      <IdleGuard />
       <ScrollRestoration />
       <a className="skip-link" href="#main" data-activity-id="skip-link">Skip to content</a>
       <header className="navbar-wrap" onKeyDown={closeOnEscape}>
@@ -126,6 +129,8 @@ export default function Layout() {
 
       {/* Pages read the signed-in traveler from here, e.g. the homepage's main button. */}
       <main id="main"><Outlet context={{ traveler } satisfies LayoutContext} /></main>
+      {/* The passport and application pages have their own assistant with that page's context. */}
+      {traveler && !/^\/(passport|apply)(\/|$)/.test(location.pathname) && <GlobalAssistant />}
 
       <footer className="site-footer">
         <div className="container">
@@ -138,7 +143,7 @@ export default function Layout() {
               <Link to="/faq" data-activity-id="faq-link">FAQ</Link>
               {traveler
                 ? <>
-                    <Link to="/apply" data-activity-id="start-application-link">Your applications</Link>
+                    <Link to="/dashboard" data-activity-id="dashboard-link">Your applications</Link>
                     <Link to="/passport" data-activity-id="passport-link">Your passport</Link>
                   </>
                 : <Link to={signInPath} data-activity-id="login-link">Log in</Link>}

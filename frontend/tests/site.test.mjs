@@ -101,7 +101,7 @@ test('signed-in travelers see Account, Log out and Start an application instead 
   assert.equal(header.querySelector('a.header-cta')?.getAttribute('href'), '/apply')
   assert.equal(container.querySelector('a[href^="/sign-in"]'), null, 'no Log in or Get started anywhere')
   assert.ok(container.querySelector('.footer-links a[href="/passport"]'))
-  assert.ok(container.querySelector('.footer-links a[href="/apply"]'))
+  assert.ok(container.querySelector('.footer-links a[href="/dashboard"]'))
 
   await click(container.querySelector('.menu-button'))
   const items = [...container.querySelectorAll('#mobile-menu a, #mobile-menu button')].map(el => el.textContent.trim())
@@ -210,3 +210,50 @@ test('failed API calls raise a toast; client errors and silent calls do not', as
   })
   await assert.rejects(apiFetch('/auth/me', { silent: true }), { status: 500 })
 })
+
+test('signed-in travelers get the assistant on every page, with its earlier conversation', async (t) => {
+  t.mock.method(globalThis, 'fetch', async (url) => {
+    if (url === '/auth/refresh') return Response.json({ access_token: 'test-access-token' })
+    if (url === '/auth/me') return Response.json({ id: 1, name: 'Anna', email: 'anna@example.com' })
+    if (url === '/assistant/history') return Response.json([
+      { role: 'user', content: 'Is my data private?' }, { role: 'assistant', content: 'Yes, only you can see it.' }])
+    return new Response(null, { status: 204 })
+  })
+  await render('/faq')
+  await settle()
+  const launcher = [...container.querySelectorAll('button')].find(b => b.textContent.includes('Ask the assistant'))
+  assert.ok(launcher, 'the assistant button is on the FAQ page')
+  await click(launcher)
+  await settle()
+  assert.match(container.querySelector('.assistant-panel').textContent, /Ta'asheera assistant.*Yes, only you can see it\./s)
+})
+
+test('signed-out visitors get no assistant button', async (t) => {
+  t.mock.method(globalThis, 'fetch', async () => new Response(null, { status: 401 }))
+  await render('/faq')
+  await settle()
+  assert.equal(container.querySelector('.assistant-launcher'), null)
+})
+
+for (const path of ['/sign-in', '/account']) {
+  test(`the separate ${path} shell has one assistant after session restoration`, async (t) => {
+    t.mock.method(globalThis, 'fetch', async url => {
+      if (url === '/auth/refresh') return Response.json({ access_token: 'test-access-token' })
+      if (url === '/auth/me') return Response.json({ id: 1, name: 'Anna', email: 'anna@example.com' })
+      if (url === '/auth/config') return Response.json({ google_client_id: '' })
+      if (url === '/profile') return Response.json({})
+      if (url === '/sessions') return Response.json([])
+      if (url === '/assistant/history') return Response.json([])
+      return new Response(null, { status: 204 })
+    })
+    window.history.replaceState(null, '', path)
+    await render(path)
+    await settle()
+    assert.equal(container.querySelectorAll('.assistant-launcher').length, 1)
+    assert.equal(container.querySelector('.sign-in-page .assistant'), null, 'auth form styles must not affect the panel')
+    await click(container.querySelector('.assistant-launcher'))
+    await settle()
+    assert.ok(container.querySelector('.assistant-panel'))
+    window.history.replaceState(null, '', '/')
+  })
+}

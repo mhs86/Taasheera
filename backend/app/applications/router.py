@@ -18,7 +18,7 @@ from sqlmodel import Session, select
 
 from ..models import Application, ApplicationAnswer, Traveler, TravelerProfile
 from ..profile import ProfileFields
-from . import flow
+from . import actions, completeness, flow
 
 Status = Literal["DRAFT", "INELIGIBLE", "ANSWERS_COMPLETE"]
 
@@ -109,6 +109,8 @@ class ApplicationSummary(BaseModel):
     total: int
     created_at: datetime
     updated_at: datetime
+    # Set while archived (US 79): hidden from the dashboard and sidebar until restored.
+    archived_at: datetime | None
 
 
 class ApplicationState(ApplicationSummary):
@@ -140,6 +142,7 @@ def _summary(application: Application, questionnaire: flow.Questionnaire,
         place=flow.summary_place(questionnaire, answers), trip_date=trip_date,
         answered=progress.answered, total=progress.total,
         created_at=_utc(application.created_at), updated_at=_utc(application.updated_at),
+        archived_at=_utc(application.archived_at) if application.archived_at else None,
     )
 
 
@@ -149,14 +152,59 @@ def _status(questionnaire: flow.Questionnaire, answers: flow.Answers) -> Status:
     return "DRAFT" if flow.next_question(questionnaire, answers) else "ANSWERS_COMPLETE"
 
 
-def application_context(session: Session, traveler_id: int, application_id: str) -> str | None:
-    """The assistant's view of one application, or None if it isn't this traveler's."""
+def saved_profile(session: Session, traveler_id: int) -> dict | None:
+    stored = session.get(TravelerProfile, traveler_id)
+    return ProfileFields.model_validate(stored, from_attributes=True).model_dump(mode="json") if stored else None
+
+
+def _owned_answers(session: Session, traveler_id: int, application_id: str):
     application = session.get(Application, application_id)
     if application is None or application.traveler_id != traveler_id:
         return None
     rows = session.exec(select(ApplicationAnswer).where(ApplicationAnswer.application_id == application.id))
-    questionnaire = flow.load_questionnaire(application.questionnaire_id)
-    return flow.describe(questionnaire, {row.question_id: row.value for row in rows}, application.group_size)
+    return application, flow.load_questionnaire(application.questionnaire_id), {row.question_id: row.value for row in rows}
+
+
+def application_context(session: Session, traveler_id: int, application_id: str, *,
+                        latest_passport: dict | None = None, today: date | None = None) -> str | None:
+    """The assistant's view of one application (US 47), or None if it isn't this traveler's.
+
+    Built here on every call, never sent by the browser: the answers, where the traveler
+    is, the questions the assistant's tools may point at, and what is still missing.
+    """
+    found = _owned_answers(session, traveler_id, application_id)
+    if found is None:
+        return None
+    application, questionnaire, answers = found
+    today = today or date.today()
+    answers, _ = flow.reconcile(questionnaire, answers, today)
+    progress = flow.progress(questionnaire, answers)
+    report = completeness.check(questionnaire, answers, today, latest_passport=latest_passport,
+                                profile=saved_profile(session, traveler_id))
+    return "\n\n".join([
+        flow.describe(questionnaire, answers, application.group_size),
+        ("This application is archived and read-only. Restore it from the dashboard before changing answers."
+         if application.archived_at else "This application is active."),
+        f"Current step: {progress.step_title} (step {progress.step_number} of {progress.step_count})",
+        actions.catalog(questionnaire, answers),
+        completeness.describe(report),
+    ])
+
+
+def application_proposal(session: Session, traveler_id: int, application_id: str, name: str, args: dict, *,
+                         latest_passport: dict | None = None, today: date | None = None) -> actions.Proposal | None:
+    """A checked proposal for one assistant tool call (US 110), or None if it isn't this traveler's.
+
+    Raises flow.InvalidAnswer when the proposal breaks a rule. Saves nothing.
+    """
+    found = _owned_answers(session, traveler_id, application_id)
+    if found is None:
+        return None
+    application, questionnaire, answers = found
+    if application.archived_at and name != "run_completeness_check":
+        raise flow.InvalidAnswer("This application is archived. Restore it from your dashboard before changing it.")
+    return actions.propose(questionnaire, answers, name, args, today or date.today(),
+                           latest_passport=latest_passport, profile=saved_profile(session, traveler_id))
 
 
 def create_applications_router(
@@ -168,6 +216,7 @@ def create_applications_router(
     today: Callable[[], date] = date.today,
 ) -> APIRouter:
     from ..auth import check_origin
+    from .lifecycle import add_lifecycle_routes
 
     router = APIRouter(prefix="/applications", tags=["applications"])
     SessionDep = Annotated[Session, Depends(get_session)]
@@ -192,6 +241,9 @@ def create_applications_router(
         any more (a trip date now in the past) is asked again instead of trusted.
         """
         answers, cleared = flow.reconcile(questionnaire, {key: row.value for key, row in rows.items()}, today())
+        if application.archived_at is not None:
+            # Archived applications are read-only (US 79): shown re-checked, but nothing is stored.
+            return answers, cleared
         for question_id in cleared:
             session.delete(rows.pop(question_id))
         status = _status(questionnaire, answers)
@@ -212,8 +264,7 @@ def create_applications_router(
         if question.prefill is None:
             return None
         passport = load_latest_passport(traveler.id) if question.prefill == "passport" else None
-        stored = session.get(TravelerProfile, traveler.id) if question.prefill.startswith("profile.") else None
-        profile = ProfileFields.model_validate(stored, from_attributes=True).model_dump(mode="json") if stored else None
+        profile = saved_profile(session, traveler.id) if question.prefill.startswith("profile.") else None
         found = flow.prefill_value(question, passport, profile)
         if found is None:
             return None
@@ -274,9 +325,11 @@ def create_applications_router(
         return state(session, traveler, application, questionnaire, {}, {}, [])
 
     @router.get("", response_model=list[ApplicationSummary])
-    def list_applications(traveler: TravelerDep, session: SessionDep, response: Response):
+    def list_applications(traveler: TravelerDep, session: SessionDep, response: Response, archived: bool = False):
         response.headers["Cache-Control"] = "private, no-store"
-        applications = session.exec(select(Application).where(Application.traveler_id == traveler.id)
+        # Active ones by default (the dashboard and sidebar); ?archived=true lists the archived ones (US 79).
+        shown = Application.archived_at.is_not(None) if archived else Application.archived_at.is_(None)
+        applications = session.exec(select(Application).where(Application.traveler_id == traveler.id, shown)
                                     .order_by(Application.updated_at.desc())).all()
         # One query for every application's answers, not one per application.
         answers: dict[str, flow.Answers] = {application.id: {} for application in applications}
@@ -297,11 +350,23 @@ def create_applications_router(
         response.headers["Cache-Control"] = "private, no-store"
         return state(session, traveler, application, questionnaire, answers, rows, cleared)
 
+    @router.get("/{application_id}/check", response_model=completeness.Report)
+    def check(application_id: str, traveler: TravelerDep, session: SessionDep, response: Response):
+        """The completeness check (US 13): what is missing or inconsistent before submission."""
+        application = owned(session, traveler, application_id)
+        questionnaire = flow.load_questionnaire(application.questionnaire_id)
+        answers, _ = save(session, application, stored_answers(session, application), questionnaire)
+        response.headers["Cache-Control"] = "private, no-store"
+        return completeness.check(questionnaire, answers, today(), latest_passport=load_latest_passport(traveler.id),
+                                  profile=saved_profile(session, traveler.id))
+
     @router.put("/{application_id}/answers/{question_id}", response_model=ApplicationState,
                 dependencies=[Depends(check_origin)])
     def answer(application_id: str, question_id: str, data: AnswerRequest, traveler: TravelerDep,
                session: SessionDep, response: Response):
         application = owned(session, traveler, application_id)
+        if application.archived_at is not None:
+            raise HTTPException(status_code=409, detail="This application is archived. Restore it from your dashboard to carry on.")
         questionnaire = flow.load_questionnaire(application.questionnaire_id)
         question = questionnaire.question(question_id)
         if question is None:
@@ -347,4 +412,6 @@ def create_applications_router(
         response.headers["Cache-Control"] = "private, no-store"
         return state(session, traveler, application, questionnaire, answers, rows, cleared)
 
+    # Archive, delete and the timeline (US 79, US 20) live in their own file.
+    add_lifecycle_routes(router, get_session, current_traveler, today=today)
     return router

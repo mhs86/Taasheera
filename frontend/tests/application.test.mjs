@@ -83,6 +83,7 @@ const signedIn = extra => ({
   'GET /auth/me': () => json({ id: 1, name: 'Anna', email: 'anna@example.com' }),
   'POST /activity/events': () => new Response(null, { status: 204 }),
   'GET /applications': () => json([]),
+  [`GET /assistant/history?application_id=${APP}`]: () => json([]),
   ...extra,
 })
 const bodyOf = key => JSON.parse(calls.filter(call => call.key === key).at(-1).body)
@@ -457,4 +458,114 @@ test('a completed application says so', async () => {
   await render(`/apply/${APP}`)
   assert.match($('.bubble-done').textContent, /That's every question for now/)
   assert.match(text(), /All questions answered/)
+})
+
+// --- Completeness check (US 13) -----------------------------------------------
+
+test('the completeness check shows what blocks submission and what to look at', async () => {
+  handlers = signedIn({
+    [`GET /applications/${APP}`]: () => json(state([[PURPOSE, 'tourism']], LONG_STAY)),
+    [`GET /applications/${APP}/check`]: () => json({ ready: false, answered: 1, total: 4, issues: [
+      { kind: 'missing', severity: 'blocking', message: 'Not answered yet: Will you stay more than 90 days?',
+        question_id: 'stay_over_90_days', step_id: 'eligibility' },
+      { kind: 'inconsistent', severity: 'warning', message: "The surname on your passport doesn't match your profile.",
+        question_id: 'passport', step_id: 'passport' },
+    ] }),
+  })
+  await render(`/apply/${APP}`)
+  assert.ok(!text().includes('Must fix'))
+  await click(button('Check my application'))
+  assert.match(text(), /1 thing needs fixing before you can submit/)
+  assert.match(text(), /Must fix Not answered yet: Will you stay more than 90 days\?/)
+  assert.match(text(), /Check The surname on your passport/)
+  assert.ok(button('Check again'))
+})
+
+test('a ready application says so, and a failed check is reported', async () => {
+  let fail = false
+  handlers = signedIn({
+    [`GET /applications/${APP}`]: () => json(state([[PURPOSE, 'tourism']], null)),
+    [`GET /applications/${APP}/check`]: () => fail ? json({ detail: 'no' }, 500) : json({ ready: true, answered: 4, total: 4, issues: [] }),
+  })
+  await render(`/apply/${APP}`)
+  await click(button('Check my application'))
+  assert.match(text(), /Nothing is missing\. Your answers are ready for review\./)
+  fail = true
+  await click(button('Check again'))
+  assert.ok($('.completeness [role="alert"]'))
+  assert.ok(!text().includes('Nothing is missing'))
+})
+
+// --- Assistant actions (US 110) -------------------------------------------------
+
+const CHANGE = {
+  action: 'change_answer', question_id: 'purpose', question: "What's the main purpose of your trip?",
+  value: 'business', display: 'Business', current_display: 'Tourism', report: null,
+}
+
+async function askFor(proposal, message = 'Change my purpose to business') {
+  handlers[`GET /applications/${APP}`] ??= () => json(state([[PURPOSE, 'tourism']], LONG_STAY))
+  handlers['POST /assistant/messages'] = () => json({ reply: "Here's the change. Confirm it below to save it.",
+    used_passport: false, proposal })
+  await render(`/apply/${APP}`)
+  const box = $('#chat-ask-input')
+  await type(box, message)
+  await submit(box.form)
+}
+
+test('an assistant change is only saved when the traveler confirms it', async () => {
+  handlers = signedIn({
+    [`PUT /applications/${APP}/answers/purpose`]: () => json(state([[PURPOSE, 'business']], LONG_STAY)),
+  })
+  await askFor(CHANGE)
+  assert.match($('[aria-label="Proposed change"]').textContent, /Tourism → Business/)
+  assert.equal(calls.filter(call => call.key.startsWith('PUT')).length, 0)
+  await click(button('Confirm change'))
+  assert.deepEqual(bodyOf(`PUT /applications/${APP}/answers/purpose`), { value: 'business' })
+  assert.match(text(), /Saved\./)
+})
+
+test('declining an assistant change saves nothing, and a refused save is shown', async () => {
+  handlers = signedIn({
+    [`PUT /applications/${APP}/answers/purpose`]: () => json({ detail: 'Choose one of the options.' }, 422),
+  })
+  await askFor(CHANGE)
+  await click(button('Confirm change'))
+  assert.match($('[aria-label="Proposed change"] [role="alert"]').textContent, /Choose one of the options\./)
+  await click(button('Not now'))
+  assert.match(text(), /Left as it was\./)
+})
+
+test('the assistant can open an answered question and show the completeness check', async () => {
+  handlers = signedIn({})
+  await askFor({ ...CHANGE, action: 'go_to_question', value: null, display: null, current_display: null })
+  await click(button('Go to this question'))
+  assert.ok(button('Keep my answer'), 'the answer opens for changing')
+  afterEachCleanup()
+  handlers = signedIn({})
+  await askFor({ action: 'check', question_id: null, question: null, value: null, display: null, current_display: null,
+    report: { ready: false, answered: 1, total: 4, issues: [{ kind: 'missing', severity: 'blocking',
+      message: 'Not answered yet: Will you stay more than 90 days?', question_id: 'stay_over_90_days', step_id: 'eligibility' }] } },
+  'Is anything missing?')
+  assert.match(text(), /1 to fix before you can submit\.Must fix Not answered yet/)
+})
+
+function afterEachCleanup() {
+  if (root) act(() => root.unmount())
+  container?.remove()
+  root = container = undefined
+}
+
+// --- Chat history (US 111) ------------------------------------------------------
+
+test('the conversation from an earlier visit reloads', async () => {
+  handlers = signedIn({
+    [`GET /applications/${APP}`]: () => json(state([[PURPOSE, 'tourism']], LONG_STAY)),
+    [`GET /assistant/history?application_id=${APP}`]: () => json([
+      { role: 'user', content: 'Does the arrival day count?' }, { role: 'assistant', content: 'Yes, it counts.' }]),
+  })
+  await render(`/apply/${APP}`)
+  const log = $('.chat-log').textContent
+  assert.match(log, /You askedDoes the arrival day count\?AssistantYes, it counts\./)
+  assert.ok(log.indexOf('Yes, it counts.') < log.indexOf('Will you stay more than 90 days?'))
 })

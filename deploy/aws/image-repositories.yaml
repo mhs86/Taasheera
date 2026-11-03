@@ -1,0 +1,53 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Private immutable EC2 release images and read-only access for the existing host.
+Parameters:
+  HostRoleName:
+    Type: String
+    AllowedPattern: '[A-Za-z0-9+=,.@_-]+'
+    Description: Existing EC2 IAM role name from the Taasheera stack (not its ARN).
+Resources:
+  ApiImages:
+    Type: AWS::ECR::Repository
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      RepositoryName: taasheera-ec2-api
+      ImageTagMutability: IMMUTABLE
+      EncryptionConfiguration:
+        EncryptionType: AES256
+      ImageScanningConfiguration:
+        ScanOnPush: true
+      LifecyclePolicy:
+        LifecyclePolicyText: '{"rules":[{"rulePriority":1,"description":"Expire old untagged layers","selection":{"tagStatus":"untagged","countType":"sinceImagePushed","countUnit":"days","countNumber":7},"action":{"type":"expire"}}]}'
+  WebImages:
+    Type: AWS::ECR::Repository
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      RepositoryName: taasheera-ec2-web
+      ImageTagMutability: IMMUTABLE
+      EncryptionConfiguration:
+        EncryptionType: AES256
+      ImageScanningConfiguration:
+        ScanOnPush: true
+      LifecyclePolicy:
+        LifecyclePolicyText: '{"rules":[{"rulePriority":1,"description":"Expire old untagged layers","selection":{"tagStatus":"untagged","countType":"sinceImagePushed","countUnit":"days","countNumber":7},"action":{"type":"expire"}}]}'
+  HostImagePull:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: PullEc2ReleaseImages
+      Roles: [!Ref HostRoleName]
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action: ecr:GetAuthorizationToken
+            Resource: '*'
+          - Effect: Allow
+            Action: [ecr:BatchGetImage, ecr:GetDownloadUrlForLayer, ecr:BatchCheckLayerAvailability]
+            Resource: [!GetAtt ApiImages.Arn, !GetAtt WebImages.Arn]
+Outputs:
+  ApiRepository:
+    Value: !GetAtt ApiImages.RepositoryUri
+  WebRepository:
+    Value: !GetAtt WebImages.RepositoryUri

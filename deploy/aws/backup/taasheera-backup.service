@@ -1,0 +1,16 @@
+# Daily private backup of the database and passport files (US 126). See docs/BACKUPS.md.
+# Root, because /srv/taasheera/private is closed to the API's own account.
+[Unit]
+Description=Back up the Taasheera database and passport files to the private bucket
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# A stuck upload must not block every later run.
+TimeoutStartSec=1h
+EnvironmentFile=/etc/taasheera/backup.env
+ExecStart=/usr/bin/python3 /opt/taasheera/backend/scripts/backup_tools.py backup
+Nice=10
+IOSchedulingClass=idle
+UMask=0077

@@ -78,6 +78,8 @@ class Application(SQLModel, table=True):
     status: str = Field(default="DRAFT", max_length=20)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    # Set when the traveler archives it (US 79): hidden from the dashboard, kept until they delete it.
+    archived_at: datetime | None = None
 
 
 class ApplicationAnswer(SQLModel, table=True):
@@ -139,9 +141,12 @@ class RegisterRequest(PasswordInput):
         return value.lower()
 
 
-class GoogleLinkRequest(PasswordInput):
+class GoogleLinkLoginRequest(PasswordInput):
     model_config = ConfigDict(extra="forbid")
     id_token: SecretStr = SchemaField(min_length=1, max_length=8192)
+
+
+class GoogleLinkRequest(GoogleLinkLoginRequest):
     expected_traveler_id: int = SchemaField(gt=0)
 
 
@@ -255,3 +260,36 @@ class ResetRateLimit(SQLModel, table=True):
     key: str = Field(primary_key=True, max_length=100)
     expires_at: int = Field(index=True)
     count: int = 1
+
+
+class AssistantMessage(SQLModel, table=True):
+    """One turn of a traveler's chat with the assistant (US 111), so it reloads on the next visit.
+
+    Kept per traveler and per application (none for chats outside an application). Holds what the
+    traveler typed, which may mention passport details, so reads are owner-scoped like the rest.
+    """
+
+    id: int | None = Field(default=None, primary_key=True)
+    traveler_id: int = Field(foreign_key="traveler.id", index=True)
+    application_id: str | None = Field(default=None, foreign_key="application.id", max_length=32, index=True)
+    role: str = Field(max_length=10)  # "user" or "assistant"
+    content: str = Field(sa_type=Text, repr=False)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+APPLICATION_STATUSES = ("DRAFT", "INELIGIBLE", "ANSWERS_COMPLETE")
+
+
+class DocumentAccess(SQLModel, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+    traveler_id: int = Field(foreign_key="traveler.id", index=True)
+    actor_id: int = Field(foreign_key="traveler.id", index=True)
+    upload_id: str = Field(max_length=32)
+    purpose: str = Field(max_length=30)
+    occurred_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), index=True)
+
+
+class AccountErasure(SQLModel, table=True):
+    # Durable work item: failed file/database cleanup is retried, never reported as complete.
+    traveler_id: int = Field(primary_key=True, foreign_key="traveler.id")
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

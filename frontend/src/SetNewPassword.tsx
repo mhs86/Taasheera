@@ -30,9 +30,9 @@ function SetNewPassword({ token, onTokenCleared, onSuccess }: Props) {
         <p className="create-account"><a href="#sign-in" data-activity-id="sign-in-link">Sign in</a></p>
       </> : !token ? <>
         <p className="auth-status auth-error" role="alert">
-          {message || 'This reset link is missing or invalid. Open the link from your email, or request a new one.'}
+          {message || 'This reset session is missing or invalid. Request a new code.'}
         </p>
-        <p className="create-account"><a href="#forgot-password" data-activity-id="reset-link">Request a new reset link</a></p>
+        <p className="create-account"><a href="#forgot-password" data-activity-id="reset-link">Request a new code</a></p>
         <p className="create-account"><a href="#sign-in" data-activity-id="sign-in-link">Back to sign-in</a></p>
       </> : <>
         <p className="intro">Your reset code has been verified. Choose a new password within five minutes.</p>
@@ -78,7 +78,7 @@ function SetNewPassword({ token, onTokenCleared, onSuccess }: Props) {
           </button>
         </form>
         <p className="auth-status auth-error" role="alert">{message}</p>
-        <p className="create-account"><a href="#forgot-password" data-activity-id="reset-link">Request a new reset link</a></p>
+        <p className="create-account"><a href="#forgot-password" data-activity-id="reset-link">Request a new code</a></p>
         <p className="create-account"><a href="#sign-in" data-activity-id="sign-in-link">Back to sign-in</a></p>
       </>}
     </section>

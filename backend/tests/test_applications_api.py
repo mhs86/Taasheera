@@ -8,7 +8,7 @@ import pytest
 from sqlalchemy import text
 from sqlmodel import Session, SQLModel, select
 
-from app.applications.router import application_context
+from app.applications.router import application_context, application_proposal
 from app.auth import access_token
 from app.database import build_engine
 from app.main import create_app
@@ -421,3 +421,50 @@ def test_migration_upgrades_from_previous_head(tmp_path, monkeypatch):
     assert schema_revision(engine)[0] == schema_revision(engine)[1]
     command.downgrade(migration_config(), "b14ab372b1d2")
     engine.dispose()
+
+
+def test_the_completeness_check_lists_what_is_missing_and_is_owner_scoped(api):
+    client, _, headers, _ = api
+    application_id = start(client, headers[0])["id"]
+    answer_all(client, headers[0], application_id, stop_at="phone")
+    response = client.get(f"/applications/{application_id}/check", headers=headers[0])
+    assert response.status_code == 200 and response.headers["cache-control"] == "private, no-store"
+    report = response.json()
+    assert not report["ready"] and report["issues"][0] == {
+        "kind": "missing", "severity": "blocking", "question_id": "phone", "step_id": "personal",
+        "message": report["issues"][0]["message"]}
+    assert client.get(f"/applications/{application_id}/check", headers=headers[1]).status_code == 404
+    assert client.get(f"/applications/{application_id}/check").status_code == 401
+
+
+def test_the_completeness_check_compares_the_passport_with_the_profile(api):
+    client, _, headers, _ = api
+    assert client.put("/profile", headers=headers[0], json={**PROFILE, "surname": "ERIKSEN"}).status_code == 200
+    application_id = start(client, headers[0])["id"]
+    answer_all(client, headers[0], application_id)
+    report = client.get(f"/applications/{application_id}/check", headers=headers[0]).json()
+    assert report["ready"] and [issue["kind"] for issue in report["issues"]] == ["inconsistent"]
+
+
+def test_the_assistant_context_has_the_step_tool_ids_and_whats_missing(api):
+    client, app, headers, _ = api
+    application_id = start(client, headers[0])["id"]
+    answer_all(client, headers[0], application_id, stop_at="arrival_date")
+    with Session(app.state.engine) as session:
+        context = application_context(session, 1, application_id)
+    assert "Current step: Your trip (step 4 of" in context
+    assert "- arrival_date (date, current question): When do you plan to arrive" in context
+    assert "Completeness check: not ready" in context
+
+
+def test_assistant_proposals_are_owner_scoped_and_save_nothing(api):
+    client, app, headers, _ = api
+    application_id = start(client, headers[0])["id"]
+    answer_all(client, headers[0], application_id)
+    change = {"question_id": "purpose", "value": "business"}
+    with Session(app.state.engine) as session:
+        assert application_proposal(session, 2, application_id, "change_answer", change) is None
+        proposal = application_proposal(session, 1, application_id, "change_answer", change)
+    assert proposal.value == "business" and proposal.current_display == "Tourism"
+    saved = client.get(f"/applications/{application_id}", headers=headers[0]).json()["answers"]
+    assert next(a["value"] for a in saved if a["question"]["id"] == "purpose") == "tourism"

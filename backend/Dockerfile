@@ -14,11 +14,13 @@ RUN apt-get update \
 
 WORKDIR /app
 COPY requirements.lock ./
-RUN python -m pip install --no-cache-dir -r requirements.lock
+RUN --mount=type=secret,id=system_ca \
+    if [ -f /run/secrets/system_ca ]; then export PIP_CERT=/run/secrets/system_ca; fi \
+    && python -m pip install --no-cache-dir -r requirements.lock
 
 COPY --chown=taasheera:taasheera app/ ./app/
 COPY --chown=taasheera:taasheera alembic/ ./alembic/
-COPY --chown=taasheera:taasheera alembic.ini migrate.py manage.py render_start.py ./
+COPY --chown=taasheera:taasheera alembic.ini migrate.py manage.py retry_erasures.py render_start.py ./
 RUN mkdir -p /app/storage \
     && chown -R taasheera:taasheera /app/storage
 

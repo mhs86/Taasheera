@@ -1,0 +1,20 @@
+.dashboard-page { min-height: 100vh; background: #f4f7f5; color: #162c27; padding-bottom: 3rem; }
+.dashboard-header { background: #1e5545; color: white; display: flex; justify-content: space-between; padding: 1.25rem max(1.5rem, calc((100vw - 1150px) / 2)); gap: 2rem; }
+.dashboard-header a { color: inherit; font-weight: 600; }
+.dashboard-header nav { display: flex; gap: 1.5rem; }
+.dashboard-content { max-width: 1150px; padding: 2rem 1.5rem; margin: 0 auto; }
+.dashboard-content h1 { font-size: clamp(2rem, 5vw, 3.5rem); margin: .5rem 0; }
+.dashboard-content section { background: white; padding: 1.5rem; border: 1px solid #dbe5df; border-radius: 12px; margin: 1.5rem 0; }
+.status-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(125px, 1fr)); gap: 1rem; }
+.status-card { padding: 1rem; background: #edf4ef; border-radius: 8px; }
+.status-card span { font-size: .8rem; }
+.status-card strong { display: block; font-size: 2rem; }
+.table-scroll { overflow-x: auto; }
+.dashboard-content table { border-collapse: collapse; width: 100%; text-align: left; }
+.dashboard-content th, .dashboard-content td { border-bottom: 1px solid #dbe5df; padding: .9rem .6rem; overflow-wrap: anywhere; }
+.dashboard-content input, .dashboard-content select { display: block; padding: .65rem; border: 1px solid #8da99a; border-radius: 6px; margin: .5rem 0 1rem; max-width: 100%; }
+.dashboard-content button { padding: .65rem 1rem; cursor: pointer; border-radius: 6px; }
+.dashboard-content button:disabled { opacity: .5; cursor: default; }
+.deletion-confirm { border: 1px solid #a92d36; padding: 1.5rem; margin-top: 1rem; border-radius: 8px; }
+.pagination { display: flex; gap: 1rem; align-items: center; margin-top: 1rem; }
+@media (max-width: 550px) { .dashboard-content { padding: 1.5rem .75rem; } .dashboard-content section { padding: 1rem; } .dashboard-header { padding: 1rem; } }

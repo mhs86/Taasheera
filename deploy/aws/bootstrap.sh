@@ -102,6 +102,16 @@ test -f deploy/aws/compose.yaml
 phase='prepare private application configuration'
 printf 'Setup: %s\n' "$phase"
 mkdir -p /srv/taasheera/private /etc/taasheera
+if [ "${TAASHEERA_PRESERVE_CONFIG:-0}" = 1 ]; then
+  # Existing production releases must retain the exact settings, including
+  # optional providers. Never regenerate secrets or rewrite OAuth/mail settings.
+  test -s /srv/taasheera/private/app.env
+  test -s /srv/taasheera/private/web.env
+  test -L /etc/taasheera/app.env
+  test -L /etc/taasheera/web.env
+  test "$(readlink -f /etc/taasheera/app.env)" = /srv/taasheera/private/app.env
+  test "$(readlink -f /etc/taasheera/web.env)" = /srv/taasheera/private/web.env
+else
 if [ ! -f /srv/taasheera/private/app.env ]; then
   python3 - <<'PY'
 import os, secrets
@@ -152,16 +162,34 @@ web.chmod(0o600)
 PY
 ln -sfn /srv/taasheera/private/app.env /etc/taasheera/app.env
 ln -sfn /srv/taasheera/private/web.env /etc/taasheera/web.env
+fi
 
 # Resolve the image's user rather than relying on a distribution-specific UID.
 phase='build application images'
 printf 'Setup: %s\n' "$phase"
-docker compose --parallel 1 -f deploy/aws/compose.yaml build
-phase='assign application storage ownership'
-api_image=$(docker compose -f deploy/aws/compose.yaml images -q api)
-if [ -z "$api_image" ]; then
-  api_image=taasheera-api
+if [ -n "${TAASHEERA_API_IMAGE:-}" ] || [ -n "${TAASHEERA_WEB_IMAGE:-}" ]; then
+  [[ "${TAASHEERA_API_IMAGE:-}" =~ ^632630731308\.dkr\.ecr\.us-east-1\.amazonaws\.com/taasheera-ec2-api@sha256:[a-f0-9]{64}$ ]]
+  [[ "${TAASHEERA_WEB_IMAGE:-}" =~ ^632630731308\.dkr\.ecr\.us-east-1\.amazonaws\.com/taasheera-ec2-web@sha256:[a-f0-9]{64}$ ]]
+  export TAASHEERA_API_IMAGE TAASHEERA_WEB_IMAGE
+  # Short-lived registry credentials stay in this setup's private temporary directory.
+  export DOCKER_CONFIG="$task_tmp/docker"
+  mkdir -m 700 "$DOCKER_CONFIG"
+  aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin \
+    632630731308.dkr.ecr.us-east-1.amazonaws.com
+  docker compose -f deploy/aws/compose.yaml pull api web
+  for image in "$TAASHEERA_API_IMAGE" "$TAASHEERA_WEB_IMAGE"; do
+    test "$(docker image inspect "$image" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')" = "$TAASHEERA_REVISION"
+  done
+  # Keep default operator/backup commands on the deployed release after this process exits.
+  docker tag "$TAASHEERA_API_IMAGE" taasheera-api
+  docker tag "$TAASHEERA_WEB_IMAGE" taasheera-web
+else
+  python3 deploy/aws/build_images.py --log-dir "/srv/taasheera/private/build-logs/$TAASHEERA_REVISION"
 fi
+phase='assign application storage ownership'
+# compose images reports existing containers, which still use the old image at
+# this point. Resolve the newly built tag for ownership and the backup worker.
+api_image=$(docker image inspect "${TAASHEERA_API_IMAGE:-taasheera-api}" --format '{{.Id}}')
 api_uid=$(docker run --rm --entrypoint id "$api_image" -u)
 api_gid=$(docker run --rm --entrypoint id "$api_image" -g)
 chown "$api_uid:$api_gid" /srv/taasheera
@@ -191,7 +219,7 @@ else:
 PY
 phase='migrate database and start application containers'
 printf 'Setup: %s\n' "$phase"
-if docker compose -f deploy/aws/compose.yaml up -d --wait --wait-timeout 180; then
+if docker compose -f deploy/aws/compose.yaml up --no-build -d --wait --wait-timeout 180; then
   :
 else
   result=$?

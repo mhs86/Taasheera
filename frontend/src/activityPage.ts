@@ -3,6 +3,7 @@ export function safePage(pathname: string, hash: string): string {
   if (pathname === '/faq') return 'faq'
   if (pathname === '/passport' || /^\/passport\/[0-9a-f]{32}$/.test(pathname)) return 'passport'
   if (pathname === '/apply' || /^\/apply\/[0-9a-f]{32}$/.test(pathname)) return 'apply'
+  if (pathname === '/dashboard' || /^\/dashboard\/[0-9a-f]{32}$/.test(pathname)) return 'dashboard'
   if (pathname === '/reset-password') return 'reset-password'
   if (pathname !== '/sign-in') return 'not-found'
   if (hash.startsWith('#create-account')) return 'create-account'

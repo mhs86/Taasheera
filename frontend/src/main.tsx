@@ -4,6 +4,9 @@ import { createBrowserRouter } from 'react-router'
 import { RouterProvider } from 'react-router/dom'
 import './index.css'
 import { routes } from './routes'
+import { configureBrowserMonitoring } from './monitoring'
+
+configureBrowserMonitoring()
 
 const router = createBrowserRouter(routes)
 

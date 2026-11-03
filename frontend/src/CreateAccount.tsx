@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import GoogleSignIn from './GoogleSignIn'
-import { signInWithGoogle, type Traveler } from './auth'
+import { GoogleLinkRequiredError, signInWithGoogle, type Traveler } from './auth'
+import GoogleAccountLink from './GoogleAccountLink'
 
 function validationMessage(body: unknown): string {
   const fallback = 'Please check your name, email, and password and try again.'
@@ -29,6 +30,7 @@ function CreateAccount({ onCreated, googleClientId = '', googleConfigurationStat
   const [hasError, setHasError] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
+  const [linkCredential, setLinkCredential] = useState<string | null>(null)
   const requestInProgress = useRef(false)
   const passwordRef = useRef<HTMLInputElement>(null)
   const confirmPasswordRef = useRef<HTMLInputElement>(null)
@@ -46,6 +48,11 @@ function CreateAccount({ onCreated, googleClientId = '', googleConfigurationStat
       const profile = await signInWithGoogle(credential)
       if (mounted.current) onSignedIn?.(profile)
     } catch (error) {
+      if (mounted.current && error instanceof GoogleLinkRequiredError) {
+        setLinkCredential(credential)
+        setMessage('')
+        return
+      }
       if (mounted.current) {
         setHasError(true)
         setMessage(error instanceof Error ? error.message : 'Could not continue with Google.')
@@ -69,6 +76,10 @@ function CreateAccount({ onCreated, googleClientId = '', googleConfigurationStat
     )
     setMessage('')
   }
+
+  if (linkCredential && onSignedIn) return <GoogleAccountLink credential={linkCredential}
+    onSignedIn={traveler => { setLinkCredential(null); onSignedIn(traveler) }}
+    onCancel={() => { setLinkCredential(null); setMessage(''); setHasError(false) }} />
 
   return (
     <section className="sign-in-card" aria-labelledby="create-account-heading">

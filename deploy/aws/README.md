@@ -27,7 +27,8 @@ SQLite and private passport images are on a separate encrypted EBS volume;
 the API's port is private. Administration uses Systems Manager, without SSH.
 The origin accepts CloudFront addresses and requires a private origin header.
 Traffic between CloudFront and EC2 uses HTTP; viewer traffic uses HTTPS.
-This is a course/demo deployment, with one host and no automatic backups or HA.
+This is a course/demo deployment, with one host and no HA. A daily backup to a
+private S3 bucket, and how to restore it, are in `docs/BACKUPS.md`.
 Use specimen data. If stronger transport protection or availability is required,
 plan those infrastructure changes before collecting real traveler documents.
 
@@ -126,6 +127,56 @@ Set repository variable `AWS_FULL_DEPLOY_ROLE_ARN` to the resulting role ARN
 branch and allows redeployment only to the tagged stack host. Run **Deploy dev to existing AWS host** manually after verifying remaining credits.
 It creates no infrastructure and preserves private local configuration.
 
+## Automatic deployment from main (CMPS271-190)
+
+`.github/workflows/deploy-main-aws.yml` builds the API and web images in Actions for the latest
+`main` commit whose push CI passed, publishes immutable SHA tags to private ECR, and deploys their
+exact digests through `redeploy.sh`. The host pulls instead of building, verifies both image revision
+labels, backs up SQLite, migrates and checks readiness. `TAASHEERA_PRESERVE_CONFIG=1` keeps its private
+environment. A concurrency group shared with manual dev deploys prevents overlap. A manual main
+run must also have passing push CI; a superseded commit is refused before publication and again
+before host deployment. Ahmad Zeid leads deployment/AWS operations from November 2, 2026.
+The following one-time setup needs AWS IAM/CloudFormation and GitHub repository-settings permissions;
+verify the access handover first. Existing account/repository ownership is unchanged by this role handover.
+These steps are not run automatically:
+
+1. In GitHub, create the `production` environment (Settings → Environments). Optionally add a
+   required reviewer, which turns each deployment into a one-click approval.
+2. From CloudShell, create a second role that trusts only that environment:
+
+   ```bash
+   aws cloudformation deploy --region us-east-1 --stack-name taasheera-github-main-role \
+     --template-file deploy/aws/github-role.yaml --capabilities CAPABILITY_NAMED_IAM \
+     --parameter-overrides CreateOidcProvider=false TrustedSubject=repo:mhs86/Taasheera:environment:production
+   aws cloudformation describe-stacks --stack-name taasheera-github-main-role \
+     --query 'Stacks[0].Outputs' --output table
+   ```
+
+3. Create the two private repositories and grant the existing host read-only image access:
+
+   ```bash
+   host_role=$(aws cloudformation describe-stack-resource --region us-east-1 --stack-name taasheera \
+     --logical-resource-id HostRole --query 'StackResourceDetail.PhysicalResourceId' --output text)
+   aws cloudformation deploy --region us-east-1 --stack-name taasheera-release-images \
+     --template-file deploy/aws/image-repositories.yaml --capabilities CAPABILITY_NAMED_IAM \
+     --parameter-overrides HostRoleName="$host_role"
+   ```
+
+   The production role can push only `taasheera-ec2-api`/`taasheera-ec2-web`; the host can only pull.
+   These are separate from the alternative Lambda repository. Images are tagged with the full
+   commit SHA and pinned by digest on deployment. Re-running a release reuses an existing tag.
+   Repositories are retained on stack deletion; tagged releases remain available for operator rollback.
+
+4. Set repository variable `AWS_MAIN_DEPLOY_ROLE_ARN` to the role ARN from step 2. Restrict the
+   GitHub `production` environment's deployment branches to `main` so another branch cannot use it.
+
+Until setup is complete the workflow fails before touching running services. AWS changes and a live
+deployment still need operator execution. Manual dev/bootstrap without image variables retain the
+existing sequential host-build path. Release image variables are not written to `app.env`; subsequent
+image releases supply both again. Local `taasheera-api`/`taasheera-web` tags also point at the deployed
+images so existing operator/backup commands keep using the current release after setup exits.
+See [AWS's repository-scoped push permissions](https://docs.aws.amazon.com/AmazonECR/latest/userguide/image-push-iam.html).
+
 ## External features and checks
 
 Google SSO and email OTP recovery use the configuration described in
@@ -151,6 +202,15 @@ the Elastic IP but **does not delete the data volume**; retained EBS continues
 to consume credits or incur charges. Back up and explicitly remove it when it is
 no longer needed. Host replacement creates a new volume: manually reattach and
 restore the retained volume before traffic resumes; no automatic recovery is
-claimed. Migration rollback and database backups are manual in this demo setup.
+claimed. Migration rollback is manual; daily backups and restore follow
+`docs/BACKUPS.md`.
 Keep a backup before deploying schema changes. Container updates rerun migrations
 and keep the same database, JWT, images, and reviews.
+
+## Release the production sign-in/admin fixes
+
+Use `python3 deploy/aws/release_production.py --execute` from an authenticated,
+clean checkout. This preserves the exact existing private configuration and
+verifies the frontend, new API behavior and public policies. Optional
+`--admin-email` promotes a designated existing account through the operator CLI.
+See [the release and acceptance guide](../../docs/PRODUCTION_AUTH_ADMIN_FIX.md).

@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router'
 import { restoreSession, type Traveler } from '../auth'
-import { askAssistant, type ChatTurn } from '../assistant/api'
+import { askAssistant, getHistory, type ChatTurn, type Proposal } from '../assistant/api'
+import ProposalCard from '../assistant/ProposalCard'
 import AnswerInput from '../application/AnswerInput'
 import ApplicationsSidebar from '../application/ApplicationsSidebar'
+import CompletenessCheck from '../application/CompletenessCheck'
 import StartChat from '../application/StartChat'
 import SuggestedAnswer from '../application/SuggestedAnswer'
 import {
@@ -69,7 +71,8 @@ export default function Apply() {
 function merge(older: ApplicationSummary[], newer: ApplicationSummary[]): ApplicationSummary[] {
   const byId = new Map(older.map(application => [application.id, application]))
   for (const application of newer) byId.set(application.id, application)
-  return [...byId.values()].sort((a, b) => b.updated_at.localeCompare(a.updated_at))
+  // An archived one opened from a link stays off the sidebar, as it is on the dashboard.
+  return [...byId.values()].filter(application => !application.archived_at).sort((a, b) => b.updated_at.localeCompare(a.updated_at))
 }
 
 function SignedOut() {
@@ -78,7 +81,8 @@ function SignedOut() {
 
 // A question typed to the assistant mid-flow. `at` is how many answers existed when it was
 // asked, so it shows at that point in the conversation and the flow carries on below it.
-type Aside = ChatTurn & { at: number }
+// An assistant reply may carry an action for the traveler to confirm (US 110).
+type Aside = ChatTurn & { at: number; proposal?: Proposal | null }
 
 type ChatProps = { applicationId: string; onChange: (state: ApplicationState) => void }
 
@@ -114,7 +118,14 @@ function ApplicationChat({ applicationId, onChange }: ChatProps) {
       }
       if (!active) return
       setApplication(state)
-      if (state) onChange(state)
+      if (state) {
+        onChange(state)
+        // The conversation from earlier visits (US 111) picks up where the traveler is now.
+        const at = state.answers.length
+        getHistory(applicationId).then(turns => {
+          if (active && turns.length) setAsides(current => [...turns.map(turn => ({ ...turn, at })), ...current])
+        }).catch(() => { /* No history is just a fresh chat. */ })
+      }
       if (upload) navigate(location.pathname, { replace: true })
     }).catch(error => {
       if (active) setMessage(error instanceof Error ? error.message : 'Could not load your application.')
@@ -150,7 +161,7 @@ function ApplicationChat({ applicationId, onChange }: ChatProps) {
     setAsides(turns => [...turns, { role: 'user', content: question, at }])
     try {
       const reply = await askAssistant(question, 'application', history, applicationId)
-      setAsides(turns => [...turns, { role: 'assistant', content: reply.reply, at }])
+      setAsides(turns => [...turns, { role: 'assistant', content: reply.reply, at, proposal: reply.proposal }])
     } catch (error) {
       setAsides(turns => turns.slice(0, -1))
       setDraft(question)
@@ -158,6 +169,15 @@ function ApplicationChat({ applicationId, onChange }: ChatProps) {
     } finally {
       setAsking(false)
     }
+  }
+  // The assistant offered to take the traveler to a question: open an answered one for changing.
+  function goTo(questionId: string) {
+    if (questionId === application?.current?.id) {
+      current.current?.scrollIntoView?.({ block: 'center', behavior: 'smooth' })
+      return
+    }
+    setEditing(questionId)
+    document.getElementById(`answer-${questionId}`)?.scrollIntoView?.({ block: 'center', behavior: 'smooth' })
   }
   const askOnEnter = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) void ask(event)
@@ -170,6 +190,11 @@ function ApplicationChat({ applicationId, onChange }: ChatProps) {
     return message ? <p className="passport-message" role="alert">{message}</p>
       : <p className="apply-status" role="status">Loading your application…</p>
   }
+  // Archived applications are read-only (US 79); restoring happens on the dashboard.
+  if (application.archived_at) {
+    return <p className="apply-status">This application is archived, so its answers can't be changed.{' '}
+      <Link to={`/dashboard/${application.id}`} data-activity-id="application-details">See it and restore it</Link>.</p>
+  }
 
   const { progress } = application
   const done = application.status === 'ANSWERS_COMPLETE'
@@ -178,6 +203,8 @@ function ApplicationChat({ applicationId, onChange }: ChatProps) {
     .map((turn, n) => <li key={`aside-${index}-${n}`} className={`bubble bubble-${turn.role === 'user' ? 'user' : 'assistant'} bubble-aside`}>
       <span className="bubble-label">{turn.role === 'user' ? 'You asked' : 'Assistant'}</span>
       {turn.content}
+      {turn.proposal && <ProposalCard proposal={turn.proposal} onGoTo={goTo}
+        onConfirm={() => answer(turn.proposal!.question_id!, { value: turn.proposal!.value! })} />}
     </li>)
 
   const trip = [application.place, application.trip_date && `arriving ${formatDate(application.trip_date)}`]
@@ -211,7 +238,7 @@ function ApplicationChat({ applicationId, onChange }: ChatProps) {
       <li className="bubble bubble-assistant">Are you applying just for yourself, or travelling with family or a group?</li>
       <li className="bubble bubble-user chat-reply chat-fixed">{travellers(application.group_size)}</li>
       <li className="bubble bubble-assistant">Great. Now the embassy's questions, one at a time. Your answers are saved as you go.</li>
-      {application.answers.map((saved, index) => <li key={saved.question.id} className="chat-turn">
+      {application.answers.map((saved, index) => <li key={saved.question.id} id={`answer-${saved.question.id}`} className="chat-turn">
         <ol className="chat-turn-inner">
           {asidesAt(index)}
           <li className="bubble bubble-assistant">{saved.question.prompt}</li>
@@ -253,6 +280,8 @@ function ApplicationChat({ applicationId, onChange }: ChatProps) {
         Next we'll check your documents against these answers.
       </li>}
     </ol>
+
+    {!application.stopped && <CompletenessCheck key={application.updated_at} applicationId={applicationId} />}
 
     <form className="chat-ask" onSubmit={ask}>
       <label htmlFor="chat-ask-input">Not sure about something? Ask the assistant. Your place in the questions is kept.</label>
