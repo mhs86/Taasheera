@@ -130,6 +130,8 @@ Operator role assignment: `python manage.py set-role --email <email> --role admi
 13. **Passport review (US 6–8).** Field verification labels plus human confirmation; rules in `passport/fields.ts`.
 14. **Assistant adapter.** One backend provider call per question, deterministic date arithmetic, 20-second
     timeout/one retry, polite safety refusal. Current history and rate-limit behavior supersede the old in-memory demo.
+    The prompt states verified product/privacy facts (one destination, planned features, Gemini receives chat
+    context) and declines off-topic requests; update `PRODUCT_FACTS` when features ship.
 15. **Lambda alternative.** Web Adapter + Tesseract image; OIDC/ECR/Lambda prerequisites documented in
     `docs/AWS_LAMBDA.md`. Uploads disabled without suitable durable storage/upload handling.
 16. **Google linking.** Verified `sub` is identity; password accounts explicitly link with password confirmation.

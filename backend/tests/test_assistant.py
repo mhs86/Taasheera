@@ -116,6 +116,25 @@ def test_prompt_without_a_confirmed_passport_says_so():
     assert "hasn't confirmed any passport details" in prompt
     assert "<passport_details>" not in prompt
     assert "uploading a photo" in prompt
+    assert "confirm the details on this page" in prompt
+
+
+def test_prompt_outside_the_passport_page_points_there():
+    prompt = build_system_prompt(None, "general", TODAY)
+
+    assert "confirm the details on the passport page" in prompt
+    assert "on this page" not in prompt
+
+
+def test_prompt_states_what_is_built_and_where_chat_data_goes():
+    prompt = build_system_prompt(None, "general", TODAY)
+
+    # Product questions get true answers: one destination, planned features named as planned,
+    # and the fact that messages reach Google's Gemini service rather than "staying in the app".
+    assert "only the Schengen short-stay visa" in prompt
+    assert "cover letters" in prompt and "planned" in prompt
+    assert "sent to Google's Gemini AI service" in prompt
+    assert "politely decline" in prompt
 
 
 # --- The endpoint ------------------------------------------------------------

@@ -11,7 +11,9 @@ SCHENGEN = load_questionnaire("schengen-short-stay")
 
 def test_a_change_is_checked_and_shown_next_to_the_current_answer():
     proposal = propose(SCHENGEN, ANSWERS, "change_answer", {"question_id": "departure_date", "value": "2027-01-20"}, TODAY)
-    assert (proposal.action, proposal.value, proposal.current_display) == ("change_answer", "2027-01-20", "2027-01-24")
+    assert (proposal.action, proposal.value, proposal.current_display) == ("change_answer", "2027-01-20", "24 January 2027")
+    # The stored value stays ISO; only the card shows the date the way the chat does.
+    assert proposal.display == "20 January 2027"
 
 
 def test_choices_and_yes_no_accept_labels_and_words():
