@@ -88,5 +88,16 @@ def propose(questionnaire: flow.Questionnaire, answers: flow.Answers, name: str,
         raise flow.InvalidAnswer("That answer has several parts, so change it in the chat, where you can see them all.")
     value = flow.check_answer(question, _raw(question, str(args.get("value", ""))), answers, today)
     current_value = answers.get(question.id)
-    return Proposal(action="change_answer", **where, value=value, display=flow.display_value(question, value),
-                    current_display=flow.display_value(question, current_value) if question.id in answers else None)
+    return Proposal(action="change_answer", **where, value=value, display=_shown(question, value),
+                    current_display=_shown(question, current_value) if question.id in answers else None)
+
+
+def _shown(question: flow.Question, value: Any) -> str:
+    """How the proposal card shows a value: dates as the chat shows them ("2 January 2027")."""
+    if question.type == "date" and isinstance(value, str):
+        try:
+            day = date.fromisoformat(value)
+        except ValueError:
+            return value
+        return f"{day.day} {day:%B %Y}"
+    return flow.display_value(question, value)
